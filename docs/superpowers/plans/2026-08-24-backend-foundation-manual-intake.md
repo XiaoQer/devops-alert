@@ -333,7 +333,7 @@ git commit -m "feat: define incident domain boundaries"
 - Produces: one-way foreign keys `alerts.signal_event_id`, `incidents.primary_alert_id`, and `diagnosis_runs.incident_id`
 - Produces: append-only `audit_events` records with actor, action, resource type/id, request ID, and UTC timestamp
 
-- [ ] **Step 1: Write a failing migration test**
+- [x] **Step 1: Write a failing migration test**
 
 ```python
 def test_upgrade_creates_domain_tables(postgres_connection):
@@ -349,13 +349,13 @@ def test_upgrade_creates_domain_tables(postgres_connection):
     } <= names
 ```
 
-- [ ] **Step 2: Run it before creating the migration**
+- [x] **Step 2: Run it before creating the migration**
 
 Run: `cd backend && python -m pytest tests/integration/persistence/test_initial_migration.py -q`
 
 Expected: FAIL because Alembic configuration and migration do not exist.
 
-- [ ] **Step 3: Implement SQLAlchemy tables and the explicit migration**
+- [x] **Step 3: Implement SQLAlchemy tables and the explicit migration**
 
 Use native PostgreSQL `JSONB` only for bounded `facts` and audit details. Add these database-enforced rules:
 
@@ -366,11 +366,11 @@ Use native PostgreSQL `JSONB` only for bounded `facts` and audit details. Add th
 - indexes on `observed_at`, alert state, incident state, diagnosis state, and foreign keys;
 - no cascade delete from a parent record to immutable history.
 
-- [ ] **Step 4: Add constraint tests**
+- [x] **Step 4: Add constraint tests**
 
 Test duplicate source identity, cross-family state values, missing relationships, and oversized values at the database boundary. Expected failures are `IntegrityError`, followed by explicit session rollback.
 
-- [ ] **Step 5: Verify upgrade and downgrade in a disposable schema**
+- [x] **Step 5: Verify upgrade and downgrade in a disposable schema**
 
 Run:
 
@@ -384,7 +384,7 @@ python -m pytest tests/integration/persistence -q
 
 Expected: migration round-trip succeeds and all persistence integration tests pass.
 
-- [ ] **Step 6: Commit the schema**
+- [x] **Step 6: Commit the schema**
 
 ```bash
 git add backend/alembic.ini backend/migrations backend/src/incident_intelligence/persistence/models.py backend/tests/integration/persistence

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Iterator
+from pathlib import Path
 from secrets import token_urlsafe
 from uuid import uuid4
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import create_engine, text
@@ -46,15 +49,40 @@ def postgres_engine() -> Iterator[Engine]:
         pytest.fail("II_TEST_DATABASE_URL 必须指向 PostgreSQL")
 
     schema_name = f"ii_test_{uuid4().hex}"
-    engine = create_engine(database_url, pool_pre_ping=True)
-    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+    bootstrap_engine = create_engine(database_url, pool_pre_ping=True)
+    with bootstrap_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema_name}"'))
 
-    isolated_engine = engine.execution_options(schema_translate_map={None: schema_name})
+    isolated_engine = create_engine(
+        database_url,
+        connect_args={"options": f"-csearch_path={schema_name}"},
+        pool_pre_ping=True,
+    )
     try:
         yield isolated_engine
     finally:
         isolated_engine.dispose()
-        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        with bootstrap_engine.connect().execution_options(
+            isolation_level="AUTOCOMMIT"
+        ) as connection:
             connection.execute(text(f'DROP SCHEMA "{schema_name}" CASCADE'))
-        engine.dispose()
+        bootstrap_engine.dispose()
+
+
+@pytest.fixture
+def alembic_config(postgres_engine: Engine) -> Config:
+    backend_dir = Path(__file__).resolve().parents[1]
+    config = Config(str(backend_dir / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_dir / "migrations"))
+    config.attributes["engine"] = postgres_engine
+    return config
+
+
+@pytest.fixture
+def migrated_engine(alembic_config: Config, postgres_engine: Engine) -> Iterator[Engine]:
+    command.downgrade(alembic_config, "base")
+    command.upgrade(alembic_config, "head")
+    try:
+        yield postgres_engine
+    finally:
+        command.downgrade(alembic_config, "base")
