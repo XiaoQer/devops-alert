@@ -240,7 +240,7 @@ class SignalCommand(BaseModel):
 
 手工确认以下错误改动会被至少一个测试捕获：把 `>` 改为 `>=`、让 firing 在同时间覆盖 resolved、stale 时更新 signal_event_id、更新时不递增 version。
 
-- [ ] **步骤 5：提交投影规则**
+- [x] **步骤 5：提交投影规则**
 
 ```bash
 git add backend/src/incident_intelligence/domain/signal_intake.py \
