@@ -667,14 +667,14 @@ Document as implemented only: health/readiness, initial schema, manual intake, i
 
 `docs/verification/2026-08-24-backend-foundation.md` records commands, test counts, migration revision, smoke-test outcome, and known gaps. Do not include tokens, complete request payloads, database URLs with credentials, or raw logs.
 
-- [ ] **Step 6: Commit phase evidence and status**
+- [x] **Step 6: Commit phase evidence and status**
 
 ```bash
 git add README.md docs/current-state.md specs/active/multi-source-incident-center.md docs/verification/2026-08-24-backend-foundation.md
 git commit -m "docs: record backend foundation verification"
 ```
 
-- [ ] **Step 7: Confirm repository state**
+- [x] **Step 7: Confirm repository state**
 
 Run: `git status --short && git log --oneline -8`
 
