@@ -408,7 +408,7 @@ git commit -m "feat: persist incident domain records"
 - Produces: `ManualIntakeService.submit(command, idempotency_key, actor, request_id) -> ManualIntakeResult`
 - Produces: `IdempotencyConflict` and `ForbiddenIdentityError` reason-coded exceptions
 
-- [ ] **Step 1: Write the failing happy-path integration test**
+- [x] **Step 1: Write the failing happy-path integration test**
 
 ```python
 def test_manual_report_creates_four_records_in_one_transaction(service, session):
@@ -420,13 +420,13 @@ def test_manual_report_creates_four_records_in_one_transaction(service, session)
     assert session.get(DiagnosisRunRow, result.diagnosis_run_id).state == "QUEUED"
 ```
 
-- [ ] **Step 2: Run it and observe the missing service failure**
+- [x] **Step 2: Run it and observe the missing service failure**
 
 Run: `cd backend && python -m pytest tests/integration/services/test_manual_intake.py -q`
 
 Expected: FAIL because `ManualIntakeService` does not exist.
 
-- [ ] **Step 3: Implement one-transaction creation**
+- [x] **Step 3: Implement one-transaction creation**
 
 The service performs, in order:
 
@@ -442,7 +442,7 @@ The service performs, in order:
 
 Any failure rolls back every record.
 
-- [ ] **Step 4: Write and pass replay and conflict tests**
+- [x] **Step 4: Write and pass replay and conflict tests**
 
 ```python
 def test_same_key_and_payload_replays_existing_result(service):
@@ -460,11 +460,11 @@ def test_same_key_with_different_payload_conflicts(service):
 
 Add a concurrent insert test using two sessions. Exactly one transaction creates records; the other re-reads the committed idempotency record and returns the same result.
 
-- [ ] **Step 5: Add rollback and audit tests**
+- [x] **Step 5: Add rollback and audit tests**
 
 Force diagnosis insertion to fail and assert zero signal, alert, incident, diagnosis, ingestion-key, and audit rows remain. On success, assert audit details contain identifiers and reason codes but not the original summary, API token, or request payload.
 
-- [ ] **Step 6: Run service integration tests**
+- [x] **Step 6: Run service integration tests**
 
 Run: `cd backend && python -m pytest tests/integration/services/test_manual_intake.py -q`
 
