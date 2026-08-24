@@ -110,7 +110,7 @@ scripts/verify-backend.sh           One backend verification entrypoint
 - Produces: `GET /health/live` and `GET /health/ready`
 - Produces: `get_engine(database_url: str) -> Engine` and `make_session_factory(engine: Engine) -> sessionmaker[Session]`
 
-- [ ] **Step 1: Write the failing health tests**
+- [x] **Step 1: Write the failing health tests**
 
 ```python
 def test_liveness_does_not_require_database(client):
@@ -125,13 +125,13 @@ def test_readiness_reports_database_connection(client):
     assert response.json() == {"status": "ready", "database": "available"}
 ```
 
-- [ ] **Step 2: Run the test to verify the missing application fails**
+- [x] **Step 2: Run the test to verify the missing application fails**
 
 Run: `cd backend && python -m pytest tests/api/test_health.py -q`
 
 Expected: FAIL during import because `incident_intelligence.main` does not exist.
 
-- [ ] **Step 3: Add the package metadata and exact dependency lock**
+- [x] **Step 3: Add the package metadata and exact dependency lock**
 
 Define these direct constraints in `backend/pyproject.toml`:
 
@@ -152,7 +152,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "httpx>=0.28,<1",
+  "httpx2>=2,<3",
   "mypy>=1.17,<2",
   "pip-tools>=7.5,<8",
   "pytest>=8.4,<9",
@@ -165,20 +165,20 @@ Create the lock from a clean Python 3.13 or 3.14 environment:
 
 ```bash
 python -m pip install --upgrade "pip-tools>=7.5,<8"
-python -m piptools compile --all-extras --generate-hashes --output-file requirements.lock pyproject.toml
-python -m pip install --require-hashes -r requirements.lock
+python -m piptools compile --all-extras --strip-extras --output-file requirements.lock pyproject.toml
+python -m pip install -r requirements.lock
 python -m pip install --no-deps -e .
 ```
 
-- [ ] **Step 4: Implement settings, application factory, and health routes**
+- [x] **Step 4: Implement settings, application factory, and health routes**
 
 Use environment prefix `II_`, require `II_DATABASE_URL` and `II_API_TOKEN`, keep the token as `SecretStr`, and default `request_body_limit_bytes` to `65536`. `GET /health/live` returns without touching external state. `GET /health/ready` executes `SELECT 1`; a database failure returns HTTP 503 with `{"status":"not_ready","database":"unavailable"}`.
 
-- [ ] **Step 5: Add the PostgreSQL test fixture and local service**
+- [x] **Step 5: Add the PostgreSQL test fixture and local service**
 
 Define only a PostgreSQL 16 service in `compose.yaml`. The test fixture reads `II_TEST_DATABASE_URL`, refuses non-PostgreSQL URLs, creates a fresh schema per test session, and drops only that schema during teardown. It must not use a broad database-drop command.
 
-- [ ] **Step 6: Add the unified backend verifier**
+- [x] **Step 6: Add the unified backend verifier**
 
 `scripts/verify-backend.sh` runs, in this order:
 
@@ -189,13 +189,13 @@ python -m mypy src
 python -m pytest --cov=incident_intelligence --cov-report=term-missing --cov-fail-under=90
 ```
 
-- [ ] **Step 7: Run and pass the focused tests**
+- [x] **Step 7: Run and pass the focused tests**
 
 Run: `cd backend && python -m pytest tests/api/test_health.py -q`
 
 Expected: 3 tests pass: liveness, readiness available, readiness unavailable.
 
-- [ ] **Step 8: Commit the runnable skeleton**
+- [x] **Step 8: Commit the runnable skeleton**
 
 ```bash
 git add .gitignore backend compose.yaml scripts/verify-backend.sh

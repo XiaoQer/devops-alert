@@ -5,6 +5,10 @@
 .env.*
 !.env.example
 __pycache__/
+*.egg-info/
+.venv/
+.coverage
+htmlcov/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

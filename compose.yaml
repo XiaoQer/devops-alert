@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${II_POSTGRES_DB:?请设置 II_POSTGRES_DB}
+      POSTGRES_USER: ${II_POSTGRES_USER:?请设置 II_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${II_POSTGRES_PASSWORD:?请设置 II_POSTGRES_PASSWORD}
+    ports:
+      - "${II_POSTGRES_PORT:-55432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - incident-intelligence-postgres:/var/lib/postgresql/data
+
+volumes:
+  incident-intelligence-postgres:
