@@ -12,6 +12,7 @@ EXPECTED_TABLES = {
     "diagnosis_runs",
     "ingestion_keys",
     "audit_events",
+    "signal_intake_results",
 }
 
 

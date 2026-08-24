@@ -46,7 +46,7 @@
 - 产生：`SignalIntakeResultRow`
 - 保持：人工报告首次提交与重放的现有 HTTP 契约
 
-- [ ] **步骤 1：编写模型和数据库边界失败测试**
+- [x] **步骤 1：编写模型和数据库边界失败测试**
 
 在领域测试中断言新字段必填且有界，在迁移测试中先升级到 `0001_initial_domain`、插入一套人工报告记录、再升级到 head 并断言回填：
 
@@ -76,7 +76,7 @@ def test_existing_manual_rows_are_backfilled_without_plain_idempotency_key(
 
 同时断言 `(source, source_instance, source_alert_key)` 唯一、event_type 检查约束生效、signal_intake_results 不允许超长 outcome 或指纹。
 
-- [ ] **步骤 2：运行失败测试并确认缺少 0002 迁移**
+- [x] **步骤 2：运行失败测试并确认缺少 0002 迁移**
 
 运行：
 
@@ -90,7 +90,7 @@ II_TEST_DATABASE_URL="$II_LOCAL_TEST_DATABASE_URL" .venv/bin/python -m pytest \
 
 预期：失败原因是新字段、结果表和迁移不存在，而不是测试环境或连接错误。
 
-- [ ] **步骤 3：实现领域字段、ORM 与显式迁移**
+- [x] **步骤 3：实现领域字段、ORM 与显式迁移**
 
 迁移增加：
 
@@ -112,7 +112,7 @@ sa.UniqueConstraint(
 
 创建 `signal_intake_results`，主键为 `(source, source_event_id)`，列为 command_fingerprint、signal_event_id、可空 alert_id、outcome、created_at；只保存 ID 与固定结果码。
 
-- [ ] **步骤 4：让人工报告写入新字段并保持读取白名单**
+- [x] **步骤 4：让人工报告写入新字段并保持读取白名单**
 
 人工报告构造 SignalEvent 与 Alert 时使用：
 
@@ -123,7 +123,7 @@ manual_alert_key = sha256(idempotency_key.encode("utf-8")).hexdigest()
 
 SignalEvent 使用 `event_type="manual.reported"`；Alert 使用 `source="manual"`、上述摘要和 `state_changed_at=now`。读取 API 增加 event_type 与 Alert 新字段，但继续排除 source_event_id、payload_fingerprint 和幂等记录。
 
-- [ ] **步骤 5：验证迁移往返和现有能力回归**
+- [x] **步骤 5：验证迁移往返和现有能力回归**
 
 运行：
 

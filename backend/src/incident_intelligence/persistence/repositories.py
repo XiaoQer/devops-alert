@@ -38,6 +38,7 @@ class RecordRepositories:
                 id=signal.id,
                 source=signal.source,
                 source_event_id=signal.source_event_id,
+                event_type=signal.event_type,
                 title=signal.title,
                 summary=signal.summary,
                 severity=signal.severity,
@@ -58,6 +59,9 @@ class RecordRepositories:
             AlertRow(
                 id=alert.id,
                 signal_event_id=alert.signal_event_id,
+                source=alert.source,
+                source_instance=alert.source_instance,
+                source_alert_key=alert.source_alert_key,
                 state=alert.state.value,
                 title=alert.title,
                 severity=alert.severity,
@@ -65,6 +69,7 @@ class RecordRepositories:
                 environment=alert.environment,
                 first_observed_at=alert.first_observed_at,
                 last_observed_at=alert.last_observed_at,
+                state_changed_at=alert.state_changed_at,
                 created_at=alert.created_at,
                 version=alert.version,
             )

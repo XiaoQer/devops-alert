@@ -19,6 +19,7 @@ def make_signal(**overrides: object) -> SignalEventRow:
         "id": new_id("sig"),
         "source": "manual",
         "source_event_id": "manual-001",
+        "event_type": "manual.reported",
         "title": "支付接口错误率升高",
         "summary": "支付接口在生产环境持续返回错误",
         "severity": "high",
@@ -57,6 +58,9 @@ def test_alert_rejects_incident_state_value(migrated_engine: Engine) -> None:
             AlertRow(
                 id=new_id("alt"),
                 signal_event_id=signal.id,
+                source="manual",
+                source_instance="a" * 64,
+                source_alert_key="b" * 64,
                 state="DETECTED",
                 title=signal.title,
                 severity=signal.severity,
@@ -64,6 +68,7 @@ def test_alert_rejects_incident_state_value(migrated_engine: Engine) -> None:
                 environment=signal.environment,
                 first_observed_at=NOW,
                 last_observed_at=NOW,
+                state_changed_at=NOW,
                 created_at=NOW,
                 version=1,
             )
@@ -81,6 +86,9 @@ def test_alert_requires_existing_signal(migrated_engine: Engine) -> None:
             AlertRow(
                 id=new_id("alt"),
                 signal_event_id=new_id("sig"),
+                source="manual",
+                source_instance="a" * 64,
+                source_alert_key="b" * 64,
                 state="ACTIVE",
                 title="支付接口错误率升高",
                 severity="high",
@@ -88,6 +96,7 @@ def test_alert_requires_existing_signal(migrated_engine: Engine) -> None:
                 environment="production",
                 first_observed_at=NOW,
                 last_observed_at=NOW,
+                state_changed_at=NOW,
                 created_at=NOW,
                 version=1,
             )

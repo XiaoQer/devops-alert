@@ -82,6 +82,7 @@ def test_each_resource_exposes_only_its_normalized_contract(
         "signal_event_id": {
             "id",
             "source",
+            "event_type",
             "title",
             "summary",
             "severity",
@@ -96,6 +97,9 @@ def test_each_resource_exposes_only_its_normalized_contract(
         "alert_id": {
             "id",
             "signal_event_id",
+            "source",
+            "source_instance",
+            "source_alert_key",
             "state",
             "title",
             "severity",
@@ -103,6 +107,7 @@ def test_each_resource_exposes_only_its_normalized_contract(
             "environment",
             "first_observed_at",
             "last_observed_at",
+            "state_changed_at",
             "created_at",
             "version",
         },

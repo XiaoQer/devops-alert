@@ -18,6 +18,7 @@ def signal_payload() -> dict[str, object]:
         "id": new_id("sig"),
         "source": "manual",
         "source_event_id": "manual-001",
+        "event_type": "manual.reported",
         "title": "支付接口错误率升高",
         "summary": "支付接口在生产环境持续返回错误",
         "severity": "high",
@@ -49,6 +50,9 @@ def test_domain_models_keep_state_families_separate() -> None:
     alert = Alert(
         id=new_id("alt"),
         signal_event_id=new_id("sig"),
+        source="manual",
+        source_instance="a" * 64,
+        source_alert_key="b" * 64,
         state=AlertState.ACTIVE,
         title="支付接口错误率升高",
         severity="high",
@@ -56,6 +60,7 @@ def test_domain_models_keep_state_families_separate() -> None:
         environment="production",
         first_observed_at=NOW,
         last_observed_at=NOW,
+        state_changed_at=NOW,
         created_at=NOW,
     )
     incident = Incident(
@@ -106,3 +111,37 @@ def test_domain_models_normalize_aware_timestamps_to_utc() -> None:
 
     assert signal.observed_at == NOW
     assert signal.observed_at.tzinfo is UTC
+
+
+def test_signal_event_rejects_unknown_event_type() -> None:
+    payload = signal_payload()
+    payload["event_type"] = "experiment.started"
+
+    with pytest.raises(ValidationError):
+        SignalEvent.model_validate(payload)
+
+
+def test_alert_requires_bounded_normalized_source_identity() -> None:
+    payload = {
+        "id": new_id("alt"),
+        "signal_event_id": new_id("sig"),
+        "source": "manual",
+        "source_instance": "not-a-digest",
+        "source_alert_key": "x" * 129,
+        "state": AlertState.ACTIVE,
+        "title": "支付接口错误率升高",
+        "severity": "high",
+        "service": "payment-api",
+        "environment": "production",
+        "first_observed_at": NOW,
+        "last_observed_at": NOW,
+        "state_changed_at": NOW,
+        "created_at": NOW,
+    }
+
+    with pytest.raises(ValidationError) as error:
+        Alert.model_validate(payload)
+
+    error_locations = {item["loc"] for item in error.value.errors()}
+    assert ("source_instance",) in error_locations
+    assert ("source_alert_key",) in error_locations

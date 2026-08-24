@@ -16,6 +16,7 @@ class ResourceResponse(BaseModel):
 
 class SignalEventResponse(ResourceResponse):
     source: str
+    event_type: Literal["manual.reported", "alert.firing", "alert.resolved"]
     title: str
     summary: str
     severity: Literal["critical", "high", "medium", "low"]
@@ -28,6 +29,9 @@ class SignalEventResponse(ResourceResponse):
 
 class AlertResponse(ResourceResponse):
     signal_event_id: str
+    source: str
+    source_instance: str
+    source_alert_key: str
     state: Literal["ACTIVE", "RESOLVED", "SUPPRESSED"]
     title: str
     severity: Literal["critical", "high", "medium", "low"]
@@ -35,6 +39,7 @@ class AlertResponse(ResourceResponse):
     environment: Literal["production", "staging", "development", "unknown"]
     first_observed_at: datetime
     last_observed_at: datetime
+    state_changed_at: datetime
 
 
 class IncidentResponse(ResourceResponse):

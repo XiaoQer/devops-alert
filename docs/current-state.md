@@ -38,6 +38,19 @@
 
 Compose 独立环境中的最终验证结果为 91 项测试通过，覆盖率 95.21%，Ruff、格式检查、Mypy、依赖一致性和 PostgreSQL 集成测试通过。真实 HTTP 冒烟验证了首次创建 201、相同内容重放 200、四个 ID 一致，以及四类资源读取 4/4 成功。
 
+## 2026-08-24 后端阶段 2 实施中
+
+已经实现并验证：
+
+- SignalEvent 增加版本化事件类型，Alert 增加来源、来源实例摘要、稳定告警键和状态变更时间；
+- PostgreSQL `0002_multi_source_signal_intake` 迁移，可安全回填现有人工报告数据并可完整降级；
+- 新增 `signal_intake_results` 幂等结果表骨架，只允许保存规范化 ID、固定结果码和时间，不保存原始请求；
+- 人工报告已适配新模型，幂等键只生成不可逆告警键摘要，不进入 Alert 读取响应的原始字段；
+- 资源读取 API 显式展示事件类型与 Alert 规范化来源身份，同时继续排除 source_event_id、payload_fingerprint 和幂等记录；
+- 统一验证为 96 项测试通过，覆盖率 96.53%，Ruff、格式检查、Mypy、迁移往返和 PostgreSQL 集成测试通过。
+
+尚未实现：Alert 投影纯领域决策、共享外部信号接入服务、Alertmanager 与 CloudEvents 适配器及其 HTTP 入口。因此当前仍不能接收真实外部告警。
+
 仍未实现：
 
 - Alertmanager、CloudEvents 和其他外部适配器；
@@ -47,6 +60,7 @@ Compose 独立环境中的最终验证结果为 91 项测试通过，覆盖率 9
 
 ## 下一步门槛
 
-1. 为 Alertmanager 与 CloudEvents 入口建立新的活跃规格和实现计划；
-2. 设计轻量服务目录和可解释事故关联的下一阶段数据模型；
-3. 在上述能力实现前，不得把关联、自动取证、Worker 或 AI 标记为可用。
+1. 实现并验证 Alert 的 firing、resolved、乱序、重开和孤立恢复纯领域决策；
+2. 实现共享外部信号接入服务后，再分别接入 Alertmanager 与 CloudEvents；
+3. 完成多源接入后再设计轻量服务目录和可解释事故关联；
+4. 在上述能力实现前，不得把外部接入、关联、自动取证、Worker 或 AI 标记为可用。

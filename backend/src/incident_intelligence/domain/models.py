@@ -7,6 +7,7 @@ from incident_intelligence.domain.enums import AlertState, DiagnosisState, Incid
 
 Severity = Literal["critical", "high", "medium", "low"]
 Environment = Literal["production", "staging", "development", "unknown"]
+EventType = Literal["manual.reported", "alert.firing", "alert.resolved"]
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 Summary = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2_000)]
 ServiceName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
@@ -32,6 +33,7 @@ class SignalEvent(FrozenDomainModel):
     id: str = Field(pattern=r"^sig_[0-9a-f]{32}$")
     source: str = Field(min_length=1, max_length=64)
     source_event_id: str = Field(min_length=1, max_length=256)
+    event_type: EventType
     title: Title
     summary: Summary
     severity: Severity
@@ -46,6 +48,9 @@ class SignalEvent(FrozenDomainModel):
 class Alert(FrozenDomainModel):
     id: str = Field(pattern=r"^alt_[0-9a-f]{32}$")
     signal_event_id: str = Field(pattern=r"^sig_[0-9a-f]{32}$")
+    source: str = Field(min_length=1, max_length=64)
+    source_instance: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_alert_key: str = Field(min_length=1, max_length=128)
     state: AlertState
     title: Title
     severity: Severity
@@ -53,6 +58,7 @@ class Alert(FrozenDomainModel):
     environment: Environment
     first_observed_at: UtcAwareDatetime
     last_observed_at: UtcAwareDatetime
+    state_changed_at: UtcAwareDatetime
 
 
 class Incident(FrozenDomainModel):

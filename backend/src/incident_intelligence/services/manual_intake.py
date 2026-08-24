@@ -67,6 +67,7 @@ IdempotencyKey = Annotated[str, StringConstraints(min_length=1, max_length=256)]
 
 class ManualIntakeService:
     SCOPE = "manual-report"
+    SOURCE_INSTANCE = sha256(b"manual").hexdigest()
 
     def __init__(
         self,
@@ -116,6 +117,7 @@ class ManualIntakeService:
                 id=self._id_factory("sig"),
                 source="manual",
                 source_event_id=idempotency_key,
+                event_type="manual.reported",
                 title=command.title,
                 summary=command.summary,
                 severity=command.severity,
@@ -130,6 +132,9 @@ class ManualIntakeService:
             alert = Alert(
                 id=self._id_factory("alt"),
                 signal_event_id=signal.id,
+                source="manual",
+                source_instance=self.SOURCE_INSTANCE,
+                source_alert_key=sha256(idempotency_key.encode("utf-8")).hexdigest(),
                 state=AlertState.ACTIVE,
                 title=signal.title,
                 severity=signal.severity,
@@ -137,6 +142,7 @@ class ManualIntakeService:
                 environment=signal.environment,
                 first_observed_at=signal.observed_at,
                 last_observed_at=signal.observed_at,
+                state_changed_at=now,
                 created_at=now,
             )
             incident = Incident(

@@ -69,8 +69,21 @@ def test_manual_report_creates_four_records_and_audit_in_one_transaction(
 
     assert result.replayed is False
     with session_factory() as session:
-        assert session.get(SignalEventRow, result.signal_event_id).source == "manual"  # type: ignore[union-attr]
-        assert session.get(AlertRow, result.alert_id).state == "ACTIVE"  # type: ignore[union-attr]
+        signal = session.get(SignalEventRow, result.signal_event_id)
+        alert = session.get(AlertRow, result.alert_id)
+        assert signal is not None
+        assert alert is not None
+        assert signal.source == "manual"
+        assert signal.event_type == "manual.reported"
+        assert alert.state == "ACTIVE"
+        assert alert.source == "manual"
+        assert (
+            alert.source_instance
+            == "36bde66f289a35683683b041c6d8f418a5f36607b547da25d00ad55891e80b88"
+        )
+        assert len(alert.source_alert_key) == 64
+        assert alert.source_alert_key != "key-1"
+        assert alert.state_changed_at == NOW
         assert session.get(IncidentRow, result.incident_id).state == "DETECTED"  # type: ignore[union-attr]
         assert session.get(DiagnosisRunRow, result.diagnosis_run_id).state == "QUEUED"  # type: ignore[union-attr]
         assert count_rows(session, AuditEventRow) == 4

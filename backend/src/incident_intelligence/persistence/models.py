@@ -10,6 +10,10 @@ from incident_intelligence.persistence.base import Base
 
 SEVERITY_VALUES = "'critical', 'high', 'medium', 'low'"
 ENVIRONMENT_VALUES = "'production', 'staging', 'development', 'unknown'"
+EVENT_TYPE_VALUES = "'manual.reported', 'alert.firing', 'alert.resolved'"
+PROJECTION_OUTCOME_VALUES = (
+    "'opened', 'updated', 'resolved', 'reopened', 'stale', 'orphan_resolved'"
+)
 
 
 class SignalEventRow(Base):
@@ -18,12 +22,14 @@ class SignalEventRow(Base):
         UniqueConstraint("source", "source_event_id", name="source_identity"),
         CheckConstraint(f"severity IN ({SEVERITY_VALUES})", name="signal_severity"),
         CheckConstraint(f"environment IN ({ENVIRONMENT_VALUES})", name="signal_environment"),
+        CheckConstraint(f"event_type IN ({EVENT_TYPE_VALUES})", name="signal_event_type"),
         Index("ix_signal_events_observed_at", "observed_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     source: Mapped[str] = mapped_column(String(64), nullable=False)
     source_event_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     summary: Mapped[str] = mapped_column(String(2_000), nullable=False)
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -43,6 +49,11 @@ class AlertRow(Base):
         CheckConstraint("state IN ('ACTIVE', 'RESOLVED', 'SUPPRESSED')", name="alert_state"),
         CheckConstraint(f"severity IN ({SEVERITY_VALUES})", name="alert_severity"),
         CheckConstraint(f"environment IN ({ENVIRONMENT_VALUES})", name="alert_environment"),
+        CheckConstraint("char_length(source_instance) = 64", name="alert_source_instance"),
+        CheckConstraint("char_length(source_alert_key) >= 1", name="alert_source_alert_key"),
+        UniqueConstraint(
+            "source", "source_instance", "source_alert_key", name="alert_source_identity"
+        ),
         Index("ix_alerts_state", "state"),
         Index("ix_alerts_signal_event_id", "signal_event_id"),
     )
@@ -51,6 +62,9 @@ class AlertRow(Base):
     signal_event_id: Mapped[str] = mapped_column(
         ForeignKey("signal_events.id", ondelete="RESTRICT"), nullable=False
     )
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_instance: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_alert_key: Mapped[str] = mapped_column(String(128), nullable=False)
     state: Mapped[str] = mapped_column(String(32), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -58,6 +72,7 @@ class AlertRow(Base):
     environment: Mapped[str] = mapped_column(String(32), nullable=False)
     first_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state_changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     version: Mapped[int] = mapped_column(nullable=False)
 
@@ -123,6 +138,31 @@ class IngestionKeyRow(Base):
     alert_id: Mapped[str] = mapped_column(String(36), nullable=False)
     incident_id: Mapped[str] = mapped_column(String(36), nullable=False)
     diagnosis_run_id: Mapped[str] = mapped_column(String(37), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SignalIntakeResultRow(Base):
+    __tablename__ = "signal_intake_results"
+    __table_args__ = (
+        CheckConstraint("char_length(source_event_id) = 64", name="intake_source_event_id"),
+        CheckConstraint("char_length(command_fingerprint) = 64", name="intake_command_fingerprint"),
+        CheckConstraint(
+            f"outcome IN ({PROJECTION_OUTCOME_VALUES})", name="intake_projection_outcome"
+        ),
+        Index("ix_signal_intake_results_signal_event_id", "signal_event_id"),
+        Index("ix_signal_intake_results_alert_id", "alert_id"),
+    )
+
+    source: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    command_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    signal_event_id: Mapped[str] = mapped_column(
+        ForeignKey("signal_events.id", ondelete="RESTRICT"), nullable=False
+    )
+    alert_id: Mapped[str | None] = mapped_column(
+        ForeignKey("alerts.id", ondelete="RESTRICT"), nullable=True
+    )
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
