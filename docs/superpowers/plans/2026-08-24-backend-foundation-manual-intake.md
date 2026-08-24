@@ -556,7 +556,7 @@ Run: `cd backend && python -m pytest tests/api/test_manual_reports.py -q`
 
 Expected: all manual-report API tests pass.
 
-- [ ] **Step 7: Commit the endpoint**
+- [x] **Step 7: Commit the endpoint**
 
 ```bash
 git add backend/src/incident_intelligence/api backend/src/incident_intelligence/main.py backend/tests/api/test_manual_reports.py
