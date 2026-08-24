@@ -170,7 +170,7 @@ git commit -m "feat: extend signal and alert persistence"
 - 产生：`ProjectionDecision(alert, outcome, reason_code, changes_projection)`
 - 产生：`decide_alert_projection(current, command, new_alert_id, signal_event_id, now) -> ProjectionDecision`
 
-- [ ] **步骤 1：写出六种状态行为的失败测试**
+- [x] **步骤 1：写出六种状态行为的失败测试**
 
 使用手工固定 UTC 时间和字面量期望，覆盖首次 firing、ACTIVE 更新、resolved、旧 firing、较新轮次 firing 重开和孤立 resolved：
 
@@ -196,13 +196,13 @@ def test_resolved_alert_reopens_only_for_a_newer_episode() -> None:
 
 增加同一 event_at 冲突时 resolved 优先、迟到事件不覆盖 signal_event_id、同轮 firing 内容按接收顺序更新但不能倒退 RESOLVED 的测试。
 
-- [ ] **步骤 2：运行测试并确认领域模块不存在**
+- [x] **步骤 2：运行测试并确认领域模块不存在**
 
 运行：`cd backend && .venv/bin/python -m pytest tests/unit/domain/test_signal_intake.py -q`
 
 预期：导入失败，明确指向 `domain.signal_intake` 尚未实现。
 
-- [ ] **步骤 3：实现不可变命令与纯决策函数**
+- [x] **步骤 3：实现不可变命令与纯决策函数**
 
 `SignalCommand` 使用 Pydantic frozen 模型，限制 source、摘要字段、64 位摘要、最多 20 个 facts 和 normalization_reason_codes。函数不得访问数据库、时钟、UUID 或 HTTP。
 
@@ -234,7 +234,7 @@ class SignalCommand(BaseModel):
 
 决策顺序固定为：孤立 resolved → 事件早于 last_observed → RESOLVED 旧轮 firing → 新轮重开 → ACTIVE resolved → ACTIVE firing 更新。返回新 Alert 时递增版本，stale 与 orphan 不修改现有对象。
 
-- [ ] **步骤 4：运行领域测试并执行变异检查**
+- [x] **步骤 4：运行领域测试并执行变异检查**
 
 运行：`cd backend && .venv/bin/python -m pytest tests/unit/domain/test_signal_intake.py -q`
 

@@ -2,7 +2,7 @@
 
 ## 状态
 
-已确认，实施中。领域模型与数据库迁移已完成，外部适配器和共享接入服务尚未实现。
+已确认，实施中。领域模型、数据库迁移和纯领域 Alert 投影已完成，外部适配器和共享接入服务尚未实现。
 
 ## 背景与目标
 
@@ -77,6 +77,7 @@ Alertmanager 使用 `fingerprint`，CloudEvents 使用受限 `data.alert_key` �
 - 历史人工报告数据已验证回填 `event_type`、来源摘要和状态变更时间，原始幂等键未复制到 Alert；
 - SignalEvent、Alert 和 `signal_intake_results` 的新增数据库约束及 ORM 元数据一致性已验证；
 - 人工报告首次提交、重放、事务回滚与四类资源读取契约已回归；
-- 当前统一验证为 96 项测试通过，覆盖率 96.53%，Ruff、格式和 Mypy 通过。
+- Alert 投影已验证 opened、updated、resolved、reopened、stale、orphan_resolved 六类结果，以及乱序、同时间恢复优先和人工抑制保护；
+- 当前统一验证为 107 项测试通过，覆盖率 96.83%，Ruff、格式和 Mypy 通过。
 
 Alertmanager、CloudEvents、共享接入服务和真实外部 HTTP 冒烟仍未实施，不得据此把完整规格标记为可用。
