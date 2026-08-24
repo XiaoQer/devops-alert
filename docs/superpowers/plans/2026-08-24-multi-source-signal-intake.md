@@ -139,7 +139,7 @@ II_TEST_DATABASE_URL="$II_LOCAL_TEST_DATABASE_URL" .venv/bin/python -m pytest \
 
 预期：迁移、人工报告和读取 API 全部通过；旧幂等键未复制到 Alert 新列。
 
-- [ ] **步骤 6：提交领域和迁移**
+- [x] **步骤 6：提交领域和迁移**
 
 ```bash
 git add backend/src/incident_intelligence/domain/models.py \
