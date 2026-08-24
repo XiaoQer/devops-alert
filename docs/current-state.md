@@ -4,6 +4,8 @@
 
 - 独立项目目录和 Git 仓库已建立。
 - 产品边界、目标架构和第一份活跃规格已记录。
+- 已确认 Python/FastAPI、Pydantic、SQLAlchemy/Alembic、PostgreSQL 与 Vue 3/TypeScript/Vite/Pinia 技术基线。
+- 已确认首期使用 PostgreSQL 持久任务和租约，暂不引入 Kafka。
 - 当前没有后端、前端、数据库、迁移、容器、Kubernetes Chart、连接器、Worker 或测试实现。
 - 当前没有从旧故障注入项目复制代码、数据或 Git 历史。
 - 当前没有接入 Prometheus、Alertmanager、OpenTelemetry、日志、Trace、Kubernetes 或 AI 提供方。
@@ -11,7 +13,7 @@
 
 ## 下一步门槛
 
-1. 用户审阅并确认初始化规格；
+1. 用户审阅并确认更新后的设计规格；
 2. 编写阶段 1 的详细实施计划；
-3. 确认技术栈和本地运行边界；
+3. 在实施计划中锁定运行时版本、目录结构和本地运行边界；
 4. 采用测试驱动方式建立工程基线和三层领域模型。

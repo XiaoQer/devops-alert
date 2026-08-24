@@ -33,6 +33,17 @@
 
 完整设计见 `docs/superpowers/specs/2026-08-24-multi-source-incident-center-design.md`。
 
+### 技术基线
+
+- 核心控制器和可选 Worker 使用 Python；
+- HTTP API 使用 FastAPI，契约模型使用 Pydantic；
+- 数据访问使用 SQLAlchemy，迁移使用 Alembic，主数据库使用 PostgreSQL；
+- 前端使用 Vue 3、TypeScript、Vite 和 Pinia；
+- 前端接口类型从后端 OpenAPI 契约生成；
+- 首期异步任务由 PostgreSQL 持久任务、租约和超时接管承载，不引入 Kafka；
+- 测试使用 Pytest、Vitest 和 Playwright；
+- 前后端独立构建，默认成套部署，可选 Worker 独立部署。
+
 实施必须拆分为独立阶段：
 
 1. 工程基线、三层领域模型、DiagnosisRun 和兼容入口；
