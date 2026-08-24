@@ -1,0 +1,73 @@
+from datetime import UTC, datetime
+from typing import Annotated, Literal
+
+from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints
+
+from incident_intelligence.domain.enums import AlertState, DiagnosisState, IncidentState
+
+Severity = Literal["critical", "high", "medium", "low"]
+Environment = Literal["production", "staging", "development", "unknown"]
+Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+Summary = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2_000)]
+ServiceName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
+FactKey = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
+FactValue = Annotated[str, StringConstraints(strip_whitespace=True, max_length=512)]
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value.astimezone(UTC)
+
+
+UtcAwareDatetime = Annotated[AwareDatetime, AfterValidator(_as_utc)]
+
+
+class FrozenDomainModel(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    created_at: UtcAwareDatetime
+    version: int = Field(default=1, ge=1)
+
+
+class SignalEvent(FrozenDomainModel):
+    id: str = Field(pattern=r"^sig_[0-9a-f]{32}$")
+    source: str = Field(min_length=1, max_length=64)
+    source_event_id: str = Field(min_length=1, max_length=256)
+    title: Title
+    summary: Summary
+    severity: Severity
+    service: ServiceName
+    environment: Environment
+    observed_at: UtcAwareDatetime
+    received_at: UtcAwareDatetime
+    facts: dict[FactKey, FactValue] = Field(default_factory=dict, max_length=50)
+    payload_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class Alert(FrozenDomainModel):
+    id: str = Field(pattern=r"^alt_[0-9a-f]{32}$")
+    signal_event_id: str = Field(pattern=r"^sig_[0-9a-f]{32}$")
+    state: AlertState
+    title: Title
+    severity: Severity
+    service: ServiceName
+    environment: Environment
+    first_observed_at: UtcAwareDatetime
+    last_observed_at: UtcAwareDatetime
+
+
+class Incident(FrozenDomainModel):
+    id: str = Field(pattern=r"^inc_[0-9a-f]{32}$")
+    primary_alert_id: str = Field(pattern=r"^alt_[0-9a-f]{32}$")
+    state: IncidentState
+    title: Title
+    severity: Severity
+    service: ServiceName
+    environment: Environment
+    detected_at: UtcAwareDatetime
+
+
+class DiagnosisRun(FrozenDomainModel):
+    id: str = Field(pattern=r"^diag_[0-9a-f]{32}$")
+    incident_id: str = Field(pattern=r"^inc_[0-9a-f]{32}$")
+    incident_context_version: int = Field(ge=1)
+    state: DiagnosisState

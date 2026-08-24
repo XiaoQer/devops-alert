@@ -223,7 +223,7 @@ git commit -m "feat: establish backend runtime and health checks"
 - Produces: `reject_forbidden_identity(value: object) -> None`
 - Produces: `new_id(prefix: Literal["sig", "alt", "inc", "diag", "aud"]) -> str`
 
-- [ ] **Step 1: Write failing tests for independent states and immutable records**
+- [x] **Step 1: Write failing tests for independent states and immutable records**
 
 ```python
 def test_state_families_are_not_interchangeable():
@@ -238,13 +238,13 @@ def test_signal_event_is_immutable():
         signal.title = "changed"
 ```
 
-- [ ] **Step 2: Run the model tests and observe import failure**
+- [x] **Step 2: Run the model tests and observe import failure**
 
 Run: `cd backend && python -m pytest tests/unit/domain/test_models.py -q`
 
 Expected: FAIL because the domain package does not exist.
 
-- [ ] **Step 3: Define the exact initial states and transitions**
+- [x] **Step 3: Define the exact initial states and transitions**
 
 ```python
 class AlertState(StrEnum):
@@ -277,7 +277,7 @@ class DiagnosisState(StrEnum):
 
 Allow only documented forward transitions; terminal states have no automatic exit. This task tests policies only and does not expose transition APIs.
 
-- [ ] **Step 4: Write failing recursive forbidden-identity tests**
+- [x] **Step 4: Write failing recursive forbidden-identity tests**
 
 ```python
 @pytest.mark.parametrize(
@@ -295,21 +295,21 @@ def test_experiment_identity_is_rejected_at_any_depth(payload):
         reject_forbidden_identity(payload)
 ```
 
-- [ ] **Step 5: Implement normalized-key rejection**
+- [x] **Step 5: Implement normalized-key rejection**
 
 Normalize keys by Unicode case-folding and removing `-`, `_`, spaces, and punctuation. Reject normalized keys `scenarioid`, `scenarioversion`, `experimentid`, `injectionaction`, and `groundtruth` anywhere in mappings or sequences. The exception exposes only a stable reason code and the rejected key name, never its value.
 
-- [ ] **Step 6: Implement immutable records and prefixed identifiers**
+- [x] **Step 6: Implement immutable records and prefixed identifiers**
 
 Each record uses `ConfigDict(frozen=True, extra="forbid")`, a prefixed UUID identifier, `created_at`, and its own state type. `SignalEvent` additionally stores `source`, `source_event_id`, `observed_at`, `received_at`, bounded normalized facts, and a SHA-256 payload fingerprint. No record contains an experiment-related field.
 
-- [ ] **Step 7: Run all domain tests**
+- [x] **Step 7: Run all domain tests**
 
 Run: `cd backend && python -m pytest tests/unit/domain -q`
 
 Expected: all domain model, transition, identifier, and forbidden-identity tests pass.
 
-- [ ] **Step 8: Commit the domain layer**
+- [x] **Step 8: Commit the domain layer**
 
 ```bash
 git add backend/src/incident_intelligence/domain backend/src/incident_intelligence/ids.py backend/tests/unit/domain
