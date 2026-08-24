@@ -16,6 +16,7 @@
 - CloudEvents 1.0 结构化 JSON 与 HTTP Binary 接入；
 - 人工报告、Alertmanager、CloudEvents 三套独立认证凭据；
 - 共享信号接入服务、来源事件幂等和 Alert 稳定身份；
+- 不含原始负载的外部信号幂等结果记录；
 - firing、更新、resolved、迟到、重开和相同时间冲突规则；
 - Alertmanager 最多 100 条、256 KiB；CloudEvents 单事件、64 KiB；
 - 原子事务、有界审计、并发重放和数据库失败回滚；

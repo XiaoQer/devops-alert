@@ -69,6 +69,18 @@ Alert 增加：
 
 迁移不得在新列中复制可读取的人工幂等键。
 
+### 4.3 SignalIntakeResult
+
+新增 `signal_intake_results` 幂等结果表，以 `(source, source_event_id)` 为主键，保存：
+
+- 规范化命令指纹；
+- signal_event_id；
+- 首次处理时的可选 alert_id；
+- 首次处理 outcome；
+- created_at。
+
+该表用于保证正常更新、迟到事件和孤立 resolved 在重放时返回与首次处理相同的资源引用。它不得保存来源 URI、原始正文、标题、摘要、标签、Token 或审计详情。人工报告继续使用现有 `ingestion_keys`，不迁移到该表。
+
 ## 5. Alertmanager 适配器
 
 ### 5.1 接口与认证
