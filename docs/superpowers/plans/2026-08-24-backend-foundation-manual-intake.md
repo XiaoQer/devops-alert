@@ -496,7 +496,7 @@ git commit -m "feat: add idempotent manual intake service"
 - Produces: bearer-token authentication using `II_API_TOKEN`
 - Produces: stable 201, 200 replay, 400, 401, 409, 413, and 422 contracts
 
-- [ ] **Step 1: Write failing authentication and input-bound tests**
+- [x] **Step 1: Write failing authentication and input-bound tests**
 
 ```python
 def test_manual_report_requires_bearer_token(client, valid_report):
@@ -516,13 +516,13 @@ def test_unknown_and_experiment_fields_are_rejected(client, auth_headers, valid_
     assert response.json()["code"] == "forbidden_identity"
 ```
 
-- [ ] **Step 2: Run the API tests before registering the route**
+- [x] **Step 2: Run the API tests before registering the route**
 
 Run: `cd backend && python -m pytest tests/api/test_manual_reports.py -q`
 
 Expected: FAIL with 404 because the route does not exist.
 
-- [ ] **Step 3: Define the bounded request contract**
+- [x] **Step 3: Define the bounded request contract**
 
 The request contains only:
 
@@ -540,15 +540,15 @@ class ManualReportRequest(BaseModel):
 
 Reject timestamps more than five minutes in the future. Do not include arbitrary metadata, attachments, raw payload, query text, or credentials.
 
-- [ ] **Step 4: Implement constant-time bearer authentication and request-size middleware**
+- [x] **Step 4: Implement constant-time bearer authentication and request-size middleware**
 
 Compare the bearer token to `Settings.api_token` with `secrets.compare_digest`. Never log either value. Reject a declared or streamed body exceeding `65536` bytes before JSON parsing with HTTP 413 and code `request_too_large`.
 
-- [ ] **Step 5: Map service outcomes to stable API responses**
+- [x] **Step 5: Map service outcomes to stable API responses**
 
 First submission returns HTTP 201; an identical replay returns HTTP 200 with the same four IDs and `replayed=true`; changed payload under the same idempotency key returns HTTP 409. Missing or malformed `Idempotency-Key` returns HTTP 400. Validation errors are converted to the common envelope without echoing rejected values.
 
-- [ ] **Step 6: Pass the complete API matrix**
+- [x] **Step 6: Pass the complete API matrix**
 
 Test: valid create, identical replay, changed-payload conflict, missing/malformed token, missing/oversized idempotency key, unknown field, every forbidden identity spelling at nested label depth, body over 64 KiB, future time, label-count bound, database failure, and absence of secrets/raw bodies in captured logs.
 
