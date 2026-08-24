@@ -617,7 +617,7 @@ Run: `cd backend && python -m pytest tests/api/test_resources.py -q`
 
 Expected: independent reads, authentication, not-found, field exclusion, and query-count tests pass.
 
-- [ ] **Step 6: Commit the read APIs**
+- [x] **Step 6: Commit the read APIs**
 
 ```bash
 git add backend/src/incident_intelligence/api backend/src/incident_intelligence/persistence/repositories.py backend/tests/api/test_resources.py
@@ -639,7 +639,7 @@ git commit -m "feat: expose incident domain read APIs"
 - Produces: reproducible startup and verification instructions
 - Produces: evidence mapping for only the acceptance criteria implemented in this phase
 
-- [ ] **Step 1: Run the fresh full verifier**
+- [x] **Step 1: Run the fresh full verifier**
 
 Run:
 
@@ -651,19 +651,19 @@ II_TEST_DATABASE_URL="$II_LOCAL_TEST_DATABASE_URL" ../scripts/verify-backend.sh
 
 `II_LOCAL_TEST_DATABASE_URL` is supplied only in the invoking shell or secret manager and is never written to the repository. Expected: Ruff, formatting, Mypy, migration integration tests, API tests, and coverage threshold all pass with zero failures.
 
-- [ ] **Step 2: Perform an actual local API smoke test**
+- [x] **Step 2: Perform an actual local API smoke test**
 
 Start the API with environment-supplied local values, submit one manual report, replay it with the same idempotency key, read all four resulting resources, and verify the second response returns the same IDs. Use a temporary local token that is never written to a file or verification report.
 
-- [ ] **Step 3: Verify prohibited content is absent**
+- [x] **Step 3: Verify prohibited content is absent**
 
 Run repository scans for secret-shaped values and prohibited experiment identity. Identity words may appear only in explicit rejection code, boundary tests, and documentation; they must not appear as accepted model or database columns. Record file paths and results, not secret values.
 
-- [ ] **Step 4: Update current state without overstating capability**
+- [x] **Step 4: Update current state without overstating capability**
 
 Document as implemented only: health/readiness, initial schema, manual intake, idempotent four-record creation, audit actions, and four read endpoints. Keep Alertmanager, CloudEvents, correlation, evidence, Workers, AI, incident transitions, and frontend explicitly marked unimplemented.
 
-- [ ] **Step 5: Record acceptance evidence**
+- [x] **Step 5: Record acceptance evidence**
 
 `docs/verification/2026-08-24-backend-foundation.md` records commands, test counts, migration revision, smoke-test outcome, and known gaps. Do not include tokens, complete request payloads, database URLs with credentials, or raw logs.
 
