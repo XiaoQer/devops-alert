@@ -470,7 +470,7 @@ Run: `cd backend && python -m pytest tests/integration/services/test_manual_inta
 
 Expected: happy path, replay, conflict, concurrency, rollback, forbidden identity, and audit tests all pass.
 
-- [ ] **Step 7: Commit the use case**
+- [x] **Step 7: Commit the use case**
 
 ```bash
 git add backend/src/incident_intelligence/persistence backend/src/incident_intelligence/services backend/tests/integration/services
