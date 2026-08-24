@@ -581,7 +581,7 @@ git commit -m "feat: expose secured manual incident intake"
 - Produces: `GET /api/v1/diagnosis-runs/{diagnosis_run_id}`
 - Produces: a stable `resource_not_found` response without revealing whether another token can access a resource
 
-- [ ] **Step 1: Write failing independent-read tests**
+- [x] **Step 1: Write failing independent-read tests**
 
 ```python
 def test_created_resources_can_be_read_independently(client, created_ids, auth_headers):
@@ -597,21 +597,21 @@ def test_created_resources_can_be_read_independently(client, created_ids, auth_h
         assert response.json()["id"] == created_ids[field]
 ```
 
-- [ ] **Step 2: Run before route registration**
+- [x] **Step 2: Run before route registration**
 
 Run: `cd backend && python -m pytest tests/api/test_resources.py -q`
 
 Expected: FAIL with 404 route-not-found responses.
 
-- [ ] **Step 3: Implement focused repository lookups and response schemas**
+- [x] **Step 3: Implement focused repository lookups and response schemas**
 
 Each endpoint reads exactly one resource type. Responses may expose stable identifiers, bounded normalized facts, relationships by ID, current state, timestamps, and version. They must not expose database internals, idempotency keys, request fingerprints, API tokens, raw payloads, or audit details.
 
-- [ ] **Step 4: Add authorization, not-found, malformed-ID, and query-count tests**
+- [x] **Step 4: Add authorization, not-found, malformed-ID, and query-count tests**
 
 All four endpoints require the same bearer token. Malformed prefixed IDs and absent records return 404 with `resource_not_found`. Each endpoint performs at most two SQL statements and does not load unrelated resource bodies.
 
-- [ ] **Step 5: Run the read API suite**
+- [x] **Step 5: Run the read API suite**
 
 Run: `cd backend && python -m pytest tests/api/test_resources.py -q`
 

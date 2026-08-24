@@ -20,6 +20,18 @@ class RecordRepositories:
     def find_ingestion(self, scope: str, idempotency_key: str) -> IngestionKeyRow | None:
         return self._session.get(IngestionKeyRow, (scope, idempotency_key))
 
+    def find_signal(self, signal_event_id: str) -> SignalEventRow | None:
+        return self._session.get(SignalEventRow, signal_event_id)
+
+    def find_alert(self, alert_id: str) -> AlertRow | None:
+        return self._session.get(AlertRow, alert_id)
+
+    def find_incident(self, incident_id: str) -> IncidentRow | None:
+        return self._session.get(IncidentRow, incident_id)
+
+    def find_diagnosis(self, diagnosis_run_id: str) -> DiagnosisRunRow | None:
+        return self._session.get(DiagnosisRunRow, diagnosis_run_id)
+
     def add_signal(self, signal: SignalEvent) -> None:
         self._session.add(
             SignalEventRow(
