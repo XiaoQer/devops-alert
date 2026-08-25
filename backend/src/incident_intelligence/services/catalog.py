@@ -181,6 +181,13 @@ class ServiceCatalogService:
             uow.commit()
             return _service_from_row(row)
 
+    def get_service(self, service_id: CatalogId) -> ServiceCatalogEntry:
+        with self._uow_factory() as uow:
+            row = _catalog(uow).find_service(service_id)
+            if row is None:
+                raise CatalogResourceNotFound()
+            return _service_from_row(row)
+
     def create_dependency(
         self,
         command: CreateDependencyCommand,

@@ -6,6 +6,7 @@ from incident_intelligence.api.middleware import RequestBodyLimitMiddleware
 from incident_intelligence.api.router import create_router
 from incident_intelligence.persistence.session import get_engine, make_session_factory
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from incident_intelligence.services.catalog import ServiceCatalogService
 from incident_intelligence.services.manual_intake import ManualIntakeService
 from incident_intelligence.services.signal_intake import SignalIntakeService
 from incident_intelligence.settings import Settings
@@ -23,6 +24,9 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
     app.state.signal_intake_service = SignalIntakeService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
+    )
+    app.state.catalog_service = ServiceCatalogService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
     app.add_middleware(

@@ -8,6 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import SecretStr
 
 from incident_intelligence.api.errors import ApiError
+from incident_intelligence.services.catalog import ServiceCatalogService
 from incident_intelligence.services.manual_intake import ManualIntakeService
 from incident_intelligence.services.signal_intake import SignalIntakeService
 from incident_intelligence.settings import Settings
@@ -68,3 +69,7 @@ def get_manual_intake_service(request: Request) -> ManualIntakeService:
 
 def get_signal_intake_service(request: Request) -> SignalIntakeService:
     return cast(SignalIntakeService, request.app.state.signal_intake_service)
+
+
+def get_catalog_service(request: Request) -> ServiceCatalogService:
+    return cast(ServiceCatalogService, request.app.state.catalog_service)

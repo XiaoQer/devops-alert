@@ -473,7 +473,7 @@ git commit -m "feat: 管理版本化服务目录"
 - 产生：设计第 8 节的七个 `/api/v1/catalog` 接口。
 - 产生：固定 404、409、422、503 中文错误契约和有界分页响应。
 
-- [ ] **步骤 1：编写认证、创建和版本冲突失败 API 测试**
+- [x] **步骤 1：编写认证、创建和版本冲突失败 API 测试**
 
 ```python
 def test_only_manual_token_can_create_catalog_service(client, tokens):
@@ -499,7 +499,7 @@ def test_stale_expected_version_returns_safe_conflict(
     assert response.json()["code"] == "catalog_version_conflict"
 ```
 
-- [ ] **步骤 2：运行 API 测试并确认路由 404**
+- [x] **步骤 2：运行 API 测试并确认路由 404**
 
 ```bash
 cd backend
@@ -509,7 +509,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_BOOTSTRAP_URL" PYTHONPATH=. \
 
 预期：合法创建返回 404。
 
-- [ ] **步骤 3：实现严格 Schema、依赖注入和目录路由**
+- [x] **步骤 3：实现严格 Schema、依赖注入和目录路由**
 
 请求模型全部 `extra="forbid"`；列表参数固定 `limit=50, ge=1, le=100`、`offset ge=0, le=10000`。`get_catalog_service` 从 `app.state.catalog_service` 返回业务服务。路由异常映射：
 
@@ -524,11 +524,11 @@ except InvalidDependency as error:
 
 响应只返回目录白名单字段和分页元数据，不返回审计或内部图状态。
 
-- [ ] **步骤 4：补齐分页、依赖和安全边界测试**
+- [x] **步骤 4：补齐分页、依赖和安全边界测试**
 
 覆盖 101 上限、非法筛选、未知字段、禁止实验身份、重复服务、依赖环、停用和读取不存在。数据库故障返回固定 503；`caplog`、错误响应和审计不得包含 owner_team 原始请求以外的正文、Token 或禁止值。
 
-- [ ] **步骤 5：运行目录 API 与旧接口回归**
+- [x] **步骤 5：运行目录 API 与旧接口回归**
 
 ```bash
 cd backend
@@ -542,7 +542,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_BOOTSTRAP_URL" PYTHONPATH=. .venv/bin/pytest -q 
 
 预期：管理 Token 隔离和全部现有 API 契约通过。
 
-- [ ] **步骤 6：提交目录 API**
+- [x] **步骤 6：提交目录 API**
 
 ```bash
 git add backend/src/incident_intelligence/api \
