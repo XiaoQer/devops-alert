@@ -243,7 +243,7 @@ git commit -m "feat: 增加事故处置持久化结构"
 - Produces: `IncidentVersionConflict`、`IncidentOperationConflict`、`IncidentAlreadyClaimed`、`IncidentNotClaimed`、`IncidentClosed`、`InvalidIncidentOperation`。
 - Consumes: Task 1 状态机与 Task 2 ORM。
 
-- [ ] **Step 1: 编写认领、解除认领和状态推进失败测试**
+- [x] **Step 1: 编写认领、解除认领和状态推进失败测试**
 
 ```python
 def test_claim_release_and_transition_are_atomic(service, incident_id, session_factory):
@@ -266,7 +266,7 @@ def test_claim_release_and_transition_are_atomic(service, incident_id, session_f
     )
 ```
 
-- [ ] **Step 2: 编写记录、解决、重新打开和关闭失败测试**
+- [x] **Step 2: 编写记录、解决、重新打开和关闭失败测试**
 
 ```python
 def test_full_resolution_reopen_close_cycle(service, incident_id):
@@ -291,7 +291,7 @@ def test_full_resolution_reopen_close_cycle(service, incident_id):
 
 继续在同一测试中再次解决并关闭，断言最终 `state == CLOSED`、`resolved_at` 与 `closed_at` 非空，且第一次解决活动仍存在。
 
-- [ ] **Step 3: 编写幂等、版本冲突、并发和回滚失败测试**
+- [x] **Step 3: 编写幂等、版本冲突、并发和回滚失败测试**
 
 先定义七个独立用例，每个用例都创建自己的 Incident：`claim` 使用未认领 `DETECTED@v1`；`release` 使用已认领 `DETECTED@v2`；`transition` 使用 `DETECTED@v1` 进入 `TRIAGING`；`add_note` 使用 `DETECTED@v1`；`resolve` 使用 `DETECTED@v1`；`reopen` 使用 `RESOLVED@v2`；`close` 使用 `RESOLVED@v2`。对这七个用例参数化执行首次成功、相同请求精确重放、相同键不同正文冲突、陈旧版本零写入、两个独立 Session 并发只有一个成功，以及在活动/审计/幂等写入处注入异常后的完整回滚。
 
@@ -341,13 +341,13 @@ def test_stale_version_does_not_write_partial_rows(service, incident_id, session
 
 并发测试使用两个独立 Session 和 barrier 同时以相同 `expected_version` 操作，同一 Incident 只能有一个成功，另一个返回版本冲突；测试不得依赖线程执行顺序。
 
-- [ ] **Step 4: 运行测试确认服务缺失失败**
+- [x] **Step 4: 运行测试确认服务缺失失败**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/integration/services/test_incident_operations.py -q`
 
 Expected: collection FAIL，明确指向服务或仓储缺失。
 
-- [ ] **Step 5: 实现仓储、规范化指纹和事务模板**
+- [x] **Step 5: 实现仓储、规范化指纹和事务模板**
 
 ```python
 class IncidentOperationService:
@@ -365,13 +365,13 @@ class IncidentOperationService:
 
 `_execute_once` 使用 `session_factory.begin()`，先查幂等结果，再 `SELECT FOR UPDATE` Incident，按固定顺序校验、更新、追加 `IncidentActivityRow`、调用现有 `RecordRepositories.add_audit`、追加 `IncidentOperationRow`。安全审计详情只允许 `reason_code` 和 `activity_id`。
 
-- [ ] **Step 6: 运行聚焦测试和后端静态检查**
+- [x] **Step 6: 运行聚焦测试和后端静态检查**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/integration/services/test_incident_operations.py -q && .venv/bin/python -m ruff check src tests migrations && .venv/bin/python -m ruff format --check src tests migrations && .venv/bin/python -m mypy src migrations`
 
 Expected: 全部通过。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add backend/src/incident_intelligence/persistence/incident_operation_repository.py backend/src/incident_intelligence/services/incident_operations.py backend/src/incident_intelligence/main.py backend/src/incident_intelligence/api/dependencies.py backend/tests/integration/services/test_incident_operations.py

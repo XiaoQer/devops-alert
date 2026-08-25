@@ -12,6 +12,7 @@ from incident_intelligence.services.catalog import ServiceCatalogService
 from incident_intelligence.services.correlation import CorrelationReadService
 from incident_intelligence.services.correlation_jobs import CorrelationJobService
 from incident_intelligence.services.incident_center import IncidentCenterService
+from incident_intelligence.services.incident_operations import IncidentOperationService
 from incident_intelligence.services.manual_intake import ManualIntakeService
 from incident_intelligence.services.signal_intake import SignalIntakeService
 from incident_intelligence.settings import Settings
@@ -88,3 +89,7 @@ def get_correlation_job_service(request: Request) -> CorrelationJobService:
 
 def get_incident_center_service(request: Request) -> IncidentCenterService:
     return cast(IncidentCenterService, request.app.state.incident_center_service)
+
+
+def get_incident_operation_service(request: Request) -> IncidentOperationService:
+    return cast(IncidentOperationService, request.app.state.incident_operation_service)

@@ -15,6 +15,7 @@ from incident_intelligence.services.correlation import CorrelationReadService, C
 from incident_intelligence.services.correlation_jobs import CorrelationJobService
 from incident_intelligence.services.correlation_runner import CorrelationRunner
 from incident_intelligence.services.incident_center import IncidentCenterService
+from incident_intelligence.services.incident_operations import IncidentOperationService
 from incident_intelligence.services.manual_intake import ManualIntakeService
 from incident_intelligence.services.signal_intake import SignalIntakeService
 from incident_intelligence.settings import Settings
@@ -65,6 +66,7 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
     app.state.incident_center_service = IncidentCenterService(session_factory=session_factory)
+    app.state.incident_operation_service = IncidentOperationService(session_factory=session_factory)
     app.state.correlation_runner = CorrelationRunner(
         job_service=app.state.correlation_job_service,
         processor=app.state.correlation_service,
