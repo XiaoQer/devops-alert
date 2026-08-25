@@ -235,7 +235,7 @@ cd backend
 
 预期：UTC 类型和全部纯领域测试通过。
 
-- [ ] **步骤 5：提交 MySQL ORM 类型**
+- [x] **步骤 5：提交 MySQL ORM 类型**
 
 ```bash
 git add backend/src/incident_intelligence/persistence/types.py \
