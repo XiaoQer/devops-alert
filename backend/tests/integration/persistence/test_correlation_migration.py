@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import func, inspect, select
+from sqlalchemy import column, func, insert, inspect, select, table
 from sqlalchemy.dialects import mysql
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -82,8 +82,21 @@ def _seed_manual_incident(engine: Engine) -> tuple[str, str]:
             )
         )
         session.flush()
-        session.add(
-            IncidentRow(
+        historical_incidents = table(
+            "incidents",
+            column("id"),
+            column("primary_alert_id"),
+            column("state"),
+            column("title"),
+            column("severity"),
+            column("service"),
+            column("environment"),
+            column("detected_at"),
+            column("created_at"),
+            column("version"),
+        )
+        session.execute(
+            insert(historical_incidents).values(
                 id=incident_id,
                 primary_alert_id=alert_id,
                 state="DETECTED",
@@ -156,6 +169,22 @@ def test_downgrade_to_baseline_preserves_existing_incident_data(
 def test_correlation_migration_matches_orm_metadata(alembic_config: Config) -> None:
     command.upgrade(alembic_config, "head")
     try:
+        command.check(alembic_config)
+    finally:
+        command.downgrade(alembic_config, "base")
+
+
+def test_assignment_migration_adds_nullable_pair(
+    alembic_config: Config,
+    mysql_engine: Engine,
+) -> None:
+    command.upgrade(alembic_config, "head")
+    try:
+        columns = {
+            column["name"]: column for column in inspect(mysql_engine).get_columns("incidents")
+        }
+        assert columns["assignee"]["nullable"] is True
+        assert columns["claimed_at"]["nullable"] is True
         command.check(alembic_config)
     finally:
         command.downgrade(alembic_config, "base")

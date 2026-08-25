@@ -113,6 +113,31 @@ def make_job(alert_id: str, **overrides: object) -> CorrelationJobRow:
     return CorrelationJobRow(**values)
 
 
+def test_incident_assignment_fields_must_be_both_null_or_both_present(
+    migrated_engine: Engine,
+) -> None:
+    with Session(migrated_engine) as session:
+        alert = seed_alert(session)
+        session.add(
+            IncidentRow(
+                id=new_id("inc"),
+                primary_alert_id=alert.id,
+                state="DETECTED",
+                title=alert.title,
+                severity=alert.severity,
+                service=alert.service,
+                environment=alert.environment,
+                detected_at=NOW,
+                assignee="manual-api-client",
+                claimed_at=None,
+                created_at=NOW,
+                version=1,
+            )
+        )
+        with pytest.raises(OperationalError):
+            session.commit()
+
+
 def test_source_identity_is_unique(migrated_engine: Engine) -> None:
     with Session(migrated_engine) as session:
         session.add(make_signal())

@@ -104,6 +104,11 @@ class IncidentRow(Base):
         ),
         CheckConstraint(f"severity IN ({SEVERITY_VALUES})", name="incident_severity"),
         CheckConstraint(f"environment IN ({ENVIRONMENT_VALUES})", name="incident_environment"),
+        CheckConstraint(
+            "(assignee IS NULL AND claimed_at IS NULL) OR "
+            "(assignee IS NOT NULL AND claimed_at IS NOT NULL)",
+            name="incident_assignment_pair",
+        ),
         Index("ix_incidents_state", "state"),
         Index("ix_incidents_primary_alert_id", "primary_alert_id"),
         _mysql_table_options(),
@@ -119,6 +124,8 @@ class IncidentRow(Base):
     service: Mapped[str] = mapped_column(String(128), nullable=False)
     environment: Mapped[str] = mapped_column(String(32), nullable=False)
     detected_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    assignee: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     version: Mapped[int] = mapped_column(nullable=False)
 
