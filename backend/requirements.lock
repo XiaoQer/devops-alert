@@ -64,10 +64,6 @@ pluggy==1.6.0
     # via
     #   pytest
     #   pytest-cov
-psycopg==3.3.4
-    # via incident-intelligence (pyproject.toml)
-psycopg-binary==3.3.4
-    # via psycopg
 pydantic==2.13.4
     # via
     #   fastapi
@@ -79,6 +75,8 @@ pydantic-settings==2.15.0
     # via incident-intelligence (pyproject.toml)
 pygments==2.21.0
     # via pytest
+pymysql==1.2.0
+    # via incident-intelligence (pyproject.toml)
 pyproject-hooks==1.2.0
     # via
     #   build

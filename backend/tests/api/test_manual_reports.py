@@ -18,7 +18,7 @@ from incident_intelligence.settings import Settings
 def api_client(migrated_engine: Engine) -> Iterator[tuple[TestClient, dict[str, str]]]:
     token = token_urlsafe(32)
     settings = Settings(
-        database_url="postgresql+psycopg://unused",
+        database_url="mysql+pymysql://test-client@127.0.0.1/unused",
         api_token=SecretStr(token),
     )
     app = create_app(settings, engine=migrated_engine)

@@ -42,7 +42,7 @@
 - 保持：`get_engine(database_url: str) -> Engine`
 - 保持：`make_session_factory(engine: Engine) -> sessionmaker[Session]`
 
-- [ ] **步骤 1：编写 MySQL URL 和连接配置失败测试**
+- [x] **步骤 1：编写 MySQL URL 和连接配置失败测试**
 
 创建 `test_session.py`，使用字面量 URL，断言 PostgreSQL、SQLite、缺少数据库名和非 PyMySQL 驱动被拒绝；合法 URL 产生 MySQL engine，并固定 READ COMMITTED、连接池预检查和 utf8mb4：
 
@@ -70,7 +70,7 @@ def test_engine_uses_mysql_read_committed_and_utf8mb4() -> None:
 
 同时把测试默认 Settings URL 改为 `mysql+pymysql://unused:unused@127.0.0.1/unused`，保证 API 单元测试不依赖真实连接。
 
-- [ ] **步骤 2：运行测试并确认驱动或 URL 校验缺失**
+- [x] **步骤 2：运行测试并确认驱动或 URL 校验缺失**
 
 运行：
 
@@ -81,7 +81,7 @@ cd backend
 
 预期：测试因 Settings 接受非 MySQL URL、PyMySQL 尚未安装或 engine 未固定 MySQL 配置而失败。
 
-- [ ] **步骤 3：替换依赖锁文件**
+- [x] **步骤 3：替换依赖锁文件**
 
 把生产依赖从：
 
@@ -105,7 +105,7 @@ cd backend
 
 确认 lock 中存在 `pymysql`，不存在 `psycopg` 和 `psycopg-binary`。
 
-- [ ] **步骤 4：实现 MySQL-only 配置和 engine**
+- [x] **步骤 4：实现 MySQL-only 配置和 engine**
 
 Settings 使用 Pydantic 字段校验：
 
@@ -132,7 +132,7 @@ return create_engine(
 
 在 MySQL connect 事件中执行固定字面量 `SET time_zone = '+00:00'`。不得记录 URL 或连接参数。
 
-- [ ] **步骤 5：运行聚焦测试与静态检查**
+- [x] **步骤 5：运行聚焦测试与静态检查**
 
 运行：
 

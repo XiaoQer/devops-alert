@@ -28,7 +28,7 @@ class CreatedResources:
 def created_resources(migrated_engine: Engine) -> Iterator[CreatedResources]:
     token = token_urlsafe(32)
     settings = Settings(
-        database_url="postgresql+psycopg://unused",
+        database_url="mysql+pymysql://test-client@127.0.0.1/unused",
         api_token=SecretStr(token),
     )
     app = create_app(settings, engine=migrated_engine)

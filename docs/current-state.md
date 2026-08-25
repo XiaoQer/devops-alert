@@ -67,3 +67,14 @@ Compose 独立环境中的最终验证结果为 91 项测试通过，覆盖率 9
 2. 共享服务验证通过后，再分别接入 Alertmanager 与 CloudEvents；
 3. 完成多源接入后再设计轻量服务目录和可解释事故关联；
 4. 在上述能力实现前，不得把外部接入、关联、自动取证、Worker 或 AI 标记为可用。
+
+## 2026-08-25 MySQL 基线切换实施中
+
+已经完成并通过聚焦验证：
+
+- 生产依赖由 psycopg 切换为 PyMySQL；
+- Settings 和 engine 工厂只接受包含数据库名的 `mysql+pymysql` URL；
+- engine 固定 READ COMMITTED、连接池预检查、utf8mb4 和 UTC 会话时区配置；
+- 11 项连接边界与健康检查测试通过，Ruff、格式和 Mypy 通过。
+
+当前处于有意的中间状态：ORM JSON/时间类型、Alembic 迁移和测试数据库仍是 PostgreSQL 基线，因此数据库持久化能力暂时不能作为可用 MySQL 能力验收。下一步必须完成 UTC DATETIME(6) 与 MySQL ORM，随后建立独立 MySQL 测试环境和初始迁移。
