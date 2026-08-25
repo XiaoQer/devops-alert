@@ -2,7 +2,7 @@
 
 ## 状态
 
-已确认，实施中。领域模型、数据库迁移和纯领域 Alert 投影已完成，外部适配器和共享接入服务尚未实现。
+已确认，实施中。领域模型、数据库迁移、纯领域 Alert 投影和共享接入服务已完成，Alertmanager 与 CloudEvents 适配器及 HTTP 入口尚未实现。
 
 ## 背景与目标
 
@@ -78,6 +78,8 @@ Alertmanager 使用 `fingerprint`，CloudEvents 使用受限 `data.alert_key` �
 - SignalEvent、Alert 和 `signal_intake_results` 的新增数据库约束及 ORM 元数据一致性已验证；
 - 人工报告首次提交、重放、事务回滚与四类资源读取契约已回归；
 - Alert 投影已验证 opened、updated、resolved、reopened、stale、orphan_resolved 六类结果，以及乱序、同时间恢复优先和人工抑制保护；
-- 历史 PostgreSQL 阶段统一验证为 107 项测试通过、覆盖率 96.83%；当前 MySQL 8.4 全部后端测试为 133 项通过，最终覆盖率验收见 MySQL 基线验证记录。
+- 共享接入服务已验证单事务批次、六类投影结果、精确重放、内容冲突、禁止身份、强制并发竞争收敛、整批回滚、响应顺序和有界审计；
+- 外部信号接入后 Incident 与 DiagnosisRun 保持为零，重放不追加审计；
+- 历史 PostgreSQL 阶段统一验证为 107 项测试通过、覆盖率 96.83%；当前 MySQL 8.4 全部后端测试为 142 项通过。
 
-Alertmanager、CloudEvents、共享接入服务和真实外部 HTTP 冒烟仍未实施，不得据此把完整规格标记为可用。
+Alertmanager、CloudEvents 适配器、两个外部 HTTP 入口和真实外部 HTTP 冒烟仍未实施，不得据此把完整规格标记为可用。

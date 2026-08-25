@@ -6,9 +6,9 @@
 
 **目标：** 实现 Alertmanager Webhook v4 与 CloudEvents 1.0 两个独立认证的生产事件入口，共享一套原子、幂等、可审计的 `SignalEvent → Alert` 接入核心，并保证外部告警不会直接创建 Incident 或 DiagnosisRun。
 
-**架构：** 两个薄适配器只负责协议校验、来源摘要和规范化，统一输出不可变 `SignalCommand`。共享 SignalIntakeService 在 PostgreSQL 单事务中保存 SignalEvent、应用确定性 Alert 投影规则、保存幂等结果和追加有界审计；路径级中间层在 JSON 解析前执行不同容量限制。
+**架构：** 两个薄适配器只负责协议校验、来源摘要和规范化，统一输出不可变 `SignalCommand`。共享 SignalIntakeService 在 MySQL 单事务中保存 SignalEvent、应用确定性 Alert 投影规则、保存幂等结果和追加有界审计；路径级中间层在 JSON 解析前执行不同容量限制。
 
-**技术栈：** Python 3.13–3.14、FastAPI、Pydantic v2、SQLAlchemy 2、Alembic、PostgreSQL 16、Pytest、Ruff、Mypy。
+**技术栈：** Python 3.13–3.14、FastAPI、Pydantic v2、SQLAlchemy 2、Alembic、MySQL 8.4、PyMySQL、Pytest、Ruff、Mypy。
 
 **规格：** `specs/active/multi-source-signal-intake.md`；完整设计见 `docs/superpowers/specs/2026-08-24-multi-source-signal-intake-design.md`。
 
@@ -26,7 +26,7 @@
 
 ---
 
-### 任务 1：扩展领域模型与 PostgreSQL 迁移
+### 任务 1：扩展领域模型与数据库结构（历史阶段已完成）
 
 **文件：**
 - 修改：`backend/src/incident_intelligence/domain/models.py`
@@ -258,7 +258,7 @@ git commit -m "feat: define deterministic alert projection"
 - 修改：`backend/src/incident_intelligence/persistence/repositories.py`
 - 修改：`backend/src/incident_intelligence/persistence/unit_of_work.py`
 - 创建：`backend/src/incident_intelligence/services/signal_intake.py`
-- 创建：`backend/tests/integration/services/test_signal_intake.py`
+- 创建：`backend/tests/integration/services/test_signal_intake_service.py`
 
 **接口：**
 - 消费：任务 2 的 `SignalCommand` 与 `decide_alert_projection`
@@ -268,7 +268,7 @@ git commit -m "feat: define deterministic alert projection"
 - 产生：`SourceEventConflict(reason_code="source_event_conflict")`
 - 产生：`SignalIntakeService.submit_batch(commands, actor, request_id) -> SignalIntakeBatchResult`
 
-- [ ] **步骤 1：编写首次接入和禁止创建事故的失败集成测试**
+- [x] **步骤 1：编写首次接入和禁止创建事故的失败集成测试**
 
 ```python
 def test_firing_creates_only_signal_alert_result_and_audits(service, session_factory) -> None:
@@ -284,13 +284,13 @@ def test_firing_creates_only_signal_alert_result_and_audits(service, session_fac
     assert result.items[0].outcome == "opened"
 ```
 
-- [ ] **步骤 2：运行测试并确认共享服务不存在**
+- [x] **步骤 2：运行测试并确认共享服务不存在**
 
-运行：`cd backend && II_TEST_DATABASE_URL="$II_LOCAL_TEST_DATABASE_URL" .venv/bin/python -m pytest tests/integration/services/test_signal_intake.py -q`
+运行：`cd backend && II_TEST_DATABASE_URL="$II_LOCAL_TEST_DATABASE_URL" .venv/bin/python -m pytest tests/integration/services/test_signal_intake_service.py -q`
 
 预期：因 `SignalIntakeService` 尚未定义而失败。
 
-- [ ] **步骤 3：实现仓储原语和单事务批次**
+- [x] **步骤 3：实现仓储原语和单事务批次**
 
 仓储增加：
 
@@ -324,7 +324,7 @@ class SignalIntakeService:
         return self._submit_with_single_retry(commands, actor, request_id)
 ```
 
-- [ ] **步骤 4：增加完整投影、重放和冲突测试**
+- [x] **步骤 4：增加完整投影、重放和冲突测试**
 
 覆盖 opened、updated、resolved、reopened、stale、orphan_resolved；同一命令重放断言 ID 和首次 alert_id 相同且审计数不变；同一 `(source, source_event_id)` 不同指纹抛出 SourceEventConflict。
 
@@ -339,11 +339,11 @@ def test_orphan_resolved_replay_keeps_original_null_alert_id(service) -> None:
     assert replay.items[0].replayed is True
 ```
 
-- [ ] **步骤 5：增加批次回滚和并发测试**
+- [x] **步骤 5：增加批次回滚和并发测试**
 
 两个线程并发提交相同命令，断言只存在一份 SignalEvent、结果记录和首次审计。注入第二条命令写入失败，断言整批 SignalEvent、Alert、结果和审计均为零。批次包含现有重放与新事件时，返回顺序必须与命令顺序一致。
 
-- [ ] **步骤 6：运行共享服务套件**
+- [x] **步骤 6：运行共享服务套件**
 
 运行：
 
@@ -351,18 +351,18 @@ def test_orphan_resolved_replay_keeps_original_null_alert_id(service) -> None:
 cd backend
 II_TEST_DATABASE_URL="$II_LOCAL_TEST_DATABASE_URL" .venv/bin/python -m pytest \
   tests/unit/domain/test_signal_intake.py \
-  tests/integration/services/test_signal_intake.py -q
+  tests/integration/services/test_signal_intake_service.py -q
 ```
 
 预期：状态规则、重放、冲突、并发和全批回滚全部通过。
 
-- [ ] **步骤 7：提交共享接入核心**
+- [x] **步骤 7：提交共享接入核心**
 
 ```bash
 git add backend/src/incident_intelligence/persistence/repositories.py \
   backend/src/incident_intelligence/persistence/unit_of_work.py \
   backend/src/incident_intelligence/services/signal_intake.py \
-  backend/tests/integration/services/test_signal_intake.py
+  backend/tests/integration/services/test_signal_intake_service.py
 git commit -m "feat: add shared signal intake service"
 ```
 
