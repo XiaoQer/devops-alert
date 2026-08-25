@@ -18,13 +18,26 @@ ALERT_TRANSITIONS: dict[AlertState, frozenset[AlertState]] = {
     AlertState.ACTIVE: frozenset({AlertState.RESOLVED, AlertState.SUPPRESSED}),
 }
 
+INCIDENT_TRANSITION_CHOICES: dict[IncidentState, tuple[IncidentState, ...]] = {
+    IncidentState.DETECTED: (IncidentState.TRIAGING, IncidentState.INVESTIGATING),
+    IncidentState.TRIAGING: (IncidentState.INVESTIGATING, IncidentState.MITIGATING),
+    IncidentState.INVESTIGATING: (
+        IncidentState.MITIGATING,
+        IncidentState.MONITORING_RECOVERY,
+    ),
+    IncidentState.MITIGATING: (
+        IncidentState.INVESTIGATING,
+        IncidentState.MONITORING_RECOVERY,
+    ),
+    IncidentState.MONITORING_RECOVERY: (
+        IncidentState.INVESTIGATING,
+        IncidentState.MITIGATING,
+    ),
+    IncidentState.RESOLVED: (),
+    IncidentState.CLOSED: (),
+}
 INCIDENT_TRANSITIONS: dict[IncidentState, frozenset[IncidentState]] = {
-    IncidentState.DETECTED: frozenset({IncidentState.TRIAGING}),
-    IncidentState.TRIAGING: frozenset({IncidentState.INVESTIGATING}),
-    IncidentState.INVESTIGATING: frozenset({IncidentState.MITIGATING}),
-    IncidentState.MITIGATING: frozenset({IncidentState.MONITORING_RECOVERY}),
-    IncidentState.MONITORING_RECOVERY: frozenset({IncidentState.RESOLVED}),
-    IncidentState.RESOLVED: frozenset({IncidentState.CLOSED}),
+    state: frozenset(targets) for state, targets in INCIDENT_TRANSITION_CHOICES.items()
 }
 
 DIAGNOSIS_TRANSITIONS: dict[DiagnosisState, frozenset[DiagnosisState]] = {

@@ -28,11 +28,15 @@ def test_alert_allows_only_declared_forward_transitions(
     ("current", "target"),
     [
         (IncidentState.DETECTED, IncidentState.TRIAGING),
+        (IncidentState.DETECTED, IncidentState.INVESTIGATING),
         (IncidentState.TRIAGING, IncidentState.INVESTIGATING),
+        (IncidentState.TRIAGING, IncidentState.MITIGATING),
         (IncidentState.INVESTIGATING, IncidentState.MITIGATING),
+        (IncidentState.INVESTIGATING, IncidentState.MONITORING_RECOVERY),
+        (IncidentState.MITIGATING, IncidentState.INVESTIGATING),
         (IncidentState.MITIGATING, IncidentState.MONITORING_RECOVERY),
-        (IncidentState.MONITORING_RECOVERY, IncidentState.RESOLVED),
-        (IncidentState.RESOLVED, IncidentState.CLOSED),
+        (IncidentState.MONITORING_RECOVERY, IncidentState.INVESTIGATING),
+        (IncidentState.MONITORING_RECOVERY, IncidentState.MITIGATING),
     ],
 )
 def test_incident_allows_each_declared_forward_transition(
@@ -66,7 +70,7 @@ def test_diagnosis_allows_declared_success_and_failure_branches(
         (require_alert_transition, AlertState.RESOLVED, AlertState.ACTIVE, "alert"),
         (
             require_incident_transition,
-            IncidentState.DETECTED,
+            IncidentState.MONITORING_RECOVERY,
             IncidentState.RESOLVED,
             "incident",
         ),

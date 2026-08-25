@@ -38,7 +38,7 @@
 - Produces: `primary_action(state: IncidentState) -> IncidentPrimaryAction | None`。
 - Produces: `require_transition(current: IncidentState, target: IncidentState) -> None`，非法时抛出 `InvalidIncidentTransition`。
 
-- [ ] **Step 1: 编写全部允许转换的失败测试**
+- [x] **Step 1: 编写全部允许转换的失败测试**
 
 ```python
 @pytest.mark.parametrize(
@@ -61,7 +61,7 @@ def test_allows_only_declared_normal_transitions(current, target):
     require_transition(current, target)
 ```
 
-- [ ] **Step 2: 编写终态、解决专用路径和允许操作失败测试**
+- [x] **Step 2: 编写终态、解决专用路径和允许操作失败测试**
 
 ```python
 def test_resolved_and_closed_are_not_normal_transition_targets():
@@ -79,13 +79,13 @@ def test_release_is_only_visible_to_current_assignee():
     )
 ```
 
-- [ ] **Step 3: 运行测试并确认因模块和枚举缺失失败**
+- [x] **Step 3: 运行测试并确认因模块和枚举缺失失败**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/unit/domain/test_incident_operations.py -q`
 
 Expected: collection FAIL，明确指向 `incident_operations` 或新枚举不存在。
 
-- [ ] **Step 4: 实现固定枚举、转换表和主操作**
+- [x] **Step 4: 实现固定枚举、转换表和主操作**
 
 ```python
 NORMAL_TRANSITIONS: dict[IncidentState, tuple[IncidentState, ...]] = {
@@ -121,13 +121,13 @@ PRIMARY_ACTIONS = {
 
 `allowed_actions` 对所有未关闭活动状态返回 `ADD_NOTE`、`RESOLVE` 和适用的 `TRANSITION`；未认领时返回 `CLAIM`；仅当前 assignee 返回 `RELEASE`；`RESOLVED` 只返回 `REOPEN`、`CLOSE`；`CLOSED` 返回空元组。
 
-- [ ] **Step 5: 运行聚焦测试、Ruff 和 Mypy**
+- [x] **Step 5: 运行聚焦测试、Ruff 和 Mypy**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/unit/domain/test_incident_operations.py -q && .venv/bin/python -m ruff check src tests && .venv/bin/python -m mypy src`
 
 Expected: 全部通过。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add backend/src/incident_intelligence/domain/enums.py backend/src/incident_intelligence/domain/incident_operations.py backend/tests/unit/domain/test_incident_operations.py
