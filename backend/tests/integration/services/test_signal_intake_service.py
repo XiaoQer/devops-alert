@@ -103,8 +103,7 @@ def test_firing_creates_only_signal_alert_result_and_audits(
         audits = list(session.scalars(select(AuditEventRow).order_by(AuditEventRow.action)))
         assert {audit.action for audit in audits} == {"alert.opened", "signal.received"}
         assert all(
-            set(audit.details) <= {"reason_code", "adapter", "parent_id"}
-            for audit in audits
+            set(audit.details) <= {"reason_code", "adapter", "parent_id"} for audit in audits
         )
         serialized_details = " ".join(str(audit.details) for audit in audits)
         assert command.title not in serialized_details
