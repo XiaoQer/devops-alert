@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import JSON, CheckConstraint, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from incident_intelligence.persistence.base import Base
+from incident_intelligence.persistence.types import UtcDateTime
 
 SEVERITY_VALUES = "'critical', 'high', 'medium', 'low'"
 ENVIRONMENT_VALUES = "'production', 'staging', 'development', 'unknown'"
@@ -14,6 +14,14 @@ EVENT_TYPE_VALUES = "'manual.reported', 'alert.firing', 'alert.resolved'"
 PROJECTION_OUTCOME_VALUES = (
     "'opened', 'updated', 'resolved', 'reopened', 'stale', 'orphan_resolved'"
 )
+
+
+def _mysql_table_options() -> dict[str, str]:
+    return {
+        "mysql_engine": "InnoDB",
+        "mysql_charset": "utf8mb4",
+        "mysql_collate": "utf8mb4_bin",
+    }
 
 
 class SignalEventRow(Base):
@@ -24,6 +32,7 @@ class SignalEventRow(Base):
         CheckConstraint(f"environment IN ({ENVIRONMENT_VALUES})", name="signal_environment"),
         CheckConstraint(f"event_type IN ({EVENT_TYPE_VALUES})", name="signal_event_type"),
         Index("ix_signal_events_observed_at", "observed_at"),
+        _mysql_table_options(),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -35,11 +44,11 @@ class SignalEventRow(Base):
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
     service: Mapped[str] = mapped_column(String(128), nullable=False)
     environment: Mapped[str] = mapped_column(String(32), nullable=False)
-    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    facts: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    facts: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False)
     payload_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     version: Mapped[int] = mapped_column(nullable=False)
 
 
@@ -56,6 +65,7 @@ class AlertRow(Base):
         ),
         Index("ix_alerts_state", "state"),
         Index("ix_alerts_signal_event_id", "signal_event_id"),
+        _mysql_table_options(),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -70,10 +80,10 @@ class AlertRow(Base):
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
     service: Mapped[str] = mapped_column(String(128), nullable=False)
     environment: Mapped[str] = mapped_column(String(32), nullable=False)
-    first_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    last_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    state_changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    first_observed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    last_observed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    state_changed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     version: Mapped[int] = mapped_column(nullable=False)
 
 
@@ -89,6 +99,7 @@ class IncidentRow(Base):
         CheckConstraint(f"environment IN ({ENVIRONMENT_VALUES})", name="incident_environment"),
         Index("ix_incidents_state", "state"),
         Index("ix_incidents_primary_alert_id", "primary_alert_id"),
+        _mysql_table_options(),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -100,8 +111,8 @@ class IncidentRow(Base):
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
     service: Mapped[str] = mapped_column(String(128), nullable=False)
     environment: Mapped[str] = mapped_column(String(32), nullable=False)
-    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    detected_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     version: Mapped[int] = mapped_column(nullable=False)
 
 
@@ -116,6 +127,7 @@ class DiagnosisRunRow(Base):
         CheckConstraint("incident_context_version >= 1", name="diagnosis_context_version"),
         Index("ix_diagnosis_runs_state", "state"),
         Index("ix_diagnosis_runs_incident_id", "incident_id"),
+        _mysql_table_options(),
     )
 
     id: Mapped[str] = mapped_column(String(37), primary_key=True)
@@ -124,12 +136,13 @@ class DiagnosisRunRow(Base):
     )
     incident_context_version: Mapped[int] = mapped_column(nullable=False)
     state: Mapped[str] = mapped_column(String(32), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     version: Mapped[int] = mapped_column(nullable=False)
 
 
 class IngestionKeyRow(Base):
     __tablename__ = "ingestion_keys"
+    __table_args__ = (_mysql_table_options(),)
 
     scope: Mapped[str] = mapped_column(String(64), primary_key=True)
     idempotency_key: Mapped[str] = mapped_column(String(256), primary_key=True)
@@ -138,7 +151,7 @@ class IngestionKeyRow(Base):
     alert_id: Mapped[str] = mapped_column(String(36), nullable=False)
     incident_id: Mapped[str] = mapped_column(String(36), nullable=False)
     diagnosis_run_id: Mapped[str] = mapped_column(String(37), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 class SignalIntakeResultRow(Base):
@@ -151,6 +164,7 @@ class SignalIntakeResultRow(Base):
         ),
         Index("ix_signal_intake_results_signal_event_id", "signal_event_id"),
         Index("ix_signal_intake_results_alert_id", "alert_id"),
+        _mysql_table_options(),
     )
 
     source: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -163,7 +177,7 @@ class SignalIntakeResultRow(Base):
         ForeignKey("alerts.id", ondelete="RESTRICT"), nullable=True
     )
     outcome: Mapped[str] = mapped_column(String(32), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 class AuditEventRow(Base):
@@ -171,6 +185,7 @@ class AuditEventRow(Base):
     __table_args__ = (
         Index("ix_audit_events_resource", "resource_type", "resource_id"),
         Index("ix_audit_events_created_at", "created_at"),
+        _mysql_table_options(),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -179,5 +194,5 @@ class AuditEventRow(Base):
     resource_type: Mapped[str] = mapped_column(String(32), nullable=False)
     resource_id: Mapped[str] = mapped_column(String(37), nullable=False)
     request_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    details: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    details: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)

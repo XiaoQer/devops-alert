@@ -169,7 +169,7 @@ git commit -m "feat: 切换 MySQL 连接基线"
 - 产生：`class UtcDateTime(TypeDecorator[datetime])`
 - 消费：所有 ORM 时间列使用 `UtcDateTime()`
 
-- [ ] **步骤 1：编写 UTC 类型失败测试**
+- [x] **步骤 1：编写 UTC 类型失败测试**
 
 单元测试直接调用类型处理器，断言 UTC、东八区、无时区和微秒：
 
@@ -188,13 +188,13 @@ def test_utc_datetime_rejects_naive_value() -> None:
         UtcDateTime().process_bind_param(datetime(2026, 8, 25, 8, 0), mysql.dialect())
 ```
 
-- [ ] **步骤 2：运行测试并确认 UTC 类型不存在**
+- [x] **步骤 2：运行测试并确认 UTC 类型不存在**
 
 运行：`cd backend && .venv/bin/python -m pytest tests/unit/persistence/test_types.py -q`
 
 预期：导入失败，明确指向 `persistence.types.UtcDateTime` 尚未实现。
 
-- [ ] **步骤 3：实现 UTC 类型并替换 ORM 方言类型**
+- [x] **步骤 3：实现 UTC 类型并替换 ORM 方言类型**
 
 实现：
 
@@ -222,7 +222,7 @@ class UtcDateTime(TypeDecorator[datetime]):
 {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4", "mysql_collate": "utf8mb4_bin"}
 ```
 
-- [ ] **步骤 4：运行单元测试和 ORM 静态检查**
+- [x] **步骤 4：运行单元测试和 ORM 静态检查**
 
 运行：
 

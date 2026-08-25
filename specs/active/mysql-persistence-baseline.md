@@ -2,7 +2,7 @@
 
 ## 状态
 
-已确认，实施中。PyMySQL、MySQL-only URL 校验和连接 engine 已完成；UTC 类型、ORM、Compose、迁移和完整回归尚未完成。
+已确认，实施中。PyMySQL、MySQL-only 连接、UTC DATETIME(6) 类型和 MySQL ORM 元数据已完成；Compose、迁移和完整回归尚未完成。
 
 ## 背景与目标
 
