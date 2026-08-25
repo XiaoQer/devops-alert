@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from incident_intelligence.domain.models import Alert, DiagnosisRun, Incident, SignalEvent
@@ -10,6 +11,7 @@ from incident_intelligence.persistence.models import (
     IncidentRow,
     IngestionKeyRow,
     SignalEventRow,
+    SignalIntakeResultRow,
 )
 
 
@@ -31,6 +33,26 @@ class RecordRepositories:
 
     def find_diagnosis(self, diagnosis_run_id: str) -> DiagnosisRunRow | None:
         return self._session.get(DiagnosisRunRow, diagnosis_run_id)
+
+    def find_signal_result(self, source: str, source_event_id: str) -> SignalIntakeResultRow | None:
+        return self._session.get(SignalIntakeResultRow, (source, source_event_id))
+
+    def find_alert_for_update(
+        self,
+        source: str,
+        source_instance: str,
+        source_alert_key: str,
+    ) -> AlertRow | None:
+        statement = (
+            select(AlertRow)
+            .where(
+                AlertRow.source == source,
+                AlertRow.source_instance == source_instance,
+                AlertRow.source_alert_key == source_alert_key,
+            )
+            .with_for_update()
+        )
+        return self._session.scalar(statement)
 
     def add_signal(self, signal: SignalEvent) -> None:
         self._session.add(
@@ -74,6 +96,22 @@ class RecordRepositories:
                 version=alert.version,
             )
         )
+        self._session.flush()
+
+    def update_alert(self, alert: Alert) -> None:
+        row = self._session.get(AlertRow, alert.id)
+        if row is None:
+            raise RuntimeError("待更新的 Alert 不存在")
+        row.signal_event_id = alert.signal_event_id
+        row.state = alert.state.value
+        row.title = alert.title
+        row.severity = alert.severity
+        row.service = alert.service
+        row.environment = alert.environment
+        row.first_observed_at = alert.first_observed_at
+        row.last_observed_at = alert.last_observed_at
+        row.state_changed_at = alert.state_changed_at
+        row.version = alert.version
         self._session.flush()
 
     def add_incident(self, incident: Incident) -> None:
@@ -130,6 +168,10 @@ class RecordRepositories:
                 created_at=created_at,
             )
         )
+        self._session.flush()
+
+    def add_signal_result(self, result: SignalIntakeResultRow) -> None:
+        self._session.add(result)
         self._session.flush()
 
     def add_audit(
