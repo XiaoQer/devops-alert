@@ -572,7 +572,7 @@ git commit -m "feat: 暴露服务目录管理接口"
 - 产生：`CorrelationJobService.claim_batch/complete/fail/retry_failed`。
 - 修改：SignalIntakeService 对 opened、updated、resolved、reopened 追加唯一任务。
 
-- [ ] **步骤 1：编写 Alert 与任务同事务失败测试**
+- [x] **步骤 1：编写 Alert 与任务同事务失败测试**
 
 ```python
 @pytest.mark.parametrize("outcome", ["opened", "updated", "resolved", "reopened"])
@@ -595,7 +595,7 @@ def test_non_projection_results_and_replay_do_not_enqueue(
 
 在现有整批回滚测试中增加 `CorrelationJobRow == 0`，证明任务写入失败会与本次 Alert 变化共同回滚。
 
-- [ ] **步骤 2：运行共享接入测试并确认没有任务**
+- [x] **步骤 2：运行共享接入测试并确认没有任务**
 
 ```bash
 cd backend
@@ -605,13 +605,13 @@ II_TEST_DATABASE_URL="$II_MYSQL_BOOTSTRAP_URL" PYTHONPATH=. \
 
 预期：新增任务断言失败，实际数量为 0。
 
-- [ ] **步骤 3：实现任务仓储和接入服务排队**
+- [x] **步骤 3：实现任务仓储和接入服务排队**
 
 `CorrelationRepository.enqueue(alert_id, alert_version, now)` 创建 `cjob_` ID、PENDING、attempts=0、available_at=now。`SignalIntakeService` 只在 `decision.changes_projection` 且存在 Alert 时调用；重放路径在此之前返回，不会追加任务。
 
 唯一约束竞争沿用共享接入服务的“退出失败事务后全新事务单次重试”，任务不单独吞掉 IntegrityError。
 
-- [ ] **步骤 4：编写租约、接管和重试失败测试**
+- [x] **步骤 4：编写租约、接管和重试失败测试**
 
 ```python
 def test_claim_uses_lease_and_expired_job_can_be_reclaimed(job_service):
@@ -625,7 +625,7 @@ def test_claim_uses_lease_and_expired_job_can_be_reclaimed(job_service):
 
 另测两线程并发 `claim_batch` 不返回同一 ID、非 lease_owner 不能 complete、失败使用固定退避、第五次失败进入 FAILED、人工 retry 只接受 FAILED 且清空 lease/error。
 
-- [ ] **步骤 5：实现 `SELECT FOR UPDATE SKIP LOCKED` 任务服务**
+- [x] **步骤 5：实现 `SELECT FOR UPDATE SKIP LOCKED` 任务服务**
 
 领取查询只选择 available 的 PENDING 或租约过期 LEASED，按 `available_at, created_at, id` 排序，limit 1–50。Settings 增加：
 
@@ -638,7 +638,7 @@ correlation_batch_size: int = Field(default=10, ge=1, le=50)
 
 测试 `settings_factory` 默认设置 `correlation_runner_enabled=False`，避免 API 测试后台消费任务。
 
-- [ ] **步骤 6：运行接入与任务并发测试**
+- [x] **步骤 6：运行接入与任务并发测试**
 
 ```bash
 cd backend
@@ -649,7 +649,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_BOOTSTRAP_URL" PYTHONPATH=. .venv/bin/pytest -q 
 
 预期：任务原子性、唯一性、SKIP LOCKED、租约接管和五次上限全部通过。
 
-- [ ] **步骤 7：提交关联任务能力**
+- [x] **步骤 7：提交关联任务能力**
 
 ```bash
 git add backend/src/incident_intelligence/persistence \

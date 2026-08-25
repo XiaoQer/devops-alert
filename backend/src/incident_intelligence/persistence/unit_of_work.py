@@ -5,6 +5,7 @@ from types import TracebackType
 from sqlalchemy.orm import Session, sessionmaker
 
 from incident_intelligence.persistence.catalog_repository import ServiceCatalogRepository
+from incident_intelligence.persistence.correlation_repository import CorrelationRepository
 from incident_intelligence.persistence.repositories import RecordRepositories
 
 
@@ -14,11 +15,13 @@ class SqlAlchemyUnitOfWork:
         self.session: Session | None = None
         self.records: RecordRepositories | None = None
         self.catalog: ServiceCatalogRepository | None = None
+        self.correlation: CorrelationRepository | None = None
 
     def __enter__(self) -> SqlAlchemyUnitOfWork:
         self.session = self._session_factory()
         self.records = RecordRepositories(self.session)
         self.catalog = ServiceCatalogRepository(self.session)
+        self.correlation = CorrelationRepository(self.session)
         return self
 
     def commit(self) -> None:

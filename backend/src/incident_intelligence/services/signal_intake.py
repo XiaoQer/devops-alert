@@ -17,6 +17,7 @@ from incident_intelligence.domain.signal_intake import (
     decide_alert_projection,
 )
 from incident_intelligence.ids import IdPrefix, new_id
+from incident_intelligence.persistence.correlation_repository import CorrelationRepository
 from incident_intelligence.persistence.models import AlertRow, SignalIntakeResultRow
 from incident_intelligence.persistence.repositories import RecordRepositories
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
@@ -93,8 +94,16 @@ class SignalIntakeService:
     ) -> SignalIntakeBatchResult:
         with self._uow_factory() as uow:
             records = _records(uow)
+            correlation = _correlation(uow)
             items = tuple(
-                self._submit_command(records, command, fingerprint, actor, request_id)
+                self._submit_command(
+                    records,
+                    correlation,
+                    command,
+                    fingerprint,
+                    actor,
+                    request_id,
+                )
                 for command, fingerprint in zip(commands, fingerprints, strict=True)
             )
             uow.commit()
@@ -106,6 +115,7 @@ class SignalIntakeService:
     def _submit_command(
         self,
         records: RecordRepositories,
+        correlation: CorrelationRepository,
         command: SignalCommand,
         fingerprint: str,
         actor: str,
@@ -151,6 +161,12 @@ class SignalIntakeService:
             elif decision.alert is not None:
                 records.update_alert(decision.alert)
         alert_id = None if decision.alert is None else decision.alert.id
+        if decision.changes_projection and decision.alert is not None:
+            correlation.enqueue(
+                alert_id=decision.alert.id,
+                alert_version=decision.alert.version,
+                now=now,
+            )
         records.add_signal_result(
             SignalIntakeResultRow(
                 source=command.source,
@@ -238,6 +254,12 @@ def _records(uow: SqlAlchemyUnitOfWork) -> RecordRepositories:
     if uow.records is None:
         raise RuntimeError("工作单元没有可用仓储")
     return uow.records
+
+
+def _correlation(uow: SqlAlchemyUnitOfWork) -> CorrelationRepository:
+    if uow.correlation is None:
+        raise RuntimeError("工作单元没有可用关联仓储")
+    return uow.correlation
 
 
 def _alert_from_row(row: AlertRow) -> Alert:
