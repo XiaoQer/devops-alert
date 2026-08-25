@@ -81,5 +81,8 @@ Compose 独立环境中的最终验证结果为 91 项测试通过，覆盖率 9
 - 测试 fixture 只接受指向 `mysql` 系统库的 PyMySQL URL，每轮创建并精确删除随机 `ii_test_<UUID>` 数据库；
 - 14 项删除保护和真实 MySQL 会话测试通过，验证 READ COMMITTED、UTC 会话时区、utf8mb4、临时库创建和自动清理；
 - 52 项 UTC 与纯领域测试通过，Ruff、格式和 Mypy 通过。
+- PostgreSQL 两段迁移链及历史数据回填测试已删除，由单一 `0001_mysql_initial` 空库迁移取代；
+- MySQL 初始迁移包含当前七张表、完整约束与索引，并明确使用 InnoDB、utf8mb4、utf8mb4_bin、JSON 和 DATETIME(6)；
+- 6 项真实 MySQL 迁移与类型测试通过，覆盖升级、降级、ORM 一致性、中文 JSON、UTC 微秒、大小写敏感身份和精确唯一约束。
 
-当前处于有意的中间状态：Alembic 迁移仍是 PostgreSQL 基线，因此数据库持久化能力暂时不能作为可用 MySQL 能力验收。下一步必须重建 MySQL 初始迁移并恢复完整业务回归。
+当前 MySQL 连接、ORM 和迁移基线已经连通，但完整人工报告、并发幂等、事务回滚和资源读取回归尚未完成，因此仍不能作为最终可用基线验收。

@@ -372,7 +372,7 @@ git commit -m "test: 建立隔离 MySQL 验证环境"
 - 产生：Alembic revision `0001_mysql_initial`
 - 保持：`upgrade head`、`downgrade base`、`command.check`
 
-- [ ] **步骤 1：把迁移测试改成 MySQL 初始基线并运行失败**
+- [x] **步骤 1：把迁移测试改成 MySQL 初始基线并运行失败**
 
 迁移测试只接受七张当前表，断言 InnoDB、JSON 和 `datetime(6)`：
 
@@ -387,7 +387,7 @@ def test_upgrade_creates_mysql_domain_tables(alembic_config: Config, mysql_engin
 
 删除历史数据回填测试，因为用户明确不保留 PostgreSQL 数据。运行后预期旧迁移因 JSONB 或 PostgreSQL DDL 在 MySQL 失败。
 
-- [ ] **步骤 2：创建完整 `0001_mysql_initial`**
+- [x] **步骤 2：创建完整 `0001_mysql_initial`**
 
 迁移使用 `sqlalchemy.dialects.mysql.JSON` 和 `mysql.DATETIME(fsp=6)`，按以下依赖顺序建表：
 
@@ -408,11 +408,11 @@ mysql_collate="utf8mb4_bin",
 
 完整复制 ORM 的主键、外键、CHECK、唯一约束和索引。降级按反向依赖顺序删除表。
 
-- [ ] **步骤 3：让 Alembic 明确拒绝非 MySQL URL**
+- [x] **步骤 3：让 Alembic 明确拒绝非 MySQL URL**
 
 `env.py` 使用 `make_url` 校验 `II_DATABASE_URL`：驱动必须为 `mysql+pymysql` 且数据库名非空；错误消息只描述要求，不回显 URL。传入测试 engine 时同样断言 `engine.dialect.name == "mysql"`。
 
-- [ ] **步骤 4：编写并运行真实 MySQL JSON、大小写和时间往返测试**
+- [x] **步骤 4：编写并运行真实 MySQL JSON、大小写和时间往返测试**
 
 `test_mysql_types.py` 使用 `migrated_engine`，写入包含中文 JSON 和微秒 UTC 时间的 SignalEventRow，读取后断言：
 
@@ -432,7 +432,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_TEST_BOOTSTRAP_URL" .venv/bin/python -m pytest \
 
 预期：升级、降级、ORM 一致性、JSON、大小写和 UTC 微秒往返通过。
 
-- [ ] **步骤 5：提交 MySQL 迁移基线**
+- [x] **步骤 5：提交 MySQL 迁移基线**
 
 ```bash
 git add backend/migrations backend/tests/integration/persistence
