@@ -346,7 +346,7 @@ cd backend
 
 预期：随机数据库创建、连接属性断言和精确清理通过；项目日常数据库不受影响。
 
-- [ ] **步骤 6：提交测试隔离能力**
+- [x] **步骤 6：提交测试隔离能力**
 
 ```bash
 git add compose.yaml backend/tests/conftest.py backend/tests/support \
