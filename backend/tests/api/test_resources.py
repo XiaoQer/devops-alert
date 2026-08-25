@@ -32,6 +32,7 @@ def created_resources(migrated_engine: Engine) -> Iterator[CreatedResources]:
         api_token=SecretStr(token),
         alertmanager_token=SecretStr(token_urlsafe(32)),
         cloudevents_token=SecretStr(token_urlsafe(32)),
+        correlation_runner_enabled=False,
     )
     app = create_app(settings, engine=migrated_engine)
     auth_headers = {"Authorization": f"Bearer {token}"}

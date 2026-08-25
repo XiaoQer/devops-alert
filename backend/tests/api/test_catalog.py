@@ -33,6 +33,7 @@ def context(migrated_engine: Engine) -> Iterator[CatalogApiContext]:
         api_token=SecretStr(manual_token),
         alertmanager_token=SecretStr(alertmanager_token),
         cloudevents_token=SecretStr(cloudevents_token),
+        correlation_runner_enabled=False,
     )
     app = create_app(settings, engine=migrated_engine)
     with TestClient(app) as client:

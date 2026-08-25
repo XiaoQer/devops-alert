@@ -13,6 +13,7 @@ from incident_intelligence.persistence.catalog_repository import ServiceCatalogR
 from incident_intelligence.persistence.correlation_repository import CorrelationRepository
 from incident_intelligence.persistence.models import (
     CorrelationDecisionRow,
+    CorrelationJobRow,
     IncidentAlertLinkRow,
     IncidentRow,
 )
@@ -24,7 +25,7 @@ from incident_intelligence.services.correlation_jobs import (
 
 CORRELATION_WINDOW_SECONDS = 900
 CORRELATION_CANDIDATE_QUERY_LIMIT = 21
-CORRELATION_RULE_VERSION = "service-catalog.v1"
+CORRELATION_RULE_VERSION = "correlation.v1"
 
 
 class CorrelationResult(BaseModel):
@@ -211,6 +212,96 @@ class CorrelationService:
                 outcome=draft.outcome,
                 explanation=draft.explanation,
             )
+
+
+class CorrelationResourceNotFound(Exception):
+    pass
+
+
+class CorrelationReadService:
+    def __init__(self, *, uow_factory: Callable[[], SqlAlchemyUnitOfWork]) -> None:
+        self._uow_factory = uow_factory
+
+    def get_alert_correlation(self, alert_id: str) -> dict[str, object]:
+        with self._uow_factory() as uow:
+            repository = _correlation(uow)
+            job = repository.find_latest_job_for_alert(alert_id)
+            if job is None:
+                raise CorrelationResourceNotFound()
+            decision = repository.find_decision_for_job(job.id)
+            incident = (
+                None
+                if decision is None or decision.incident_id is None
+                else repository.find_incident_for_update(decision.incident_id)
+            )
+            return {
+                "alert_id": alert_id,
+                "job": _job_view(job),
+                "incident": None if incident is None else _incident_view(incident),
+                "decision": None if decision is None else _decision_view(decision),
+            }
+
+    def list_jobs(
+        self,
+        *,
+        state: str | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[dict[str, object], ...]:
+        with self._uow_factory() as uow:
+            return tuple(
+                _job_view(row)
+                for row in _correlation(uow).list_jobs(
+                    state=state,
+                    limit=limit,
+                    offset=offset,
+                )
+            )
+
+    def get_job(self, job_id: str) -> dict[str, object]:
+        with self._uow_factory() as uow:
+            row = _correlation(uow).find_job(job_id)
+            if row is None:
+                raise CorrelationResourceNotFound()
+            return _job_view(row)
+
+
+def _job_view(row: CorrelationJobRow) -> dict[str, object]:
+    return {
+        "id": row.id,
+        "alert_version": row.alert_version,
+        "state": row.state,
+        "attempts": row.attempts,
+        "available_at": row.available_at,
+        "last_error_code": row.last_error_code,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
+def _incident_view(row: IncidentRow) -> dict[str, object]:
+    return {
+        "id": row.id,
+        "state": row.state,
+        "severity": row.severity,
+        "service": row.service,
+        "environment": row.environment,
+        "detected_at": row.detected_at,
+        "version": row.version,
+    }
+
+
+def _decision_view(row: CorrelationDecisionRow) -> dict[str, object]:
+    return {
+        "id": row.id,
+        "outcome": row.outcome,
+        "rule_version": row.rule_version,
+        "reason_codes": tuple(row.reason_codes),
+        "facts": row.facts,
+        "candidate_incident_ids": tuple(row.candidate_incident_ids),
+        "explanation": row.explanation,
+        "created_at": row.created_at,
+    }
 
 
 def _correlation(uow: SqlAlchemyUnitOfWork) -> CorrelationRepository:

@@ -209,5 +209,38 @@ class CorrelationRepository:
         self._session.add(row)
         self._session.flush()
 
+    def find_latest_job_for_alert(self, alert_id: str) -> CorrelationJobRow | None:
+        return self._session.scalar(
+            select(CorrelationJobRow)
+            .where(CorrelationJobRow.alert_id == alert_id)
+            .order_by(CorrelationJobRow.alert_version.desc(), CorrelationJobRow.id.desc())
+            .limit(1)
+        )
+
+    def find_decision_for_job(self, job_id: str) -> CorrelationDecisionRow | None:
+        return self._session.scalar(
+            select(CorrelationDecisionRow).where(CorrelationDecisionRow.job_id == job_id)
+        )
+
+    def list_jobs(
+        self,
+        *,
+        state: str | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[CorrelationJobRow, ...]:
+        statement = select(CorrelationJobRow)
+        if state is not None:
+            statement = statement.where(CorrelationJobRow.state == state)
+        return tuple(
+            self._session.scalars(
+                statement.order_by(
+                    CorrelationJobRow.created_at.desc(), CorrelationJobRow.id.desc()
+                )
+                .limit(limit)
+                .offset(offset)
+            )
+        )
+
     def flush(self) -> None:
         self._session.flush()

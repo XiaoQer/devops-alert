@@ -810,7 +810,7 @@ git commit -m "feat: 创建并关联可解释事故"
 - 产生：`POST /api/v1/correlation/jobs/{id}/retry`。
 - 产生：`CorrelationRunner.run_once()` 和可停止后台循环。
 
-- [ ] **步骤 1：编写关联结果和失败重试失败 API 测试**
+- [x] **步骤 1：编写关联结果和失败重试失败 API 测试**
 
 ```python
 def test_alert_correlation_response_is_bounded_and_explainable(client, seeded_decision):
@@ -832,7 +832,7 @@ def test_only_failed_job_can_be_retried(client, succeeded_job):
 
 其他来源 Token、无 Token 均返回 401；列表 `limit` 最大 100、offset 最大 10000；响应不得包含 lease_owner、异常正文、Alert 标题摘要、来源 URI或完整 facts。
 
-- [ ] **步骤 2：运行 API 测试并确认路由 404**
+- [x] **步骤 2：运行 API 测试并确认路由 404**
 
 ```bash
 cd backend
@@ -842,11 +842,11 @@ II_TEST_DATABASE_URL="$II_MYSQL_BOOTSTRAP_URL" PYTHONPATH=. \
 
 预期：合法读取返回 404。
 
-- [ ] **步骤 3：实现读取、列表、重试路由与错误映射**
+- [x] **步骤 3：实现读取、列表、重试路由与错误映射**
 
 路由使用 `require_manual_actor`。重试调用 `CorrelationJobService.retry_failed` 并追加 `correlation.job_retried` 有界审计。错误映射：不存在 404 `resource_not_found`，非 FAILED 返回 409 `correlation_job_not_retryable`，数据库不可用返回现有 503。
 
-- [ ] **步骤 4：编写 Runner 生命周期和异常隔离失败测试**
+- [x] **步骤 4：编写 Runner 生命周期和异常隔离失败测试**
 
 ```python
 async def test_runner_failure_does_not_stop_loop_or_app():
@@ -860,7 +860,7 @@ async def test_runner_failure_does_not_stop_loop_or_app():
 
 另测 `run_once` 按 batch_size 领取并处理、单任务失败不阻断同批其他任务、stop 后不再轮询、TestClient lifespan 启停不遗留线程。
 
-- [ ] **步骤 5：实现后台 Runner 和 FastAPI lifespan**
+- [x] **步骤 5：实现后台 Runner 和 FastAPI lifespan**
 
 `CorrelationRunner.run_once` 对同步数据库服务使用 `asyncio.to_thread`，每个 lease 独立处理并调用 job fail。后台 `run_forever` 捕获异常只记录固定错误码，不记录异常正文或业务输入。`create_app` 使用 `asynccontextmanager` lifespan：
 
@@ -880,7 +880,7 @@ async def lifespan(app: FastAPI):
 
 现有测试 settings 默认关闭 Runner；专用生命周期测试显式开启。
 
-- [ ] **步骤 6：运行关联 API、Runner 与所有 API 回归**
+- [x] **步骤 6：运行关联 API、Runner 与所有 API 回归**
 
 ```bash
 cd backend

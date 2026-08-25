@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from incident_intelligence.ids import new_id
 from incident_intelligence.persistence.correlation_repository import CorrelationRepository
 from incident_intelligence.persistence.models import CorrelationJobRow
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
@@ -28,6 +29,11 @@ class CorrelationJobLease(BaseModel):
 @dataclass(frozen=True, slots=True)
 class CorrelationJobNotRetryable(Exception):
     reason_code: str = "correlation_job_not_retryable"
+
+
+@dataclass(frozen=True, slots=True)
+class CorrelationJobNotFound(Exception):
+    reason_code: str = "resource_not_found"
 
 
 class CorrelationJobService:
@@ -101,11 +107,20 @@ class CorrelationJobService:
             uow.commit()
             return row.state
 
-    def retry_failed(self, job_id: str, now: datetime) -> CorrelationJobLease:
+    def retry_failed(
+        self,
+        job_id: str,
+        now: datetime,
+        *,
+        actor: str | None = None,
+        request_id: str | None = None,
+    ) -> CorrelationJobLease:
         with self._uow_factory() as uow:
             repository = _correlation(uow)
             row = repository.find_job(job_id, for_update=True)
-            if row is None or row.state != "FAILED":
+            if row is None:
+                raise CorrelationJobNotFound()
+            if row.state != "FAILED":
                 raise CorrelationJobNotRetryable()
             row.state = "PENDING"
             row.attempts = 0
@@ -115,6 +130,19 @@ class CorrelationJobService:
             row.last_error_code = None
             row.updated_at = now
             repository.flush()
+            if actor is not None and request_id is not None:
+                if uow.records is None:
+                    raise RuntimeError("工作单元没有可用记录仓储")
+                uow.records.add_audit(
+                    audit_id=new_id("aud"),
+                    actor=actor,
+                    action="correlation.job_retried",
+                    resource_type="correlation_job",
+                    resource_id=row.id,
+                    request_id=request_id,
+                    details={"reason_code": "manual_retry_requested"},
+                    created_at=now,
+                )
             uow.commit()
             return _lease_from_row(row)
 
