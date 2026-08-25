@@ -382,7 +382,7 @@ git commit -m "feat: add shared signal intake service"
 - 产生：`to_signal_commands(webhook, now) -> tuple[SignalCommand, ...]`
 - 产生：`AdapterValidationError(reason_code)`
 
-- [ ] **步骤 1：编写官方形状转换失败测试**
+- [x] **步骤 1：编写官方形状转换失败测试**
 
 固定 Webhook 含 groupKey、receiver、status、externalURL、commonLabels、alerts，并断言输出字面量：
 
@@ -401,13 +401,13 @@ def test_alertmanager_firing_maps_to_bounded_signal_command() -> None:
     assert "generatorURL" not in command.model_dump_json()
 ```
 
-- [ ] **步骤 2：运行测试并确认适配器不存在**
+- [x] **步骤 2：运行测试并确认适配器不存在**
 
 运行：`cd backend && .venv/bin/python -m pytest tests/unit/adapters/test_alertmanager.py -q`
 
 预期：因 adapters.alertmanager 不存在而失败。
 
-- [ ] **步骤 3：实现 URI 规范化、字段模型和摘要**
+- [x] **步骤 3：实现 URI 规范化、字段模型和摘要**
 
 URI 规范化拒绝无 scheme/host，去除 userinfo、query、fragment，保留小写 scheme/host、显式端口和规范 path。只把规范 URI送入 SHA-256，不把它放入命令。
 
@@ -434,17 +434,17 @@ def to_signal_commands(
 
 标签输入最多 100 项、annotation 最多 20 项；facts 白名单固定为 region、cluster、namespace、pod、instance、job、team、component、node、container，最终最多 20 项。
 
-- [ ] **步骤 4：实现严重度和时间映射并增加边界测试**
+- [x] **步骤 4：实现严重度和时间映射并增加边界测试**
 
 测试所有固定严重度别名、未知严重度的 medium + severity_defaulted、resolved 必须 endsAt、未来五分钟限制、缺失 fingerprint/service/title、禁止身份任意深度、JSON 键序和分组字段变化不改变 source_event_id、真实规范化内容变化会改变 source_event_id。
 
-- [ ] **步骤 5：运行适配器测试**
+- [x] **步骤 5：运行适配器测试**
 
 运行：`cd backend && .venv/bin/python -m pytest tests/unit/adapters/test_alertmanager.py -q`
 
 预期：转换、容量、脱敏、禁止身份与确定性摘要测试全部通过。
 
-- [ ] **步骤 6：提交 Alertmanager 适配器**
+- [x] **步骤 6：提交 Alertmanager 适配器**
 
 ```bash
 git add backend/src/incident_intelligence/adapters \
