@@ -455,7 +455,7 @@ git commit -m "feat: 重建 MySQL 初始迁移"
 - 保持：人工报告服务与现有 HTTP 请求/响应契约
 - 保持：四类资源读取响应字段
 
-- [ ] **步骤 1：把 PostgreSQL 专用断言改为 MySQL 行为断言**
+- [x] **步骤 1：把 PostgreSQL 专用断言改为 MySQL 行为断言**
 
 将 `test_signal_title_length_is_enforced_by_postgresql` 改名为 MySQL，并断言严格模式下 201 字符标题失败。增加真实约束测试：
 
@@ -514,7 +514,7 @@ def test_exact_alert_identity_is_unique(migrated_engine: Engine) -> None:
 
 所有测试只断言异常类别和最终行数，不断言 MySQL 原始错误文本。
 
-- [ ] **步骤 2：运行聚焦回归并记录真实失败**
+- [x] **步骤 2：运行聚焦回归并记录真实失败**
 
 ```bash
 cd backend
@@ -527,7 +527,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_TEST_BOOTSTRAP_URL" .venv/bin/python -m pytest \
 
 预期：若仓储、事务或响应时间格式仍有方言问题，测试会明确失败；不得提前增加双数据库分支。
 
-- [ ] **步骤 3：修复最小 MySQL 兼容问题**
+- [x] **步骤 3：修复最小 MySQL 兼容问题**
 
 只修改测试实际暴露的仓储或事务问题。保持：
 
@@ -538,7 +538,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_TEST_BOOTSTRAP_URL" .venv/bin/python -m pytest \
 - API 错误不回显数据库连接信息；
 - 资源读取只查询目标表。
 
-- [ ] **步骤 4：运行完整现有能力回归**
+- [x] **步骤 4：运行完整现有能力回归**
 
 ```bash
 cd backend
@@ -547,7 +547,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_TEST_BOOTSTRAP_URL" .venv/bin/python -m pytest -
 
 预期：全部现有测试在真实 MySQL 通过，测试数量不得少于切换前 107 项；删除的历史回填测试必须由新的 MySQL 迁移、UTC、JSON和大小写测试替代。
 
-- [ ] **步骤 5：提交业务回归适配**
+- [x] **步骤 5：提交业务回归适配**
 
 ```bash
 git add backend/src backend/tests
