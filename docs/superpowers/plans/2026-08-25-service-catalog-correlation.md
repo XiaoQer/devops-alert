@@ -316,7 +316,7 @@ git commit -m "feat: 持久化服务目录与关联任务"
 - 产生：`CatalogConflict`、`CatalogVersionConflict`、`InvalidDependency`、`CatalogResourceNotFound`。
 - 产生：`ServiceCatalogService.create_service/update_service/create_dependency/update_dependency/list_services/list_dependencies`。
 
-- [ ] **步骤 1：编写服务唯一、版本和停用失败测试**
+- [x] **步骤 1：编写服务唯一、版本和停用失败测试**
 
 ```python
 def test_service_identity_is_unique_and_update_requires_expected_version(service):
@@ -346,7 +346,7 @@ def test_service_identity_is_unique_and_update_requires_expected_version(service
 
 断言有效更新 version 加一、停用不删除行、审计只包含 `reason_code`、`previous_state`、`new_state`、`previous_version`、`new_version`。
 
-- [ ] **步骤 2：运行服务测试并确认服务不存在**
+- [x] **步骤 2：运行服务测试并确认服务不存在**
 
 ```bash
 cd backend
@@ -356,7 +356,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_BOOTSTRAP_URL" PYTHONPATH=. \
 
 预期：因 `services.catalog` 不存在而失败。
 
-- [ ] **步骤 3：实现目录仓储和服务事务**
+- [x] **步骤 3：实现目录仓储和服务事务**
 
 `ServiceCatalogRepository` 提供精确方法：
 
@@ -392,7 +392,7 @@ def list_services(
 
 `SqlAlchemyUnitOfWork.__enter__` 同时创建 `records`、`catalog` 和后续 `correlation` 仓储。服务层在一个 UoW 内完成查重、乐观锁、写入和审计；捕获唯一约束时必须退出失败事务后映射固定冲突。
 
-- [ ] **步骤 4：编写依赖图失败测试**
+- [x] **步骤 4：编写依赖图失败测试**
 
 测试创建 A、B、C 三个同环境服务，覆盖：
 
@@ -420,7 +420,7 @@ def test_dependency_cycle_is_rejected_atomically(service):
 
 还要验证自依赖、跨环境、重复边、停用再启用、错误 expected_version，以及两个并发事务尝试组成环时最多一个成功。每次依赖变化断言 `service_catalog_state.graph_version + 1`。
 
-- [ ] **步骤 5：实现串行化图更新和 DFS 环检测**
+- [x] **步骤 5：实现串行化图更新和 DFS 环检测**
 
 依赖写入必须先 `SELECT ... FOR UPDATE` 锁定 `service_catalog_state(global)`，再加载 ACTIVE 边，加入或移除目标边后运行颜色标记 DFS：
 
@@ -434,7 +434,7 @@ def _has_cycle(edges: set[tuple[str, str]]) -> bool:
 
 校验通过后才写依赖并递增图版本；异常时整个事务回滚。
 
-- [ ] **步骤 6：运行服务目录完整测试**
+- [x] **步骤 6：运行服务目录完整测试**
 
 ```bash
 cd backend
@@ -444,7 +444,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_BOOTSTRAP_URL" PYTHONPATH=. \
 
 预期：服务、版本、依赖、并发环和有界审计全部通过。
 
-- [ ] **步骤 7：提交目录业务服务**
+- [x] **步骤 7：提交目录业务服务**
 
 ```bash
 git add backend/src/incident_intelligence/persistence/catalog_repository.py \
