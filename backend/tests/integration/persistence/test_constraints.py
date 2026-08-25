@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import DataError, IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from incident_intelligence.ids import new_id
@@ -34,6 +34,28 @@ def make_signal(**overrides: object) -> SignalEventRow:
     }
     values.update(overrides)
     return SignalEventRow(**values)
+
+
+def make_alert(signal_event_id: str, **overrides: object) -> AlertRow:
+    values: dict[str, object] = {
+        "id": new_id("alt"),
+        "signal_event_id": signal_event_id,
+        "source": "alertmanager",
+        "source_instance": "a" * 64,
+        "source_alert_key": "payment-high-error-rate",
+        "state": "ACTIVE",
+        "title": "支付接口错误率升高",
+        "severity": "high",
+        "service": "payment-api",
+        "environment": "production",
+        "first_observed_at": NOW,
+        "last_observed_at": NOW,
+        "state_changed_at": NOW,
+        "created_at": NOW,
+        "version": 1,
+    }
+    values.update(overrides)
+    return AlertRow(**values)
 
 
 def test_source_identity_is_unique(migrated_engine: Engine) -> None:
@@ -74,7 +96,7 @@ def test_alert_rejects_incident_state_value(migrated_engine: Engine) -> None:
             )
         )
 
-        with pytest.raises(IntegrityError):
+        with pytest.raises(OperationalError):
             session.commit()
 
         session.rollback()
@@ -108,7 +130,7 @@ def test_alert_requires_existing_signal(migrated_engine: Engine) -> None:
         session.rollback()
 
 
-def test_signal_title_length_is_enforced_by_postgresql(migrated_engine: Engine) -> None:
+def test_signal_title_length_is_enforced_by_mysql(migrated_engine: Engine) -> None:
     with Session(migrated_engine) as session:
         session.add(make_signal(title="x" * 201))
 
@@ -116,3 +138,23 @@ def test_signal_title_length_is_enforced_by_postgresql(migrated_engine: Engine) 
             session.commit()
 
         session.rollback()
+
+
+def test_exact_alert_identity_is_unique(migrated_engine: Engine) -> None:
+    with Session(migrated_engine) as session:
+        first_signal = make_signal(source_event_id="event-1")
+        second_signal = make_signal(id=new_id("sig"), source_event_id="event-2")
+        session.add_all([first_signal, second_signal])
+        session.flush()
+        session.add_all(
+            [
+                make_alert(first_signal.id),
+                make_alert(second_signal.id, id=new_id("alt")),
+            ]
+        )
+
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+        session.rollback()
+        assert session.scalar(select(func.count()).select_from(AlertRow)) == 0

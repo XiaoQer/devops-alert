@@ -6,6 +6,7 @@ Create Date: 2026-08-25
 """
 
 from collections.abc import Sequence
+from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
@@ -20,7 +21,7 @@ SEVERITIES = "'critical', 'high', 'medium', 'low'"
 ENVIRONMENTS = "'production', 'staging', 'development', 'unknown'"
 EVENT_TYPES = "'manual.reported', 'alert.firing', 'alert.resolved'"
 PROJECTION_OUTCOMES = "'opened', 'updated', 'resolved', 'reopened', 'stale', 'orphan_resolved'"
-TABLE_OPTIONS = {
+TABLE_OPTIONS: dict[str, Any] = {
     "mysql_engine": "InnoDB",
     "mysql_charset": "utf8mb4",
     "mysql_collate": "utf8mb4_bin",
