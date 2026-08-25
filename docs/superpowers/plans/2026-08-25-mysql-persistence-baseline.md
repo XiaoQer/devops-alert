@@ -145,7 +145,7 @@ cd backend
 
 预期：URL、engine 和健康检查测试通过；Ruff、Mypy 无错误。
 
-- [ ] **步骤 6：提交连接基线**
+- [x] **步骤 6：提交连接基线**
 
 ```bash
 git add backend/pyproject.toml backend/requirements.lock \
