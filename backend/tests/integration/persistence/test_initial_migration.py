@@ -3,6 +3,7 @@ from __future__ import annotations
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect
+from sqlalchemy.dialects import mysql
 from sqlalchemy.engine import Engine
 
 EXPECTED_TABLES = {
@@ -21,7 +22,13 @@ def test_upgrade_creates_all_initial_domain_tables(
 ) -> None:
     command.upgrade(alembic_config, "head")
 
-    assert set(inspect(mysql_engine).get_table_names()) >= EXPECTED_TABLES
+    inspector = inspect(mysql_engine)
+    assert set(inspector.get_table_names()) >= EXPECTED_TABLES
+    assert inspector.get_table_options("signal_events")["mysql_engine"] == "InnoDB"
+    columns = {column["name"]: column["type"] for column in inspector.get_columns("signal_events")}
+    assert isinstance(columns["facts"], mysql.JSON)
+    assert isinstance(columns["observed_at"], mysql.DATETIME)
+    assert columns["observed_at"].fsp == 6
 
     command.downgrade(alembic_config, "base")
 

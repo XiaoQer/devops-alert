@@ -5,7 +5,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
-from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.engine import URL, Connection, Engine, make_url
 
 from incident_intelligence.persistence import models as persistence_models  # noqa: F401
 from incident_intelligence.persistence.base import Base
@@ -17,10 +17,21 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def _validate_database_url(value: str) -> URL:
+    try:
+        database_url = make_url(value)
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("数据库连接地址必须是包含数据库名的 mysql+pymysql URL") from error
+    if database_url.drivername != "mysql+pymysql" or not database_url.database:
+        raise RuntimeError("数据库连接地址必须是包含数据库名的 mysql+pymysql URL")
+    return database_url
+
+
 def _configured_database_url() -> str:
     database_url = os.environ.get("II_DATABASE_URL")
     if database_url is None:
-        raise RuntimeError("需要通过 II_DATABASE_URL 提供 PostgreSQL 连接地址")
+        raise RuntimeError("需要通过 II_DATABASE_URL 提供 MySQL 连接地址")
+    _validate_database_url(database_url)
     return database_url
 
 
@@ -46,6 +57,8 @@ def _run_with_connection(connection: Connection) -> None:
 def run_migrations_online() -> None:
     provided_engine = config.attributes.get("engine")
     if isinstance(provided_engine, Engine):
+        if provided_engine.dialect.name != "mysql":
+            raise RuntimeError("Alembic 只支持 MySQL engine")
         with provided_engine.connect() as connection:
             _run_with_connection(connection)
         return
