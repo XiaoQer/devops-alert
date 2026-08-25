@@ -677,7 +677,7 @@ git commit -m "feat: 排队并租用事故关联任务"
 - 产生：`CorrelationService.process(lease: CorrelationJobLease) -> CorrelationDecisionResult`。
 - 消费：任务 1 的 `decide_correlation`，任务 3 的目录仓储，任务 5 的租约。
 
-- [ ] **步骤 1：编写零候选创建与唯一候选关联失败测试**
+- [x] **步骤 1：编写零候选创建与唯一候选关联失败测试**
 
 ```python
 def test_eligible_alert_without_candidate_creates_incident_link_and_decision(context):
@@ -698,7 +698,7 @@ def test_only_one_same_service_candidate_is_auto_linked(context):
     assert count_incidents() == 1
 ```
 
-- [ ] **步骤 2：运行关联服务测试并确认服务不存在**
+- [x] **步骤 2：运行关联服务测试并确认服务不存在**
 
 ```bash
 cd backend
@@ -708,7 +708,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_BOOTSTRAP_URL" PYTHONPATH=. \
 
 预期：因 `services.correlation` 不存在而失败。
 
-- [ ] **步骤 3：实现候选查询、范围锁和创建/关联事务**
+- [x] **步骤 3：实现候选查询、范围锁和创建/关联事务**
 
 `CorrelationRepository` 增加：
 
@@ -747,7 +747,7 @@ def add_incident_link_decision(self, incident, link, decision) -> None:
 
 处理事务先验证 job owner/state 和 Alert 版本，再读取当前 SignalEvent 的 symptom。符合门槛后锁服务目录项，查询候选并调用纯决策。CREATE 顺序为 Incident、CorrelationDecision、IncidentAlertLink；LINK 顺序为 CorrelationDecision、IncidentAlertLink、可选严重度提升。最后把任务设为 SUCCEEDED。任一步异常回滚全部业务写入。
 
-- [ ] **步骤 4：补齐规则矩阵和安全测试**
+- [x] **步骤 4：补齐规则矩阵和安全测试**
 
 逐项验证：
 
@@ -762,11 +762,11 @@ def add_incident_link_decision(self, incident, link, decision) -> None:
 - 关联失败时 Incident、Link、Decision 零残留，任务随后按固定错误码重试；
 - decision facts 只包含设计白名单，审计不含标题、摘要或 symptom 原始未知值。
 
-- [ ] **步骤 5：增加同服务并发收敛测试**
+- [x] **步骤 5：增加同服务并发收敛测试**
 
 使用 `Barrier` 同时处理两个同服务、同窗口 Alert。断言一个创建 Incident，另一个在目录行锁释放后关联该 Incident；最终一条 Incident、两条唯一 Link、两条 Decision，且没有 DiagnosisRun。若触发唯一约束，必须退出失败事务后有界重试。
 
-- [ ] **步骤 6：运行关联服务与原有领域回归**
+- [x] **步骤 6：运行关联服务与原有领域回归**
 
 ```bash
 cd backend

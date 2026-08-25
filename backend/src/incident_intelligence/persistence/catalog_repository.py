@@ -29,13 +29,16 @@ class ServiceCatalogRepository:
         self,
         service: str,
         environment: str,
+        *,
+        for_update: bool = False,
     ) -> ServiceCatalogEntryRow | None:
-        return self._session.scalar(
-            select(ServiceCatalogEntryRow).where(
-                ServiceCatalogEntryRow.service == service,
-                ServiceCatalogEntryRow.environment == environment,
-            )
+        statement = select(ServiceCatalogEntryRow).where(
+            ServiceCatalogEntryRow.service == service,
+            ServiceCatalogEntryRow.environment == environment,
         )
+        if for_update:
+            statement = statement.with_for_update()
+        return self._session.scalar(statement)
 
     def add_service(self, row: ServiceCatalogEntryRow) -> None:
         self._session.add(row)
