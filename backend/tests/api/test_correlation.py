@@ -194,9 +194,7 @@ def test_failed_job_retry_resets_attempts_and_writes_bounded_audit(
     lease = None
     for attempt in range(5):
         current = NOW + timedelta(minutes=attempt * 10)
-        lease = context.jobs.claim_batch(
-            "failing-runner", current, limit=1, lease_seconds=30
-        )[0]
+        lease = context.jobs.claim_batch("failing-runner", current, limit=1, lease_seconds=30)[0]
         context.jobs.fail(
             lease.id,
             "failing-runner",
@@ -215,9 +213,7 @@ def test_failed_job_retry_resets_attempts_and_writes_bounded_audit(
     assert response.json()["attempts"] == 0
     with context.session_factory() as session:
         audit = session.scalar(
-            select(AuditEventRow).where(
-                AuditEventRow.action == "correlation.job_retried"
-            )
+            select(AuditEventRow).where(AuditEventRow.action == "correlation.job_retried")
         )
     assert audit is not None
     assert audit.details == {"reason_code": "manual_retry_requested"}

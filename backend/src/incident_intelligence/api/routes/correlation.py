@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -46,9 +45,7 @@ def get_alert_correlation(
 ) -> AlertCorrelationResponse:
     del actor
     try:
-        return AlertCorrelationResponse.model_validate(
-            service.get_alert_correlation(alert_id)
-        )
+        return AlertCorrelationResponse.model_validate(service.get_alert_correlation(alert_id))
     except CorrelationResourceNotFound as error:
         raise ApiError(404, "resource_not_found", "未找到指定资源") from error
 

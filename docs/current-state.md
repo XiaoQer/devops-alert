@@ -133,4 +133,31 @@ CloudEvents 1.0 适配器和 HTTP 入口已经实现并验证：
 - 用户现有 MySQL 8.4.10 已从确认不存在的空库创建 `incident_intelligence`，迁移到 `0001_mysql_initial`；
 - 七张业务表全部使用 InnoDB，临时 API 的 `/health/ready` 返回 HTTP 200 和数据库可用。
 
-MySQL 8.4 已成为当前唯一可用持久化基线。共享外部信号接入服务、Alertmanager 和 CloudEvents HTTP 入口均已在该基线上完成；事故关联、自动取证和 AI 仍未实现。
+MySQL 8.4 已成为当前唯一可用持久化基线。共享外部信号接入服务、Alertmanager 和 CloudEvents HTTP 入口均已在该基线上完成。
+
+## 2026-08-25 服务目录与可解释事故关联已验收
+
+已经实现并验证：
+
+- `0002_service_catalog_correlation` 增加版本化服务目录、同环境一跳依赖、持久关联任务、不可变关联决策和 Alert-Incident 关系；
+- 服务目录使用 `service + environment` 唯一身份、乐观版本和停用语义，依赖拒绝自引用、跨环境、重复边和有向环；
+- Alert 投影有效变化与关联任务在同一个 MySQL 事务中写入，精确重放、迟到和孤立恢复不追加任务；
+- 任务支持 `SKIP LOCKED` 批量领取、租约过期接管、最多五次尝试、固定错误码和有界人工重试审计；
+- 首版门槛固定为 ACTIVE、critical/high、production 且目录项启用；
+- 同服务 15 分钟内唯一活动候选自动关联，多个候选和一跳同症状候选只提示并创建独立事故；
+- Incident、关系、决策和任务完成处于同一事务，失败零残留；同服务并发处理收敛为一条 Incident；
+- 每次结果保存 `correlation.v1`、固定原因码、白名单事实、最多 20 个候选和固定中文解释；
+- Alert 恢复记录 `RECORDED_RESOLUTION`，不自动关闭或修改 Incident 运营状态；
+- 服务目录管理、关联结果读取、任务分页和失败任务重试 API 只接受人工 API Token；
+- 后台 Runner 随 FastAPI 生命周期启停，单任务失败不会阻断同批其他任务或应用；
+- 外部 Alert 自动创建或关联 Incident 时不会创建 DiagnosisRun，也不会触发自动取证或 AI。
+
+统一验收结果：89 个文件格式通过，54 个源文件与迁移 Mypy 严格检查通过，292 项测试通过，覆盖率 94.83%。真实 HTTP 冒烟完成 `CREATED_NO_MATCH → LINKED_EXACT_SERVICE → RECORDED_RESOLUTION`，两个 Alert 指向同一 Incident，恢复后 Incident 保持 `DETECTED`；数据库为 1 个 Incident、0 个 DiagnosisRun、3 个不可变决策，安全扫描 0 命中。临时 Uvicorn 和临时数据库已删除。
+
+仍未实现：
+
+- 自动取证、证据快照和 DiagnosisRun 自动创建；
+- AI 分析、可信报告和人工复核；
+- 人工合并拆分、事故认领、状态流转和恢复闭环；
+- 维护窗口、变更关联、多跳拓扑、自动服务发现和学习型关联；
+- 前端、生产部署制品、Kubernetes Chart 和生产级身份系统。

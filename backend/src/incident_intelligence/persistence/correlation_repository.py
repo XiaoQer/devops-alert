@@ -234,9 +234,7 @@ class CorrelationRepository:
             statement = statement.where(CorrelationJobRow.state == state)
         return tuple(
             self._session.scalars(
-                statement.order_by(
-                    CorrelationJobRow.created_at.desc(), CorrelationJobRow.id.desc()
-                )
+                statement.order_by(CorrelationJobRow.created_at.desc(), CorrelationJobRow.id.desc())
                 .limit(limit)
                 .offset(offset)
             )

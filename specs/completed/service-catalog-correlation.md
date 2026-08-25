@@ -2,7 +2,7 @@
 
 ## 状态
 
-已确认，待实施。
+已验收。
 
 ## 背景与目标
 
@@ -68,4 +68,7 @@
 
 ## 验证证据
 
-尚未实施，不得把服务目录、自动事故创建或关联标记为可用。
+- 292 项后端测试通过，覆盖率 94.83%，Ruff、格式、Mypy、迁移往返和 MySQL 集成测试全部通过；
+- 真实 HTTP 冒烟验证 `CREATED_NO_MATCH → LINKED_EXACT_SERVICE → RECORDED_RESOLUTION`，Incident 保持 `DETECTED`；
+- 冒烟数据库最终为 1 个 Incident、0 个 DiagnosisRun、3 个不可变关联决策，安全扫描 0 命中；
+- 详细证据见 `docs/verification/2026-08-25-service-catalog-correlation.md`。

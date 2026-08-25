@@ -133,12 +133,12 @@ def test_first_alert_creates_incident_and_second_exact_alert_links_without_diagn
     with session_factory() as session:
         incident = session.get(IncidentRow, first_decision.incident_id)
         links = list(
-            session.scalars(
-                select(IncidentAlertLinkRow).order_by(IncidentAlertLinkRow.linked_at)
-            )
+            session.scalars(select(IncidentAlertLinkRow).order_by(IncidentAlertLinkRow.linked_at))
         )
         decisions = list(
-            session.scalars(select(CorrelationDecisionRow).order_by(CorrelationDecisionRow.created_at))
+            session.scalars(
+                select(CorrelationDecisionRow).order_by(CorrelationDecisionRow.created_at)
+            )
         )
         job_states = list(session.scalars(select(CorrelationJobRow.state)))
         diagnosis_count = session.scalar(select(func.count()).select_from(DiagnosisRunRow))
@@ -271,9 +271,7 @@ def test_resolved_alert_records_resolution_without_closing_incident(
         request_id="req-resolve",
     )
     resolved = correlation.process(
-        jobs.claim_batch(
-            "runner", NOW + timedelta(minutes=2), limit=1, lease_seconds=30
-        )[0]
+        jobs.claim_batch("runner", NOW + timedelta(minutes=2), limit=1, lease_seconds=30)[0]
     )
 
     assert resolved.outcome == "RECORDED_RESOLUTION"
@@ -298,9 +296,7 @@ def test_dependency_with_same_normalized_symptom_is_candidate_not_auto_merge(
 ) -> None:
     catalog, intake, jobs, correlation = services
     upstream = catalog.create_service(
-        CreateServiceCommand(
-            service="database", environment="production", owner_team="data"
-        ),
+        CreateServiceCommand(service="database", environment="production", owner_team="data"),
         actor="manual-api-client",
         request_id="req-db",
     )
@@ -347,9 +343,7 @@ def test_dependency_with_same_normalized_symptom_is_candidate_not_auto_merge(
         request_id="req-payment-alert",
     )
     payment_result = correlation.process(
-        jobs.claim_batch(
-            "runner", NOW + timedelta(minutes=5), limit=1, lease_seconds=30
-        )[0]
+        jobs.claim_batch("runner", NOW + timedelta(minutes=5), limit=1, lease_seconds=30)[0]
     )
 
     assert payment_result.outcome == "CREATED_DEPENDENCY_CANDIDATE"

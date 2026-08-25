@@ -4,7 +4,7 @@
 
 本项目从零开始建设，与故障注入平台物理隔离。它不包含故障场景、注入器、Chaos 权限、实验恢复或评测标准答案。非生产故障实验只能通过真实监控和版本化公开契约验证本平台，不得把实验身份或答案写入诊断链路。
 
-当前后端提供健康检查、原子且幂等的人工事故报告、Alertmanager Webhook、CloudEvents 1.0 两种模式接入，以及 SignalEvent、Alert、Incident、DiagnosisRun 四类资源的独立读取 API。事故关联、自动取证、Worker、AI 分析、事故运营写接口和前端仍未实现。
+当前后端提供健康检查、原子且幂等的人工事故报告、Alertmanager Webhook、CloudEvents 1.0 两种模式接入、版本化服务目录、持久关联任务和规则优先的可解释事故关联。满足门槛的外部 Alert 可以创建或加入 Incident；自动取证、DiagnosisRun 自动创建、AI 分析、事故运营写接口和前端仍未实现。
 
 ## 项目事实
 
@@ -38,6 +38,11 @@ export II_CLOUDEVENTS_TOKEN='<CloudEvents 专用随机 Token>'
 - `POST /api/v1/manual-reports`：提交人工事故报告；
 - `POST /api/v1/intake/alertmanager`：接收 Alertmanager Webhook v4；
 - `POST /api/v1/intake/cloudevents`：接收 CloudEvents 1.0 结构化或 Binary 事件；
+- `POST/GET/PATCH /api/v1/catalog/services`：维护版本化服务目录；
+- `POST/GET/PATCH /api/v1/catalog/dependencies`：维护同环境一跳依赖；
+- `GET /api/v1/alerts/{id}/correlation`：读取关联任务、事故摘要和中文决策；
+- `GET /api/v1/correlation/jobs`：分页读取关联任务；
+- `POST /api/v1/correlation/jobs/{id}/retry`：人工重试失败任务；
 - `GET /api/v1/signals/{id}`、`/alerts/{id}`、`/incidents/{id}`、`/diagnosis-runs/{id}`：独立读取四类资源。
 
 除存活检查外，业务接口使用 `Authorization: Bearer <Token>`。人工报告与资源读取使用 `II_API_TOKEN`，Alertmanager 使用 `II_ALERTMANAGER_TOKEN`，CloudEvents 使用 `II_CLOUDEVENTS_TOKEN`，三套 Token 不能交叉使用。人工报告和 CloudEvents 请求体最多 64 KiB，Alertmanager 最多 256 KiB 且单批最多 100 条；人工报告还必须提供长度为 1–256 的 `Idempotency-Key`。
@@ -50,6 +55,20 @@ curl -X POST http://127.0.0.1:8000/api/v1/intake/cloudevents \
   -H 'Content-Type: application/cloudevents+json' \
   --data-binary '{"specversion":"1.0","id":"<来源事件 ID>","source":"https://monitor.example.com/source","type":"com.incidentintelligence.alert.v1","subject":"payment-api","time":"2026-08-25T03:31:00Z","datacontenttype":"application/json","data":{"alert_key":"payment-error-rate","title":"支付接口错误率升高","summary":"错误率超过阈值","severity":"high","service":"payment-api","environment":"production","status":"firing","started_at":"2026-08-25T03:30:00Z","labels":{"region":"cn-east-1"}}}'
 ```
+
+发送生产 high/critical 告警前，应先登记对应服务。以下示例不会写入 Secret，也不需要任何故障实验身份：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/catalog/services \
+  -H 'Authorization: Bearer <人工 API Token>' \
+  -H 'Content-Type: application/json' \
+  --data-binary '{"service":"payment-api","environment":"production","owner_team":"payments"}'
+
+curl http://127.0.0.1:8000/api/v1/alerts/<Alert ID>/correlation \
+  -H 'Authorization: Bearer <人工 API Token>'
+```
+
+首版关联门槛固定为 ACTIVE、critical/high、production 且服务目录项启用。同服务 15 分钟内只有一个活动事故时自动关联；多个候选或一跳同症状候选会创建独立事故并保留中文解释，不会冒险合并。Alert 恢复只记录 `RECORDED_RESOLUTION`，不会自动关闭 Incident。
 
 ## 后端验证
 

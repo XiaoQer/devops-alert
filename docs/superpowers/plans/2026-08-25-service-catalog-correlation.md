@@ -778,7 +778,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_BOOTSTRAP_URL" PYTHONPATH=. .venv/bin/pytest -q 
 
 预期：完整决策矩阵、并发和零 DiagnosisRun 边界通过。
 
-- [ ] **步骤 7：提交关联服务**
+- [x] **步骤 7：提交关联服务**
 
 ```bash
 git add backend/src/incident_intelligence/persistence \
@@ -891,7 +891,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_BOOTSTRAP_URL" PYTHONPATH=. .venv/bin/pytest -q 
 
 预期：读取、重试、Token 隔离、生命周期和现有接口全部通过。
 
-- [ ] **步骤 7：提交关联 API 和 Runner**
+- [x] **步骤 7：提交关联 API 和 Runner**
 
 ```bash
 git add backend/src/incident_intelligence/api \
@@ -920,7 +920,7 @@ git commit -m "feat: 运行并解释事故关联任务"
 - 验收：真实 Alertmanager/CloudEvents → Alert → correlation job → Incident → 中文决策。
 - 保持：DiagnosisRun、自动取证和 AI 仍未实现。
 
-- [ ] **步骤 1：编写跨层验收测试**
+- [x] **步骤 1：编写跨层验收测试**
 
 创建 `backend/tests/integration/test_external_alert_to_incident.py`，通过真实服务顺序验证：
 
@@ -938,7 +938,7 @@ def test_registered_high_production_alert_becomes_explainable_incident(context):
 
 同文件增加第二个同服务 Alert 自动关联、一跳同症状创建独立事故候选、低严重度拒绝、resolved 不关闭 Incident、接入重放不追加任务。
 
-- [ ] **步骤 2：运行跨层验收测试**
+- [x] **步骤 2：运行跨层验收测试**
 
 ```bash
 cd backend
@@ -948,7 +948,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_BOOTSTRAP_URL" PYTHONPATH=. \
 
 预期：前序任务已经分别完成测试驱动实现；本步骤作为跨层验收，所有 Alert、任务、Incident、决策和零 DiagnosisRun 断言直接通过，不临时修改业务实现。
 
-- [ ] **步骤 3：运行仓库统一验收**
+- [x] **步骤 3：运行仓库统一验收**
 
 ```bash
 II_TEST_DATABASE_URL="$II_MYSQL_BOOTSTRAP_URL" ./scripts/verify-backend.sh
@@ -956,7 +956,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_BOOTSTRAP_URL" ./scripts/verify-backend.sh
 
 预期：Ruff、格式、Mypy、迁移升级/降级、全部测试和覆盖率 90% 门槛零失败。
 
-- [ ] **步骤 4：执行隔离临时库真实 HTTP 冒烟**
+- [x] **步骤 4：执行隔离临时库真实 HTTP 冒烟**
 
 使用精确命名临时 MySQL 数据库和当前终端随机三套 Token，迁移到 `0002_service_catalog_correlation`，启动 Uvicorn。依次：
 
@@ -971,22 +971,22 @@ II_TEST_DATABASE_URL="$II_MYSQL_BOOTSTRAP_URL" ./scripts/verify-backend.sh
 
 只记录状态码、资源 ID 是否一致、固定 outcome、Incident 状态和计数，不记录 Token 或完整请求。
 
-- [ ] **步骤 5：更新事实文档和验收规格**
+- [x] **步骤 5：更新事实文档和验收规格**
 
 README 增加可直接替换资源 ID 的脱敏目录配置和关联结果读取示例；architecture 只把主数据流第 4–6 步的首版规则标为已实现；current-state 记录真实测试数、覆盖率、迁移版本、冒烟结果和已知缺口。验收通过后把聚焦规格状态改为“已验收”并移入 completed。
 
-- [ ] **步骤 6：记录验收证据**
+- [x] **步骤 6：记录验收证据**
 
 `docs/verification/2026-08-25-service-catalog-correlation.md` 必须记录：执行命令、测试数量、覆盖率、迁移往返、目录/关联规则矩阵、并发、租约、真实 HTTP 结论、安全扫描和以下缺口：无自动取证、无 DiagnosisRun 自动创建、无 AI、无人工合并拆分、无前端。
 
-- [ ] **步骤 7：提交验收记录**
+- [x] **步骤 7：提交验收记录**
 
 ```bash
 git add README.md docs specs backend/tests/integration/test_external_alert_to_incident.py
 git commit -m "docs: 验收服务目录与事故关联"
 ```
 
-- [ ] **步骤 8：最终验证 main 与清理状态**
+- [x] **步骤 8：最终验证 main 与清理状态**
 
 ```bash
 git status --short --branch
