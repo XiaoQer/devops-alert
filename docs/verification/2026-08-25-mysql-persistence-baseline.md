@@ -2,7 +2,7 @@
 
 ## 状态
 
-项目独立 MySQL 验证已通过；用户现有 MySQL 的受控空库迁移与健康检查待完成。
+已通过。
 
 ## 验收范围
 
@@ -32,15 +32,17 @@
 - MySQL CHECK 错误码 3819 由当前 PyMySQL 分类为 OperationalError，约束本身正常生效；
 - 业务仓储和事务代码不需要 PostgreSQL/MySQL 双方言分支。
 
-## 当前运行环境预检
+## 当前运行环境冒烟
 
 - 用户现有容器：`devops-assistant-mysql-1`；
 - MySQL 版本：8.4.10；
 - 端口：3307；
-- 2026-08-25 只读检查确认 `incident_intelligence` 数据库不存在；
-- 尚未创建数据库、执行迁移或启动 API 健康检查；
-- 当前终端尚未提供 `II_MYSQL_BOOTSTRAP_URL`，因此未读取或记录任何数据库凭据。
+- 2026-08-25 只读检查确认 `incident_intelligence` 数据库不存在后，创建专用空库；
+- Alembic 成功迁移到 `0001_mysql_initial (head)`；
+- 七张业务表均使用 InnoDB，另有一张 Alembic 版本表；
+- 临时启动 API 后，`GET /health/ready` 返回 HTTP 200、`status=ready` 和 `database=available`；
+- 冒烟过程未写入事故业务数据，数据库凭据未进入源码、验收记录或 API 响应。
 
-## 剩余验收
+## 结论
 
-用户在当前终端提供只选择 MySQL 自带 `mysql` 库的引导 URL 后，需创建专用空库、执行迁移到 `0001_mysql_initial`、确认七张业务表，并验证 `/health/ready` 返回数据库可用。完成前，本规格保持“实施中”。
+MySQL 8.4 持久化规格的全部验收条件已满足。共享外部信号接入、Alertmanager 和 CloudEvents 仍属于后续规格，不计入本次可用能力。

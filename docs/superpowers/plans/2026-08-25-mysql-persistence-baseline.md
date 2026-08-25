@@ -8,7 +8,7 @@
 
 **技术栈：** Python 3.13–3.14、FastAPI、Pydantic v2、SQLAlchemy 2、Alembic、PyMySQL、MySQL 8.4、Pytest、Ruff、Mypy、Docker Compose。
 
-**规格：** `specs/active/mysql-persistence-baseline.md`；完整设计见 `docs/superpowers/specs/2026-08-24-mysql-persistence-baseline-design.md`。
+**规格：** `specs/completed/mysql-persistence-baseline.md`；完整设计见 `docs/superpowers/specs/2026-08-24-mysql-persistence-baseline-design.md`。
 
 ## 全局约束
 
@@ -619,7 +619,7 @@ rg -n "psycopg|JSONB|postgresql\+|postgres:16|II_POSTGRES" backend compose.yaml 
 
 允许命中仅限已加“历史说明”的历史事实和新决策中解释被替代原因；当前代码、依赖、Compose、README、活跃规格和当前架构不得命中。Secret 形态扫描不得输出实际环境变量值。
 
-- [ ] **步骤 5：在用户现有 MySQL 8.4 上执行受控空库冒烟**
+- [x] **步骤 5：在用户现有 MySQL 8.4 上执行受控空库冒烟**
 
 用户在当前终端提供选择 MySQL 自带 `mysql` 库的 `II_MYSQL_BOOTSTRAP_URL`。先只读确认服务版本，并查询 `information_schema.schemata` 确认 `incident_intelligence` 不存在；若已存在则停止，不删除、不覆盖。确认不存在后，以 utf8mb4/utf8mb4_bin 创建该专用库，再由用户设置不回显的 `II_DATABASE_URL`。执行：
 
@@ -631,7 +631,7 @@ cd backend
 
 随后启动 API，只记录 `/health/ready` 状态码和数据库 available 状态。不得输出 URL、用户名、密码或容器环境。若目标库非空，立即停止并请求用户处理，不删除任何表或数据库。
 
-- [ ] **步骤 6：记录证据并验收规格**
+- [x] **步骤 6：记录证据并验收规格**
 
 `docs/verification/2026-08-25-mysql-persistence-baseline.md` 记录：MySQL 版本、迁移 revision、表数量、测试数、覆盖率、静态检查、UTC/JSON/大小写/事务证据和真实健康检查结果，不记录 Secret。
 
@@ -642,7 +642,7 @@ cd backend
 - 多源信号接入仍标记为实施中，外部入口仍不可用；
 - 下一步恢复共享信号接入服务任务 3。
 
-- [ ] **步骤 7：停止并清理项目测试环境**
+- [x] **步骤 7：停止并清理项目测试环境**
 
 停止 Compose 测试 MySQL，并删除本项目测试卷；不得操作用户现有 `devops-assistant-mysql-1` 容器或其数据。清除当前终端测试密码变量。
 
