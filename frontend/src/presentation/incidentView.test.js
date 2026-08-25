@@ -65,6 +65,13 @@ it("详情只转换后端已经持久化的告警、原因和时间线", () => {
         title: "创建事故",
         detail: "系统根据已持久化告警创建事故",
       },
+      {
+        id: "claimed:1",
+        kind: "incident_claimed",
+        occurred_at: "2026-08-25T08:10:00Z",
+        title: "事故已认领",
+        detail: "manual-api-client",
+      },
     ],
   };
 
@@ -73,6 +80,8 @@ it("详情只转换后端已经持久化的告警、原因和时间线", () => {
   expect(view.reason).toBe("窗口内只有一个同服务事故，已自动关联。");
   expect(view.alerts).toHaveLength(1);
   expect(view.alerts[0]).toMatchObject({ state: "触发中", source: "Alertmanager" });
-  expect(view.timeline).toHaveLength(1);
+  expect(view.timeline).toHaveLength(2);
   expect(view.timeline[0].title).toBe("创建事故");
+  expect(view.timeline[1].detail).toBe("由当前操作员认领");
+  expect(view.timeline[1].detail).not.toContain("manual-api-client");
 });

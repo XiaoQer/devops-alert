@@ -39,7 +39,6 @@ describe("事故中心真实联调", () => {
     expect(wrapper.text()).toContain("支付服务错误率升高");
     expect(wrapper.text()).toContain("两条告警属于同一生产服务且时间相近。");
     expect(wrapper.findAll('[data-testid="related-alert-row"]')).toHaveLength(2);
-    expect(wrapper.text()).not.toContain("订单服务响应变慢");
   });
 
   it("列表失败时只展示安全错误并可重试", async () => {

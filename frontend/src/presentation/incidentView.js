@@ -109,7 +109,7 @@ export function toIncidentDetail(overview, now = new Date()) {
       id: event.id,
       time: formatClock(event.occurred_at),
       title: event.title,
-      detail: event.detail,
+      detail: event.kind === "incident_claimed" ? "由当前操作员认领" : event.detail,
       tone: event.kind === "incident_created" ? "danger"
         : event.kind === "incident_claimed" ? "current" : "neutral",
     })),

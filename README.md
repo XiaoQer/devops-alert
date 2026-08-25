@@ -4,7 +4,7 @@
 
 本项目从零开始建设，与故障注入平台物理隔离。它不包含故障场景、注入器、Chaos 权限、实验恢复或评测标准答案。非生产故障实验只能通过真实监控和版本化公开契约验证本平台，不得把实验身份或答案写入诊断链路。
 
-当前后端提供健康检查、原子且幂等的人工事故报告、Alertmanager Webhook、CloudEvents 1.0 两种模式接入、版本化服务目录、持久关联任务和规则优先的可解释事故关联。满足门槛的外部 Alert 可以创建或加入 Incident；自动取证、DiagnosisRun 自动创建、AI 分析、事故运营写接口和前端仍未实现。
+当前平台提供健康检查、原子且幂等的人工事故报告、Alertmanager Webhook、CloudEvents 1.0 两种模式接入、版本化服务目录、持久关联任务、规则优先的可解释事故关联，以及连接真实 MySQL 的事故中心列表、详情和认领闭环。自动取证、DiagnosisRun 自动创建、AI 分析和完整事故状态流转仍未实现。
 
 ## 项目事实
 
@@ -43,6 +43,9 @@ export II_CLOUDEVENTS_TOKEN='<CloudEvents 专用随机 Token>'
 - `GET /api/v1/alerts/{id}/correlation`：读取关联任务、事故摘要和中文决策；
 - `GET /api/v1/correlation/jobs`：分页读取关联任务；
 - `POST /api/v1/correlation/jobs/{id}/retry`：人工重试失败任务；
+- `GET /api/v1/incidents`：分页、筛选和搜索事故中心队列；
+- `GET /api/v1/incidents/{id}/overview`：读取关联告警、关联解释和事实时间线；
+- `POST /api/v1/incidents/{id}/claim`：以当前认证主体认领事故；
 - `GET /api/v1/signals/{id}`、`/alerts/{id}`、`/incidents/{id}`、`/diagnosis-runs/{id}`：独立读取四类资源。
 
 除存活检查外，业务接口使用 `Authorization: Bearer <Token>`。人工报告与资源读取使用 `II_API_TOKEN`，Alertmanager 使用 `II_ALERTMANAGER_TOKEN`，CloudEvents 使用 `II_CLOUDEVENTS_TOKEN`，三套 Token 不能交叉使用。人工报告和 CloudEvents 请求体最多 64 KiB，Alertmanager 最多 256 KiB 且单批最多 100 条；人工报告还必须提供长度为 1–256 的 `Idempotency-Key`。
