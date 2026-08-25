@@ -9,6 +9,14 @@ from incident_intelligence.persistence.session import get_engine
 from incident_intelligence.settings import Settings
 
 
+def _tokens() -> dict[str, SecretStr]:
+    return {
+        "api_token": SecretStr(token_urlsafe(32)),
+        "alertmanager_token": SecretStr(token_urlsafe(32)),
+        "cloudevents_token": SecretStr(token_urlsafe(32)),
+    }
+
+
 @pytest.mark.parametrize(
     "database_url",
     [
@@ -21,13 +29,13 @@ from incident_intelligence.settings import Settings
 )
 def test_settings_rejects_non_pymysql_or_missing_database(database_url: str) -> None:
     with pytest.raises(ValidationError):
-        Settings(database_url=database_url, api_token=SecretStr(token_urlsafe(32)))
+        Settings(database_url=database_url, **_tokens())
 
 
 def test_settings_accepts_named_pymysql_database() -> None:
     settings = Settings(
         database_url="mysql+pymysql://test-client@127.0.0.1/incident_intelligence",
-        api_token=SecretStr(token_urlsafe(32)),
+        **_tokens(),
     )
 
     assert settings.database_url == ("mysql+pymysql://test-client@127.0.0.1/incident_intelligence")

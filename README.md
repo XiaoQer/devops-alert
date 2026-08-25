@@ -4,7 +4,7 @@
 
 本项目从零开始建设，与故障注入平台物理隔离。它不包含故障场景、注入器、Chaos 权限、实验恢复或评测标准答案。非生产故障实验只能通过真实监控和版本化公开契约验证本平台，不得把实验身份或答案写入诊断链路。
 
-后端阶段 1 已完成：当前提供健康检查、原子且幂等的人工事故报告入口，以及 SignalEvent、Alert、Incident、DiagnosisRun 四类资源的独立读取 API。Alertmanager、CloudEvents、事故关联、自动取证、Worker、AI 分析、事故运营写接口和前端仍未实现。
+当前后端提供健康检查、原子且幂等的人工事故报告、Alertmanager Webhook 接入，以及 SignalEvent、Alert、Incident、DiagnosisRun 四类资源的独立读取 API。CloudEvents、事故关联、自动取证、Worker、AI 分析、事故运营写接口和前端仍未实现。
 
 ## 项目事实
 
@@ -25,6 +25,8 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
 export II_DATABASE_URL='mysql+pymysql://<用户>:<URL编码密码>@127.0.0.1:3307/incident_intelligence'
 export II_API_TOKEN='<本地随机 Token>'
+export II_ALERTMANAGER_TOKEN='<Alertmanager 专用随机 Token>'
+export II_CLOUDEVENTS_TOKEN='<CloudEvents 专用随机 Token>'
 .venv/bin/python -m alembic upgrade head
 .venv/bin/python -m uvicorn incident_intelligence.main:create_app --factory --host 127.0.0.1 --port 8000
 ```
@@ -34,9 +36,10 @@ export II_API_TOKEN='<本地随机 Token>'
 - `GET /health/live`：进程存活；
 - `GET /health/ready`：数据库就绪；
 - `POST /api/v1/manual-reports`：提交人工事故报告；
+- `POST /api/v1/intake/alertmanager`：接收 Alertmanager Webhook v4；
 - `GET /api/v1/signals/{id}`、`/alerts/{id}`、`/incidents/{id}`、`/diagnosis-runs/{id}`：独立读取四类资源。
 
-除存活检查外，业务接口使用 `Authorization: Bearer <Token>`。人工报告还必须提供长度为 1–256 的 `Idempotency-Key`。
+除存活检查外，业务接口使用 `Authorization: Bearer <Token>`。人工报告与资源读取使用 `II_API_TOKEN`，Alertmanager 使用独立的 `II_ALERTMANAGER_TOKEN`；人工报告还必须提供长度为 1–256 的 `Idempotency-Key`。
 
 ## 后端验证
 

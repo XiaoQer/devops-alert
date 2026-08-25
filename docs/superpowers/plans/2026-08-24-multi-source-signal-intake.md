@@ -475,7 +475,7 @@ git commit -m "feat: normalize alertmanager webhooks"
 - 产生：`IntakeItemResponse` 与 `IntakeBatchResponse`
 - 修改：RequestBodyLimitMiddleware 支持按精确路径选择上限
 
-- [ ] **步骤 1：编写认证隔离与容量失败测试**
+- [x] **步骤 1：编写认证隔离与容量失败测试**
 
 动态生成三套 Token，不把固定凭据写入测试：
 
@@ -493,13 +493,13 @@ def test_alertmanager_rejects_manual_and_cloudevents_tokens(api_tokens, client, 
 
 增加 262145 字节返回 413、101 条返回 422 batch_too_large、人工报告仍在 65536 字节拒绝的测试。
 
-- [ ] **步骤 2：运行 API 测试并确认路由 404**
+- [x] **步骤 2：运行 API 测试并确认路由 404**
 
 运行：`cd backend && II_TEST_DATABASE_URL="$II_LOCAL_TEST_DATABASE_URL" .venv/bin/python -m pytest tests/api/test_alertmanager_intake.py -q`
 
 预期：合法调用为 404，证明路由尚未注册。
 
-- [ ] **步骤 3：扩展 Settings 和认证依赖**
+- [x] **步骤 3：扩展 Settings 和认证依赖**
 
 Settings 增加：
 
@@ -512,7 +512,7 @@ cloudevents_body_limit_bytes: int = Field(default=65_536, gt=0, le=262_144)
 
 抽取内部 `_require_token(credentials, expected, actor)`，三套公开依赖分别读取对应 SecretStr 并使用 bytes compare_digest。现有人工报告和资源读取改用 require_manual_actor。
 
-- [ ] **步骤 4：实现路径级容量中间层**
+- [x] **步骤 4：实现路径级容量中间层**
 
 中间层构造参数改为默认上限与精确路径字典：
 
@@ -529,7 +529,7 @@ RequestBodyLimitMiddleware(
 
 声明 Content-Length 和无长度分块累计都使用同一路径上限，413 响应只含固定 code/message。
 
-- [ ] **步骤 5：实现 Alertmanager 路由与响应**
+- [x] **步骤 5：实现 Alertmanager 路由与响应**
 
 路由先由 Pydantic 完整验证 AlertmanagerWebhook，再调用 to_signal_commands 和 `app.state.signal_intake_service.submit_batch`。首次成功返回 202；完全重放仍返回 200。响应按输入顺序返回 ID/outcome/replayed，并产生固定计数。
 
@@ -552,11 +552,11 @@ def receive_alertmanager(
 
 适配器错误映射 validation_error 或 forbidden_identity；SourceEventConflict 映射 409；SQLAlchemyError 继续映射 503。
 
-- [ ] **步骤 6：验证原子批次、安全响应和零事故**
+- [x] **步骤 6：验证原子批次、安全响应和零事故**
 
 API 测试覆盖合法单条、多条、重放、更新、恢复、批次一条非法全量零写入、数据库故障全量回滚、日志不含正文或 Token，并断言 IncidentRow 与 DiagnosisRunRow 数量为零。
 
-- [ ] **步骤 7：运行 Alertmanager 与现有 API 回归**
+- [x] **步骤 7：运行 Alertmanager 与现有 API 回归**
 
 运行：
 
@@ -570,7 +570,7 @@ II_TEST_DATABASE_URL="$II_LOCAL_TEST_DATABASE_URL" .venv/bin/python -m pytest \
 
 预期：三套 Token 隔离、两种容量和现有接口全部通过。
 
-- [ ] **步骤 8：提交 Alertmanager HTTP 接入**
+- [x] **步骤 8：提交 Alertmanager HTTP 接入**
 
 ```bash
 git add backend/src/incident_intelligence/settings.py \

@@ -6,7 +6,7 @@ from re import compile as compile_pattern
 from fastapi import APIRouter, Depends
 from sqlalchemy.engine import Engine
 
-from incident_intelligence.api.dependencies import require_actor
+from incident_intelligence.api.dependencies import require_manual_actor
 from incident_intelligence.api.errors import ApiError
 from incident_intelligence.api.schemas.resources import (
     AlertResponse,
@@ -25,7 +25,11 @@ DIAGNOSIS_ID = compile_pattern(r"^diag_[0-9a-f]{32}$")
 
 def create_resources_router(engine: Engine) -> APIRouter:
     session_factory = make_session_factory(engine)
-    router = APIRouter(prefix="/api/v1", tags=["resources"], dependencies=[Depends(require_actor)])
+    router = APIRouter(
+        prefix="/api/v1",
+        tags=["resources"],
+        dependencies=[Depends(require_manual_actor)],
+    )
 
     @router.get("/signals/{signal_event_id}", response_model=SignalEventResponse)
     def get_signal(signal_event_id: str) -> SignalEventResponse:

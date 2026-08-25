@@ -63,7 +63,7 @@ Compose 独立环境中的最终验证结果为 91 项测试通过，覆盖率 9
 - 外部接入服务不会创建 Incident 或 DiagnosisRun，审计不保存标题、摘要或原始输入；
 - 共享服务与纯领域聚焦测试 20 项通过，当前全部后端测试 142 项通过，Ruff、格式和 Mypy 通过。
 
-尚未实现：Alertmanager HTTP 入口，以及 CloudEvents 适配器和 HTTP 入口。因此当前仍不能接收真实外部告警。
+尚未实现：CloudEvents 适配器和 HTTP 入口。
 
 Alertmanager v4 纯适配器已经实现并验证：
 
@@ -75,21 +75,28 @@ Alertmanager v4 纯适配器已经实现并验证：
 - 分组和无关字段变化不改变来源事件身份，真实规范化内容变化会生成新身份；
 - 24 项 Alertmanager 适配器测试通过，Ruff、格式和 Mypy 通过。
 
-Alertmanager HTTP 入口尚未实现，因此监控系统仍不能向平台发送 Webhook。
+Alertmanager HTTP 入口已经实现并验证：
+
+- `POST /api/v1/intake/alertmanager` 使用 Alertmanager 专用 Bearer Token，人工报告和 CloudEvents Token 均不能访问；
+- 请求体按精确路径使用 256 KiB 上限，单批最多 100 条，人工报告仍保持 64 KiB 上限；
+- 首次或部分新内容返回 202，整批精确重放返回 200，响应只包含规范化 ID、固定投影结果和计数；
+- 单条、多条、更新、恢复、重放和输入顺序均通过真实 MySQL API 测试；
+- 批次中任一条非法时整批零写入，数据库失败、禁止身份和来源冲突使用安全固定错误，不回显正文、Token 或被拒绝值；
+- Alertmanager 接入只生成 SignalEvent、Alert、幂等结果和有界审计，不创建 Incident 或 DiagnosisRun；
+- 当前全部后端测试 179 项通过，覆盖率 96.51% 以上，Ruff、格式和 Mypy 通过。
 
 仍未实现：
 
-- Alertmanager、CloudEvents 和其他外部适配器；
+- CloudEvents 和其他外部适配器；
 - 服务目录、事故关联、自动取证、Worker 注册和 AI 分析；
 - 事故运营写接口、恢复闭环和前端；
 - 生产部署制品、Kubernetes Chart 和真实监控或 AI 提供方接入。
 
 ## 下一步门槛
 
-1. 实现 Alertmanager v4 独立认证、路径容量限制和安全 HTTP 入口；
-2. Alertmanager 验证通过后，实现 CloudEvents 1.0 两种内容模式及独立入口；
-3. 完成多源接入后再设计轻量服务目录和可解释事故关联；
-4. 在上述能力实现前，不得把外部接入、关联、自动取证、Worker 或 AI 标记为可用。
+1. 实现 CloudEvents 1.0 两种内容模式及独立入口；
+2. 完成多源接入后再设计轻量服务目录和可解释事故关联；
+3. 在上述能力实现前，不得把完整多源接入、关联、自动取证、Worker 或 AI 标记为可用。
 
 ## 2026-08-25 MySQL 基线切换已验收
 
@@ -114,4 +121,4 @@ Alertmanager HTTP 入口尚未实现，因此监控系统仍不能向平台发�
 - 用户现有 MySQL 8.4.10 已从确认不存在的空库创建 `incident_intelligence`，迁移到 `0001_mysql_initial`；
 - 七张业务表全部使用 InnoDB，临时 API 的 `/health/ready` 返回 HTTP 200 和数据库可用。
 
-MySQL 8.4 已成为当前唯一可用持久化基线。下一步恢复共享外部信号接入服务；Alertmanager、CloudEvents、事故关联、自动取证和 AI 仍未实现。
+MySQL 8.4 已成为当前唯一可用持久化基线。共享外部信号接入服务和 Alertmanager HTTP 入口已在该基线上完成；CloudEvents、事故关联、自动取证和 AI 仍未实现。

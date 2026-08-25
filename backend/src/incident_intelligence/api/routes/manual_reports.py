@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, Response
 
 from incident_intelligence.api.dependencies import (
     get_manual_intake_service,
-    require_actor,
     require_idempotency_key,
+    require_manual_actor,
 )
 from incident_intelligence.api.errors import ApiError
 from incident_intelligence.api.schemas.manual_reports import (
@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/v1/manual-reports", tags=["manual-reports"])
 def create_manual_report(
     report: ManualReportRequest,
     response: Response,
-    actor: Annotated[str, Depends(require_actor)],
+    actor: Annotated[str, Depends(require_manual_actor)],
     idempotency_key: Annotated[str, Depends(require_idempotency_key)],
     service: Annotated[ManualIntakeService, Depends(get_manual_intake_service)],
 ) -> ManualReportResponse:

@@ -19,7 +19,11 @@ class Settings(BaseSettings):
 
     database_url: str = Field(min_length=1)
     api_token: SecretStr
+    alertmanager_token: SecretStr
+    cloudevents_token: SecretStr
     request_body_limit_bytes: int = Field(default=65_536, gt=0, le=1_048_576)
+    alertmanager_body_limit_bytes: int = Field(default=262_144, ge=65_536, le=1_048_576)
+    cloudevents_body_limit_bytes: int = Field(default=65_536, gt=0, le=262_144)
 
     @field_validator("database_url")
     @classmethod

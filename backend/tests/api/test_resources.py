@@ -30,6 +30,8 @@ def created_resources(migrated_engine: Engine) -> Iterator[CreatedResources]:
     settings = Settings(
         database_url="mysql+pymysql://test-client@127.0.0.1/unused",
         api_token=SecretStr(token),
+        alertmanager_token=SecretStr(token_urlsafe(32)),
+        cloudevents_token=SecretStr(token_urlsafe(32)),
     )
     app = create_app(settings, engine=migrated_engine)
     auth_headers = {"Authorization": f"Bearer {token}"}

@@ -28,6 +28,8 @@ def settings_factory() -> Callable[..., Settings]:
         values: dict[str, object] = {
             "database_url": "mysql+pymysql://test-client@127.0.0.1/unused",
             "api_token": SecretStr(token_urlsafe(32)),
+            "alertmanager_token": SecretStr(token_urlsafe(32)),
+            "cloudevents_token": SecretStr(token_urlsafe(32)),
         }
         values.update(overrides)
         return Settings(**values)

@@ -5,17 +5,24 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 
 class RequestBodyLimitMiddleware:
-    def __init__(self, app: ASGIApp, max_bytes: int) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        default_max_bytes: int,
+        path_limits: dict[str, int] | None = None,
+    ) -> None:
         self._app = app
-        self._max_bytes = max_bytes
+        self._default_max_bytes = default_max_bytes
+        self._path_limits = path_limits or {}
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self._app(scope, receive, send)
             return
 
+        max_bytes = self._path_limits.get(scope["path"], self._default_max_bytes)
         declared_length = _content_length(scope)
-        if declared_length is not None and declared_length > self._max_bytes:
+        if declared_length is not None and declared_length > max_bytes:
             await _too_large(scope, receive, send)
             return
 
@@ -27,7 +34,7 @@ class RequestBodyLimitMiddleware:
             if message["type"] == "http.disconnect":
                 break
             received_bytes += len(message.get("body", b""))
-            if received_bytes > self._max_bytes:
+            if received_bytes > max_bytes:
                 await _too_large(scope, receive, send)
                 return
             if not message.get("more_body", False):
@@ -54,6 +61,6 @@ def _content_length(scope: Scope) -> int | None:
 async def _too_large(scope: Scope, receive: Receive, send: Send) -> None:
     response = JSONResponse(
         status_code=413,
-        content={"code": "request_too_large", "message": "请求体超过 65536 字节限制"},
+        content={"code": "request_too_large", "message": "请求体超过该接口允许的大小"},
     )
     await response(scope, receive, send)
