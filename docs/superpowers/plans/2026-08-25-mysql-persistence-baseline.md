@@ -646,7 +646,7 @@ cd backend
 
 停止 Compose 测试 MySQL，并删除本项目测试卷；不得操作用户现有 `devops-assistant-mysql-1` 容器或其数据。清除当前终端测试密码变量。
 
-- [ ] **步骤 8：提交 MySQL 基线验收**
+- [x] **步骤 8：提交 MySQL 基线验收**
 
 ```bash
 git add README.md compose.yaml backend docs specs
