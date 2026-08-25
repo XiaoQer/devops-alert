@@ -4,7 +4,7 @@
 
 本项目从零开始建设，与故障注入平台物理隔离。它不包含故障场景、注入器、Chaos 权限、实验恢复或评测标准答案。非生产故障实验只能通过真实监控和版本化公开契约验证本平台，不得把实验身份或答案写入诊断链路。
 
-当前后端提供健康检查、原子且幂等的人工事故报告、Alertmanager Webhook 接入，以及 SignalEvent、Alert、Incident、DiagnosisRun 四类资源的独立读取 API。CloudEvents、事故关联、自动取证、Worker、AI 分析、事故运营写接口和前端仍未实现。
+当前后端提供健康检查、原子且幂等的人工事故报告、Alertmanager Webhook、CloudEvents 1.0 两种模式接入，以及 SignalEvent、Alert、Incident、DiagnosisRun 四类资源的独立读取 API。事故关联、自动取证、Worker、AI 分析、事故运营写接口和前端仍未实现。
 
 ## 项目事实
 
@@ -37,9 +37,19 @@ export II_CLOUDEVENTS_TOKEN='<CloudEvents 专用随机 Token>'
 - `GET /health/ready`：数据库就绪；
 - `POST /api/v1/manual-reports`：提交人工事故报告；
 - `POST /api/v1/intake/alertmanager`：接收 Alertmanager Webhook v4；
+- `POST /api/v1/intake/cloudevents`：接收 CloudEvents 1.0 结构化或 Binary 事件；
 - `GET /api/v1/signals/{id}`、`/alerts/{id}`、`/incidents/{id}`、`/diagnosis-runs/{id}`：独立读取四类资源。
 
-除存活检查外，业务接口使用 `Authorization: Bearer <Token>`。人工报告与资源读取使用 `II_API_TOKEN`，Alertmanager 使用独立的 `II_ALERTMANAGER_TOKEN`；人工报告还必须提供长度为 1–256 的 `Idempotency-Key`。
+除存活检查外，业务接口使用 `Authorization: Bearer <Token>`。人工报告与资源读取使用 `II_API_TOKEN`，Alertmanager 使用 `II_ALERTMANAGER_TOKEN`，CloudEvents 使用 `II_CLOUDEVENTS_TOKEN`，三套 Token 不能交叉使用。人工报告和 CloudEvents 请求体最多 64 KiB，Alertmanager 最多 256 KiB 且单批最多 100 条；人工报告还必须提供长度为 1–256 的 `Idempotency-Key`。
+
+CloudEvents 结构化模式最小调用示例：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/intake/cloudevents \
+  -H 'Authorization: Bearer <CloudEvents Token>' \
+  -H 'Content-Type: application/cloudevents+json' \
+  --data-binary '{"specversion":"1.0","id":"<来源事件 ID>","source":"https://monitor.example.com/source","type":"com.incidentintelligence.alert.v1","subject":"payment-api","time":"2026-08-25T03:31:00Z","datacontenttype":"application/json","data":{"alert_key":"payment-error-rate","title":"支付接口错误率升高","summary":"错误率超过阈值","severity":"high","service":"payment-api","environment":"production","status":"firing","started_at":"2026-08-25T03:30:00Z","labels":{"region":"cn-east-1"}}}'
+```
 
 ## 后端验证
 

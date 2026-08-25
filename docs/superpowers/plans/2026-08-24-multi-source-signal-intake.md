@@ -600,7 +600,7 @@ git commit -m "feat: accept secured alertmanager webhooks"
 - 产生：`structured_to_signal_command(event, now) -> SignalCommand`
 - 产生：`binary_to_signal_command(context, data, now) -> SignalCommand`
 
-- [ ] **步骤 1：编写结构化与 Binary 等价失败测试**
+- [x] **步骤 1：编写结构化与 Binary 等价失败测试**
 
 ```python
 def test_structured_and_binary_modes_produce_the_same_command() -> None:
@@ -613,13 +613,13 @@ def test_structured_and_binary_modes_produce_the_same_command() -> None:
     assert len(structured.source_event_id) == 64
 ```
 
-- [ ] **步骤 2：运行测试并确认 CloudEvents 适配器不存在**
+- [x] **步骤 2：运行测试并确认 CloudEvents 适配器不存在**
 
 运行：`cd backend && .venv/bin/python -m pytest tests/unit/adapters/test_cloudevents.py -q`
 
 预期：因 adapters.cloudevents 不存在而失败。
 
-- [ ] **步骤 3：实现严格上下文与 data 模型**
+- [x] **步骤 3：实现严格上下文与 data 模型**
 
 只接受 specversion 1.0、type `com.incidentintelligence.alert.v1`；结构化标准字段限定 specversion、id、source、type、subject、time、datacontenttype、data，其他扩展属性拒绝。Binary 必需 ce-specversion/id/source/type/time，ce-subject 可选，Content-Type 必须 JSON。
 
@@ -646,15 +646,15 @@ def structured_to_signal_command(
     return cloud_event_to_command(event.context(), event.data, now)
 ```
 
-- [ ] **步骤 4：实现 URI 摘要、身份和一致性校验**
+- [x] **步骤 4：实现 URI 摘要、身份和一致性校验**
 
 复用 normalize_source_uri。source_instance 是规范 URI摘要；source_event_id 是 `SHA-256(normalized_source + b"\0" + id)`。subject 存在时必须等于 service；time 与 started_at 转 UTC，time 不得超过 now 五分钟。
 
-- [ ] **步骤 5：增加冲突与安全边界测试**
+- [x] **步骤 5：增加冲突与安全边界测试**
 
 覆盖不同 source 相同 id 不碰撞、同 source/id 不同 data 生成相同 source_event_id 供服务检测冲突、不支持 type、扩展属性、subject 不一致、未来时间、禁止身份、原始 source URI 不进入命令 JSON。
 
-- [ ] **步骤 6：运行适配器测试并提交**
+- [x] **步骤 6：运行适配器测试并提交**
 
 运行：`cd backend && .venv/bin/python -m pytest tests/unit/adapters/test_cloudevents.py -q`
 
@@ -680,7 +680,7 @@ git commit -m "feat: normalize cloudevents alerts"
 - 消费：任务 5 的独立认证、路径容量和共享响应模型
 - 消费：任务 6 的 structured/binary 转换函数
 
-- [ ] **步骤 1：编写两种内容模式的失败 API 测试**
+- [x] **步骤 1：编写两种内容模式的失败 API 测试**
 
 结构化请求使用 `application/cloudevents+json`；Binary 请求使用 ce-* 头与 JSON data。两者使用不同 id 但相同 alert_key，断言第二次更新同一 Alert 而不是创建第二条：
 
@@ -694,13 +694,13 @@ def test_structured_and_binary_events_update_one_alert(client, cloud_headers) ->
     assert first.json()["items"][0]["alert_id"] == second.json()["items"][0]["alert_id"]
 ```
 
-- [ ] **步骤 2：运行测试并确认 CloudEvents 路由 404**
+- [x] **步骤 2：运行测试并确认 CloudEvents 路由 404**
 
 运行：`cd backend && II_TEST_DATABASE_URL="$II_LOCAL_TEST_DATABASE_URL" .venv/bin/python -m pytest tests/api/test_cloudevents_intake.py -q`
 
 预期：合法请求返回 404，证明路由尚未注册。
 
-- [ ] **步骤 3：实现内容模式分派与安全错误映射**
+- [x] **步骤 3：实现内容模式分派与安全错误映射**
 
 路由按精确 Content-Type 选择结构化或 Binary；不支持内容类型返回 415 `unsupported_media_type`。缺失 ce-*、不支持事件类型、Pydantic 错误和禁止身份分别映射稳定错误，不回显 header 或 data。
 
@@ -728,19 +728,19 @@ async def receive_cloudevent(
     return IntakeBatchResponse.from_result(result)
 ```
 
-- [ ] **步骤 4：验证幂等、冲突、乱序和容量**
+- [x] **步骤 4：验证幂等、冲突、乱序和容量**
 
 测试 `(source,id)` 完全重复返回 200 replay；同 identity 不同 data 返回 409 source_event_conflict；resolved 后旧 firing 只增加 SignalEvent，不回退 Alert；超过 65536 字节在 JSON 解析前返回 413。
 
-- [ ] **步骤 5：验证来源与凭据隔离**
+- [x] **步骤 5：验证来源与凭据隔离**
 
 集成测试使用相同 alert_key：两个 CloudEvents source 形成两个 Alert；Alertmanager fingerprint 与 CloudEvents alert_key 相同仍形成不同 Alert。人工、Alertmanager、CloudEvents 三个 Token 对非所属入口均返回相同 401。
 
-- [ ] **步骤 6：验证不创建事故且不泄露输入**
+- [x] **步骤 6：验证不创建事故且不泄露输入**
 
 提交 firing、resolved、迟到和冲突后，IncidentRow 与 DiagnosisRunRow 仍为零。扫描 API 响应、caplog、SignalEvent facts、AuditEvent details 和 signal_intake_results，确认 source URI、Token、完整标题外的未审核字段、查询和生成器 URL均不存在。
 
-- [ ] **步骤 7：运行多源 API 与服务套件**
+- [x] **步骤 7：运行多源 API 与服务套件**
 
 运行：
 
@@ -756,7 +756,7 @@ II_TEST_DATABASE_URL="$II_LOCAL_TEST_DATABASE_URL" .venv/bin/python -m pytest \
 
 预期：两种协议模式、三套认证、来源隔离和零事故边界全部通过。
 
-- [ ] **步骤 8：提交 CloudEvents HTTP 接入**
+- [x] **步骤 8：提交 CloudEvents HTTP 接入**
 
 ```bash
 git add backend/src/incident_intelligence/api/routes/cloudevents.py \
@@ -782,7 +782,7 @@ git commit -m "feat: accept secured cloudevents alerts"
 - 产生：可重复的多源接入启动、配置和验证说明
 - 产生：只记录已实现验收项的阶段证据
 
-- [ ] **步骤 1：在 Compose 独立数据库运行统一验证**
+- [x] **步骤 1：在 Compose 独立数据库运行统一验证**
 
 使用只存在于当前终端的随机数据库密码和三套随机 Token：
 
@@ -793,23 +793,23 @@ II_TEST_DATABASE_URL="$II_LOCAL_TEST_DATABASE_URL" scripts/verify-backend.sh
 
 预期：Ruff、格式、Mypy、迁移升级/降级、全部测试和覆盖率 90% 门槛零失败。
 
-- [ ] **步骤 2：执行真实 Alertmanager HTTP 冒烟**
+- [x] **步骤 2：执行真实 Alertmanager HTTP 冒烟**
 
 迁移数据库并启动 Uvicorn，提交 firing 批次、完全重放、内容更新、resolved 和旧 firing。只记录状态码、资源 ID 是否一致、Alert 最终状态和 Incident/DiagnosisRun 数量，不记录 Token、完整正文或来源 URI。
 
-- [ ] **步骤 3：执行两种 CloudEvents HTTP 冒烟**
+- [x] **步骤 3：执行两种 CloudEvents HTTP 冒烟**
 
 使用结构化模式创建 ACTIVE，再用 Binary 模式更新同一 alert_key，随后 resolved。验证 source + id 重放、两个模式指向同一 Alert、读取接口返回 RESOLVED，且外部事件未创建事故或诊断任务。
 
-- [ ] **步骤 4：执行安全与禁止内容扫描**
+- [x] **步骤 4：执行安全与禁止内容扫描**
 
 扫描仓库和验收数据库：Secret 形态无命中；实验身份只存在于拒绝实现、边界测试和说明文档；数据库列、响应样本和审计中没有原始 URI、生成器 URL、查询或原始负载。
 
-- [ ] **步骤 5：更新说明与实际状态**
+- [x] **步骤 5：更新说明与实际状态**
 
 README 记录三套 Token、两个入口、容量和最小示例但使用占位符。current-state 与 architecture 只把 SignalEvent/Alert 外部接入标为已实现；服务目录、关联、Incident 自动创建、取证、Worker、AI、事故运营和前端继续标为未实现。
 
-- [ ] **步骤 6：记录验收证据并移动规格**
+- [x] **步骤 6：记录验收证据并移动规格**
 
 验收文档记录命令、测试数量、覆盖率、迁移版本、HTTP 冒烟结论和已知缺口，不保存任何 Secret 或完整外部事件。全部验收通过后把：
 
@@ -825,14 +825,14 @@ specs/completed/multi-source-signal-intake.md
 
 并把状态改为“已验收”。
 
-- [ ] **步骤 7：提交验收记录**
+- [x] **步骤 7：提交验收记录**
 
 ```bash
 git add README.md docs specs
 git commit -m "docs: verify multi-source signal intake"
 ```
 
-- [ ] **步骤 8：清理临时资源并确认仓库状态**
+- [x] **步骤 8：清理临时资源并确认仓库状态**
 
 停止临时 Uvicorn，删除本轮 Compose 容器、网络、专用测试卷和临时日志，清除终端中的数据库密码与三套 Token。运行：
 

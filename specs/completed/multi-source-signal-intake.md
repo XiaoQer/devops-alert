@@ -2,7 +2,7 @@
 
 ## 状态
 
-已确认，实施中。领域模型、数据库迁移、纯领域 Alert 投影、共享接入服务、Alertmanager 纯适配器和安全 HTTP 入口已完成；CloudEvents 适配器和入口尚未实现。
+已验收。领域模型、MySQL 初始迁移、纯领域 Alert 投影、共享接入服务、Alertmanager 与 CloudEvents 适配器及安全 HTTP 入口均已完成并通过统一验证。
 
 ## 背景与目标
 
@@ -83,6 +83,9 @@ Alertmanager 使用 `fingerprint`，CloudEvents 使用受限 `data.alert_key` �
 - Alertmanager v4 纯适配器已验证官方结构映射、来源 URI 脱敏摘要、13 类严重度别名、默认原因码、恢复和未来时间、必填身份、容量、禁止身份与确定性事件 ID；
 - 分组、接收器、JSON 键顺序、生成器 URL、来源查询和片段变化不会改变事件 ID，真实规范化内容变化会形成新事件 ID；
 - Alertmanager HTTP 入口已验证三套 Token 隔离、精确路径 256 KiB 容量、100 条批次上限、单条和多条写入、更新、恢复、精确重放、整批拒绝、安全错误和零事故/零诊断；
-- 当前 MySQL 8.4 全部后端测试为 179 项通过，覆盖率 96.51% 以上，Ruff、格式和 Mypy 均通过。
+- CloudEvents 1.0 已验证结构化与 Binary 等价、严格上下文、稳定来源身份、恢复、未来时间、禁止身份、扩展属性拒绝、三套 Token 隔离和 64 KiB 容量；
+- 跨来源测试证明两个 CloudEvents source 以及 Alertmanager/CloudEvents 之间的相同告警键不会碰撞；
+- 真实 HTTP 冒烟验证结构化创建、Binary 更新、恢复与重放始终指向同一 Alert，最终为 RESOLVED，Incident 与 DiagnosisRun 为零；
+- 当前 MySQL 8.4 全部后端测试为 206 项通过，覆盖率 96.82%，Ruff、格式和 Mypy 均通过。
 
-CloudEvents 适配器及入口和真实外部 HTTP 冒烟仍未实施，不得据此把完整规格标记为可用。
+本规格范围已完成。服务目录、事故关联、自动取证、Worker、AI、事故运营和前端仍由后续规格实施，不属于本次验收能力。

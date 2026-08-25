@@ -38,7 +38,7 @@
 
 Compose 独立环境中的最终验证结果为 91 项测试通过，覆盖率 95.21%，Ruff、格式检查、Mypy、依赖一致性和 PostgreSQL 集成测试通过。真实 HTTP 冒烟验证了首次创建 201、相同内容重放 200、四个 ID 一致，以及四类资源读取 4/4 成功。
 
-## 2026-08-24 后端阶段 2 实施中
+## 2026-08-24 后端阶段 2 已验收
 
 已经实现并验证：
 
@@ -63,8 +63,6 @@ Compose 独立环境中的最终验证结果为 91 项测试通过，覆盖率 9
 - 外部接入服务不会创建 Incident 或 DiagnosisRun，审计不保存标题、摘要或原始输入；
 - 共享服务与纯领域聚焦测试 20 项通过，当前全部后端测试 142 项通过，Ruff、格式和 Mypy 通过。
 
-尚未实现：CloudEvents 适配器和 HTTP 入口。
-
 Alertmanager v4 纯适配器已经实现并验证：
 
 - 严格解析官方 Webhook 结构并输出统一不可变 SignalCommand；
@@ -85,18 +83,30 @@ Alertmanager HTTP 入口已经实现并验证：
 - Alertmanager 接入只生成 SignalEvent、Alert、幂等结果和有界审计，不创建 Incident 或 DiagnosisRun；
 - 当前全部后端测试 179 项通过，覆盖率 96.51% 以上，Ruff、格式和 Mypy 通过。
 
+CloudEvents 1.0 适配器和 HTTP 入口已经实现并验证：
+
+- 同时支持 `application/cloudevents+json` 结构化模式和带 `ce-*` 头的 HTTP Binary 模式；
+- 只接受版本 1.0 和 `com.incidentintelligence.alert.v1`，上下文、data、标签、时间、subject 和扩展属性均有严格边界；
+- `source + id` 形成稳定事件身份，`source + source_instance + alert_key` 形成 Alert 投影身份；原始 source URI 只参与脱敏摘要，不持久化；
+- 结构化与 Binary 模式输出相同内部命令，支持 firing、更新、resolved、迟到、精确重放和内容冲突；
+- CloudEvents 使用独立 Token 和 64 KiB 路径上限，三套 Token 不能交叉使用；
+- 不同 CloudEvents 来源的相同 alert_key，以及 Alertmanager 与 CloudEvents 的相同告警键均保持隔离；
+- 真实 HTTP 冒烟验证结构化创建、Binary 更新、恢复和重放始终指向同一 Alert，最终状态为 RESOLVED；
+- 外部接入仍只生成 SignalEvent、Alert、幂等结果和有界审计，不创建 Incident 或 DiagnosisRun；
+- 统一后端验收为 206 项测试通过、覆盖率 96.82%，Ruff、格式、Mypy 和 MySQL 迁移测试全部通过。
+
 仍未实现：
 
-- CloudEvents 和其他外部适配器；
+- 首批范围以外的其他外部适配器；
 - 服务目录、事故关联、自动取证、Worker 注册和 AI 分析；
 - 事故运营写接口、恢复闭环和前端；
 - 生产部署制品、Kubernetes Chart 和真实监控或 AI 提供方接入。
 
 ## 下一步门槛
 
-1. 实现 CloudEvents 1.0 两种内容模式及独立入口；
-2. 完成多源接入后再设计轻量服务目录和可解释事故关联；
-3. 在上述能力实现前，不得把完整多源接入、关联、自动取证、Worker 或 AI 标记为可用。
+1. 按活跃规格实现轻量服务目录和可解释事故关联；
+2. 关联完成前，外部 SignalEvent 和 Alert 不得自动创建 Incident；
+3. 在后续阶段验收前，不得把自动取证、Worker、AI 或事故运营标记为可用。
 
 ## 2026-08-25 MySQL 基线切换已验收
 
@@ -121,4 +131,4 @@ Alertmanager HTTP 入口已经实现并验证：
 - 用户现有 MySQL 8.4.10 已从确认不存在的空库创建 `incident_intelligence`，迁移到 `0001_mysql_initial`；
 - 七张业务表全部使用 InnoDB，临时 API 的 `/health/ready` 返回 HTTP 200 和数据库可用。
 
-MySQL 8.4 已成为当前唯一可用持久化基线。共享外部信号接入服务和 Alertmanager HTTP 入口已在该基线上完成；CloudEvents、事故关联、自动取证和 AI 仍未实现。
+MySQL 8.4 已成为当前唯一可用持久化基线。共享外部信号接入服务、Alertmanager 和 CloudEvents HTTP 入口均已在该基线上完成；事故关联、自动取证和 AI 仍未实现。
