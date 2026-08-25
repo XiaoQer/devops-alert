@@ -211,7 +211,7 @@ git commit -m "feat: 定义可解释事故关联规则"
 - 产生：`ServiceCatalogEntryRow`、`ServiceCatalogStateRow`、`ServiceDependencyRow`、`CorrelationJobRow`、`CorrelationDecisionRow`、`IncidentAlertLinkRow`。
 - 扩展：`IdPrefix` 支持 `svc`、`dep`、`cjob`、`cdec`。
 
-- [ ] **步骤 1：编写迁移结构与回填失败测试**
+- [x] **步骤 1：编写迁移结构与回填失败测试**
 
 测试先升级到 `0001_mysql_initial`，插入一套合法人工 SignalEvent、Alert 和 Incident，再升级到 head：
 
@@ -241,7 +241,7 @@ def test_upgrade_adds_correlation_tables_and_backfills_primary_links(
 
 另写测试从 head 降级到 `0001_mysql_initial`，断言六张新增表消失而七张基线表和人工数据仍存在；`command.check` 必须通过。
 
-- [ ] **步骤 2：运行迁移测试并确认 revision 不存在**
+- [x] **步骤 2：运行迁移测试并确认 revision 不存在**
 
 ```bash
 cd backend
@@ -251,7 +251,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_BOOTSTRAP_URL" PYTHONPATH=. \
 
 预期：因 `0002_service_catalog_correlation` 和 ORM 行模型不存在而失败。
 
-- [ ] **步骤 3：实现 ORM 和 `0002` 迁移**
+- [x] **步骤 3：实现 ORM 和 `0002` 迁移**
 
 六张表全部声明 InnoDB、utf8mb4、utf8mb4_bin。迁移顺序固定为：目录项、目录图状态、依赖、任务、决策、关系；写入单例图状态：
 
@@ -269,7 +269,7 @@ op.bulk_insert(
 
 `correlation_jobs` 唯一约束为 `(alert_id, alert_version)`；`incident_alert_links` 对 `alert_id` 单独唯一；`decision_id` 可空。JSON 字段使用 MySQL JSON，所有状态和次数使用 CHECK 约束。回填 SQL 从 `incidents` 复制 `primary_alert_id`、`created_at` 到 PRIMARY 关系。
 
-- [ ] **步骤 4：增加真实数据库约束失败测试**
+- [x] **步骤 4：增加真实数据库约束失败测试**
 
 覆盖以下真实 MySQL 行为：
 
@@ -277,7 +277,7 @@ op.bulk_insert(
 
 同时验证重复目录身份、重复依赖边、自依赖、非法状态、attempts > 5、重复 `(alert_id, alert_version)` 和候选 JSON/时间类型。
 
-- [ ] **步骤 5：运行迁移、约束和 ORM 一致性测试**
+- [x] **步骤 5：运行迁移、约束和 ORM 一致性测试**
 
 ```bash
 cd backend
@@ -289,7 +289,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_BOOTSTRAP_URL" PYTHONPATH=. .venv/bin/pytest -q 
 
 预期：升级、回填、降级、约束和 `alembic check` 全部通过。
 
-- [ ] **步骤 6：提交迁移和 ORM**
+- [x] **步骤 6：提交迁移和 ORM**
 
 ```bash
 git add backend/migrations/versions/0002_service_catalog_correlation.py \
