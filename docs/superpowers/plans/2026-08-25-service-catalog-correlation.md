@@ -45,7 +45,7 @@
 - 产生：`normalize_symptom(value: str | None) -> Symptom | None`。
 - 产生：`CorrelationContext`、`CorrelationDecisionDraft` 和 `decide_correlation(context)`。
 
-- [ ] **步骤 1：编写标准症状和目录模型失败测试**
+- [x] **步骤 1：编写标准症状和目录模型失败测试**
 
 ```python
 @pytest.mark.parametrize(
@@ -77,7 +77,7 @@ def test_catalog_entry_rejects_invalid_id_and_unbounded_owner():
         )
 ```
 
-- [ ] **步骤 2：运行领域测试并确认模块不存在**
+- [x] **步骤 2：运行领域测试并确认模块不存在**
 
 运行：
 
@@ -88,7 +88,7 @@ PYTHONPATH=. .venv/bin/pytest -q tests/unit/domain/test_catalog.py -x
 
 预期：收集阶段因 `incident_intelligence.domain.catalog` 不存在而失败。
 
-- [ ] **步骤 3：实现固定枚举、领域模型和症状别名**
+- [x] **步骤 3：实现固定枚举、领域模型和症状别名**
 
 在 `domain/enums.py` 增加字符串枚举；在 `domain/catalog.py` 使用 `ConfigDict(frozen=True, extra="forbid")` 和现有 `Environment`、`ServiceName`、`UtcAwareDatetime`：
 
@@ -119,7 +119,7 @@ class ServiceCatalogEntry(BaseModel):
 
 `normalize_symptom` 只返回 `error_rate | latency | cpu_saturation | memory_pressure | availability | None`。把 `symptom` 加入 Alertmanager `FACT_LABELS`，但不保存未知值的派生结果。
 
-- [ ] **步骤 4：编写门槛与决策矩阵失败测试**
+- [x] **步骤 4：编写门槛与决策矩阵失败测试**
 
 测试使用字面量构造 `CorrelationContext`，分别断言：
 
@@ -154,7 +154,7 @@ def test_ineligible_alerts_are_rejected_with_one_fixed_reason(overrides, reason)
 
 还要分别验证：旧版本 `SUPERSEDED`、已有关系 `LINKED_EXISTING`、已有关系且恢复 `RECORDED_RESOLUTION`、零候选 `CREATED_NO_MATCH`、多候选 `CREATED_AMBIGUOUS`、一跳同症状 `CREATED_DEPENDENCY_CANDIDATE`、候选超过 20 条使用 `candidate_limit_reached`。
 
-- [ ] **步骤 5：实现纯 `decide_correlation`**
+- [x] **步骤 5：实现纯 `decide_correlation`**
 
 `CorrelationContext` 必须携带 `alert_version`、`current_alert_version`、状态、严重度、环境、目录状态、已有关系、精确候选和一跳候选；`CorrelationDecisionDraft` 固定为：
 
@@ -171,7 +171,7 @@ class CorrelationDecisionDraft(BaseModel):
 
 函数按设计第 6 节的顺序提前返回，不能读取数据库、当前时间或 ID 生成器。中文解释由 `EXPLANATIONS` 固定字典取得，动态内容只允许候选数量和 Incident ID。
 
-- [ ] **步骤 6：运行纯领域与 Alertmanager 测试**
+- [x] **步骤 6：运行纯领域与 Alertmanager 测试**
 
 ```bash
 cd backend
@@ -183,7 +183,7 @@ PYTHONPATH=. .venv/bin/pytest -q \
 
 预期：标准症状、全部决策分支、未知值退化和 Alertmanager symptom 白名单测试通过。
 
-- [ ] **步骤 7：提交纯领域规则**
+- [x] **步骤 7：提交纯领域规则**
 
 ```bash
 git add backend/src/incident_intelligence/domain \

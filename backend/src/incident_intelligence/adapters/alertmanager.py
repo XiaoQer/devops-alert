@@ -34,6 +34,7 @@ FACT_LABELS = frozenset(
         "component",
         "node",
         "container",
+        "symptom",
     }
 )
 SEVERITY_ALIASES = {

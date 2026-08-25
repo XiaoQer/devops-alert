@@ -71,6 +71,21 @@ def test_alertmanager_firing_maps_to_bounded_signal_command() -> None:
     assert "token=secret" not in command.model_dump_json()
 
 
+def test_alertmanager_keeps_symptom_as_a_bounded_correlation_fact() -> None:
+    payload = deepcopy(FIRING_PAYLOAD)
+    payload["alerts"][0]["labels"]["symptom"] = "high-error-rate"
+    payload["alerts"][0]["labels"]["private_detail"] = "must-not-be-stored"
+
+    command = to_signal_commands(AlertmanagerWebhook.model_validate(payload), NOW)[0]
+
+    assert command.facts == {
+        "region": "cn-east-1",
+        "symptom": "high-error-rate",
+    }
+    assert "private_detail" not in command.model_dump_json()
+    assert "must-not-be-stored" not in command.model_dump_json()
+
+
 def test_source_uri_is_normalized_without_credentials_query_or_fragment() -> None:
     assert (
         normalize_source_uri(
