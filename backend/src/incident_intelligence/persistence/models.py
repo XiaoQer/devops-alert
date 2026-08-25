@@ -21,6 +21,23 @@ CORRELATION_OUTCOME_VALUES = (
     "'CREATED_AMBIGUOUS', 'CREATED_DEPENDENCY_CANDIDATE', "
     "'REJECTED_INELIGIBLE', 'RECORDED_RESOLUTION', 'SUPERSEDED'"
 )
+INCIDENT_STATE_VALUES = (
+    "'DETECTED', 'TRIAGING', 'INVESTIGATING', 'MITIGATING', "
+    "'MONITORING_RECOVERY', 'RESOLVED', 'CLOSED'"
+)
+INCIDENT_ACTIVITY_KIND_VALUES = (
+    "'INCIDENT_CLAIMED', 'INCIDENT_RELEASED', 'STATE_TRANSITIONED', "
+    "'NOTE_ADDED', 'INCIDENT_RESOLVED', 'INCIDENT_REOPENED', 'INCIDENT_CLOSED'"
+)
+INCIDENT_OPERATION_KIND_VALUES = (
+    "'CLAIM', 'RELEASE', 'TRANSITION', 'ADD_NOTE', 'RESOLVE', 'REOPEN', 'CLOSE'"
+)
+INCIDENT_NOTE_CATEGORY_VALUES = (
+    "'CURRENT_FINDING', 'ACTION_TAKEN', 'ACTION_RESULT', 'NEXT_STEP', 'GENERAL'"
+)
+INCIDENT_RESOLUTION_CATEGORY_VALUES = (
+    "'RECOVERED', 'FALSE_POSITIVE', 'DUPLICATE', 'NO_ACTION', 'OTHER'"
+)
 
 
 def _mysql_table_options() -> dict[str, str]:
@@ -98,8 +115,7 @@ class IncidentRow(Base):
     __tablename__ = "incidents"
     __table_args__ = (
         CheckConstraint(
-            "state IN ('DETECTED', 'TRIAGING', 'INVESTIGATING', 'MITIGATING', "
-            "'MONITORING_RECOVERY', 'RESOLVED', 'CLOSED')",
+            f"state IN ({INCIDENT_STATE_VALUES})",
             name="incident_state",
         ),
         CheckConstraint(f"severity IN ({SEVERITY_VALUES})", name="incident_severity"),
@@ -108,6 +124,13 @@ class IncidentRow(Base):
             "(assignee IS NULL AND claimed_at IS NULL) OR "
             "(assignee IS NOT NULL AND claimed_at IS NOT NULL)",
             name="incident_assignment_pair",
+        ),
+        CheckConstraint(
+            "(state NOT IN ('RESOLVED', 'CLOSED') "
+            "AND resolved_at IS NULL AND closed_at IS NULL) OR "
+            "(state = 'RESOLVED' AND resolved_at IS NOT NULL AND closed_at IS NULL) OR "
+            "(state = 'CLOSED' AND resolved_at IS NOT NULL AND closed_at IS NOT NULL)",
+            name="incident_resolution_times",
         ),
         Index("ix_incidents_state", "state"),
         Index("ix_incidents_primary_alert_id", "primary_alert_id"),
@@ -126,8 +149,105 @@ class IncidentRow(Base):
     detected_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     assignee: Mapped[str | None] = mapped_column(String(128), nullable=True)
     claimed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    state_changed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     version: Mapped[int] = mapped_column(nullable=False)
+
+
+class IncidentActivityRow(Base):
+    __tablename__ = "incident_activities"
+    __table_args__ = (
+        CheckConstraint(
+            f"kind IN ({INCIDENT_ACTIVITY_KIND_VALUES})",
+            name="incident_activity_kind",
+        ),
+        CheckConstraint(
+            f"from_state IS NULL OR from_state IN ({INCIDENT_STATE_VALUES})",
+            name="incident_activity_from_state",
+        ),
+        CheckConstraint(
+            f"to_state IS NULL OR to_state IN ({INCIDENT_STATE_VALUES})",
+            name="incident_activity_to_state",
+        ),
+        CheckConstraint(
+            f"note_category IS NULL OR note_category IN ({INCIDENT_NOTE_CATEGORY_VALUES})",
+            name="incident_activity_note_category",
+        ),
+        CheckConstraint(
+            "resolution_category IS NULL OR resolution_category IN "
+            f"({INCIDENT_RESOLUTION_CATEGORY_VALUES})",
+            name="incident_activity_resolution_category",
+        ),
+        CheckConstraint("incident_version >= 1", name="incident_activity_version"),
+        Index(
+            "ix_incident_activities_incident_timeline",
+            "incident_id",
+            "created_at",
+            "id",
+        ),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(
+        ForeignKey("incidents.id", ondelete="RESTRICT"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    from_state: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    to_state: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    note_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    message: Mapped[str | None] = mapped_column(String(2_000), nullable=True)
+    resolution_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    resolution_actions: Mapped[str | None] = mapped_column(String(4_000), nullable=True)
+    root_cause: Mapped[str | None] = mapped_column(String(4_000), nullable=True)
+    incident_version: Mapped[int] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class IncidentOperationRow(Base):
+    __tablename__ = "incident_operations"
+    __table_args__ = (
+        UniqueConstraint("scope", "idempotency_key_hash", name="incident_operation_scope_key"),
+        UniqueConstraint("activity_id", name="incident_operation_activity"),
+        CheckConstraint(
+            "char_length(idempotency_key_hash) = 64",
+            name="incident_operation_key_hash",
+        ),
+        CheckConstraint(
+            "char_length(command_fingerprint) = 64",
+            name="incident_operation_fingerprint",
+        ),
+        CheckConstraint(
+            f"action IN ({INCIDENT_OPERATION_KIND_VALUES})",
+            name="incident_operation_action",
+        ),
+        CheckConstraint(
+            f"result_state IN ({INCIDENT_STATE_VALUES})",
+            name="incident_operation_result_state",
+        ),
+        CheckConstraint("result_version >= 1", name="incident_operation_result_version"),
+        Index("ix_incident_operations_incident_id", "incident_id"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    scope: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    command_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    incident_id: Mapped[str] = mapped_column(
+        ForeignKey("incidents.id", ondelete="RESTRICT"), nullable=False
+    )
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    result_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    result_assignee: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    result_version: Mapped[int] = mapped_column(nullable=False)
+    activity_id: Mapped[str] = mapped_column(
+        ForeignKey("incident_activities.id", ondelete="RESTRICT"), nullable=False
+    )
+    completed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 class DiagnosisRunRow(Base):

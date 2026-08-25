@@ -13,7 +13,9 @@ from incident_intelligence.persistence.models import (
     AlertRow,
     CorrelationDecisionRow,
     CorrelationJobRow,
+    IncidentActivityRow,
     IncidentAlertLinkRow,
+    IncidentOperationRow,
     IncidentRow,
     ServiceCatalogEntryRow,
     ServiceDependencyRow,
@@ -95,6 +97,70 @@ def seed_alert(session: Session) -> AlertRow:
     return alert
 
 
+def seed_incident(session: Session, **overrides: object) -> IncidentRow:
+    alert = seed_alert(session)
+    values: dict[str, object] = {
+        "id": new_id("inc"),
+        "primary_alert_id": alert.id,
+        "state": "DETECTED",
+        "title": alert.title,
+        "severity": alert.severity,
+        "service": alert.service,
+        "environment": alert.environment,
+        "detected_at": NOW,
+        "assignee": None,
+        "claimed_at": None,
+        "state_changed_at": NOW,
+        "resolved_at": None,
+        "closed_at": None,
+        "created_at": NOW,
+        "version": 1,
+    }
+    values.update(overrides)
+    incident = IncidentRow(**values)
+    session.add(incident)
+    session.flush()
+    return incident
+
+
+def make_activity(incident_id: str, **overrides: object) -> IncidentActivityRow:
+    values: dict[str, object] = {
+        "id": new_id("iact"),
+        "incident_id": incident_id,
+        "kind": "NOTE_ADDED",
+        "actor": "manual-api-client",
+        "from_state": None,
+        "to_state": None,
+        "note_category": "GENERAL",
+        "message": "已开始人工排查",
+        "resolution_category": None,
+        "resolution_actions": None,
+        "root_cause": None,
+        "incident_version": 2,
+        "created_at": NOW,
+    }
+    values.update(overrides)
+    return IncidentActivityRow(**values)
+
+
+def make_operation(incident_id: str, activity_id: str, **overrides: object) -> IncidentOperationRow:
+    values: dict[str, object] = {
+        "id": new_id("iop"),
+        "scope": "incident.note",
+        "idempotency_key_hash": "a" * 64,
+        "command_fingerprint": "b" * 64,
+        "incident_id": incident_id,
+        "action": "ADD_NOTE",
+        "result_state": "DETECTED",
+        "result_assignee": None,
+        "result_version": 2,
+        "activity_id": activity_id,
+        "completed_at": NOW,
+    }
+    values.update(overrides)
+    return IncidentOperationRow(**values)
+
+
 def make_job(alert_id: str, **overrides: object) -> CorrelationJobRow:
     values: dict[str, object] = {
         "id": new_id("cjob"),
@@ -130,11 +196,81 @@ def test_incident_assignment_fields_must_be_both_null_or_both_present(
                 detected_at=NOW,
                 assignee="manual-api-client",
                 claimed_at=None,
+                state_changed_at=NOW,
+                resolved_at=None,
+                closed_at=None,
                 created_at=NOW,
                 version=1,
             )
         )
         with pytest.raises(OperationalError):
+            session.commit()
+
+
+@pytest.mark.parametrize(
+    ("state", "resolved_at", "closed_at"),
+    [
+        ("DETECTED", NOW, None),
+        ("RESOLVED", None, None),
+        ("RESOLVED", NOW, NOW),
+        ("CLOSED", None, NOW),
+        ("CLOSED", NOW, None),
+    ],
+)
+def test_incident_state_requires_matching_resolution_times(
+    migrated_engine: Engine,
+    state: str,
+    resolved_at: datetime | None,
+    closed_at: datetime | None,
+) -> None:
+    with Session(migrated_engine) as session, pytest.raises(OperationalError):
+        seed_incident(
+            session,
+            state=state,
+            resolved_at=resolved_at,
+            closed_at=closed_at,
+        )
+        session.commit()
+
+
+def test_activity_values_and_version_are_bounded(migrated_engine: Engine) -> None:
+    with Session(migrated_engine) as session:
+        incident = seed_incident(session)
+        session.add(make_activity(incident.id, kind="ARBITRARY", incident_version=0))
+        with pytest.raises(OperationalError):
+            session.commit()
+
+
+def test_operation_hash_and_fingerprint_are_fixed_length(migrated_engine: Engine) -> None:
+    with Session(migrated_engine) as session:
+        incident = seed_incident(session)
+        activity = make_activity(incident.id)
+        session.add(activity)
+        session.flush()
+        session.add(make_operation(incident.id, activity.id, idempotency_key_hash="short"))
+        with pytest.raises(OperationalError):
+            session.commit()
+
+
+def test_operation_scope_and_key_are_unique(migrated_engine: Engine) -> None:
+    with Session(migrated_engine) as session:
+        incident = seed_incident(session)
+        first_activity = make_activity(incident.id)
+        second_activity = make_activity(incident.id, id=new_id("iact"), incident_version=3)
+        session.add_all([first_activity, second_activity])
+        session.flush()
+        session.add(make_operation(incident.id, first_activity.id))
+        session.commit()
+        session.add(
+            make_operation(
+                incident.id,
+                second_activity.id,
+                id=new_id("iop"),
+                command_fingerprint="c" * 64,
+                result_version=3,
+            )
+        )
+        with pytest.raises(IntegrityError):
             session.commit()
 
 
@@ -365,6 +501,9 @@ def test_alert_can_only_be_linked_to_one_incident(migrated_engine: Engine) -> No
             service=alert.service,
             environment=alert.environment,
             detected_at=NOW,
+            state_changed_at=NOW,
+            resolved_at=None,
+            closed_at=None,
             created_at=NOW,
             version=1,
         )
@@ -377,6 +516,9 @@ def test_alert_can_only_be_linked_to_one_incident(migrated_engine: Engine) -> No
             service=alert.service,
             environment=alert.environment,
             detected_at=NOW,
+            state_changed_at=NOW,
+            resolved_at=None,
+            closed_at=None,
             created_at=NOW,
             version=1,
         )

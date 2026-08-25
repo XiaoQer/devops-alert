@@ -125,6 +125,11 @@ class RecordRepositories:
                 service=incident.service,
                 environment=incident.environment,
                 detected_at=incident.detected_at,
+                state_changed_at=incident.created_at,
+                resolved_at=(
+                    incident.created_at if incident.state.value in {"RESOLVED", "CLOSED"} else None
+                ),
+                closed_at=(incident.created_at if incident.state.value == "CLOSED" else None),
                 created_at=incident.created_at,
                 version=incident.version,
             )

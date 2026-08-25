@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session
 from incident_intelligence.ids import new_id
 from incident_intelligence.persistence.models import (
     AlertRow,
+    IncidentActivityRow,
     IncidentAlertLinkRow,
+    IncidentOperationRow,
     IncidentRow,
     SignalEventRow,
 )
@@ -35,9 +37,12 @@ CORRELATION_TABLES = {
     "correlation_decisions",
     "incident_alert_links",
 }
+LIFECYCLE_TABLES = {"incident_activities", "incident_operations"}
 
 
-def _seed_manual_incident(engine: Engine) -> tuple[str, str]:
+def _seed_manual_incident(
+    engine: Engine, *, state: str = "DETECTED", identity: str = "default"
+) -> tuple[str, str]:
     signal_id = new_id("sig")
     alert_id = new_id("alt")
     incident_id = new_id("inc")
@@ -46,7 +51,7 @@ def _seed_manual_incident(engine: Engine) -> tuple[str, str]:
             SignalEventRow(
                 id=signal_id,
                 source="manual",
-                source_event_id="manual-correlation-migration",
+                source_event_id=f"manual-correlation-migration-{identity}",
                 event_type="manual.reported",
                 title="支付接口错误率升高",
                 summary="支付接口持续返回错误",
@@ -68,7 +73,7 @@ def _seed_manual_incident(engine: Engine) -> tuple[str, str]:
                 signal_event_id=signal_id,
                 source="manual",
                 source_instance="b" * 64,
-                source_alert_key="manual-correlation-migration",
+                source_alert_key=f"manual-correlation-migration-{identity}",
                 state="ACTIVE",
                 title="支付接口错误率升高",
                 severity="high",
@@ -99,7 +104,7 @@ def _seed_manual_incident(engine: Engine) -> tuple[str, str]:
             insert(historical_incidents).values(
                 id=incident_id,
                 primary_alert_id=alert_id,
-                state="DETECTED",
+                state=state,
                 title="支付接口错误率升高",
                 severity="high",
                 service="payment-api",
@@ -186,5 +191,68 @@ def test_assignment_migration_adds_nullable_pair(
         assert columns["assignee"]["nullable"] is True
         assert columns["claimed_at"]["nullable"] is True
         command.check(alembic_config)
+    finally:
+        command.downgrade(alembic_config, "base")
+
+
+def test_lifecycle_migration_backfills_current_state_times(
+    alembic_config: Config,
+    mysql_engine: Engine,
+) -> None:
+    command.upgrade(alembic_config, "0003_incident_assignment")
+    _, detected_id = _seed_manual_incident(mysql_engine, state="DETECTED", identity="detected")
+    _, resolved_id = _seed_manual_incident(mysql_engine, state="RESOLVED", identity="resolved")
+    _, closed_id = _seed_manual_incident(mysql_engine, state="CLOSED", identity="closed")
+    try:
+        command.upgrade(alembic_config, "head")
+
+        inspector = inspect(mysql_engine)
+        assert set(inspector.get_table_names()) >= LIFECYCLE_TABLES
+        with Session(mysql_engine) as session:
+            detected = session.get(IncidentRow, detected_id)
+            resolved = session.get(IncidentRow, resolved_id)
+            closed = session.get(IncidentRow, closed_id)
+            assert detected is not None
+            assert resolved is not None
+            assert closed is not None
+            assert detected.state_changed_at == detected.created_at
+            assert detected.resolved_at is None
+            assert detected.closed_at is None
+            assert resolved.state_changed_at == resolved.created_at
+            assert resolved.resolved_at == resolved.created_at
+            assert resolved.closed_at is None
+            assert closed.state_changed_at == closed.created_at
+            assert closed.resolved_at == closed.created_at
+            assert closed.closed_at == closed.created_at
+            assert session.scalar(select(func.count()).select_from(IncidentActivityRow)) == 0
+            assert session.scalar(select(func.count()).select_from(IncidentOperationRow)) == 0
+    finally:
+        command.downgrade(alembic_config, "base")
+
+
+def test_lifecycle_migration_downgrade_preserves_incident(
+    alembic_config: Config,
+    mysql_engine: Engine,
+) -> None:
+    command.upgrade(alembic_config, "0003_incident_assignment")
+    _, incident_id = _seed_manual_incident(mysql_engine, identity="downgrade")
+    command.upgrade(alembic_config, "head")
+    try:
+        command.downgrade(alembic_config, "0003_incident_assignment")
+
+        inspector = inspect(mysql_engine)
+        assert LIFECYCLE_TABLES.isdisjoint(inspector.get_table_names())
+        columns = {column["name"] for column in inspector.get_columns("incidents")}
+        assert {"state_changed_at", "resolved_at", "closed_at"}.isdisjoint(columns)
+        historical_incidents = table("incidents", column("id"))
+        with Session(mysql_engine) as session:
+            assert (
+                session.scalar(
+                    select(func.count())
+                    .select_from(historical_incidents)
+                    .where(historical_incidents.c.id == incident_id)
+                )
+                == 1
+            )
     finally:
         command.downgrade(alembic_config, "base")

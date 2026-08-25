@@ -149,7 +149,7 @@ git commit -m "feat: 定义事故处置状态机"
 - Produces: `IncidentOperationRow`，主键前缀 `iop_`，唯一键 `(scope, idempotency_key_hash)`。
 - Consumes: Task 1 的固定枚举值作为数据库检查约束的单一语义来源。
 
-- [ ] **Step 1: 编写迁移结构与历史回填失败测试**
+- [x] **Step 1: 编写迁移结构与历史回填失败测试**
 
 ```python
 def test_lifecycle_migration_backfills_current_state_times(alembic_config, mysql_engine):
@@ -166,7 +166,7 @@ def test_lifecycle_migration_backfills_current_state_times(alembic_config, mysql
     )
 ```
 
-- [ ] **Step 2: 编写数据库约束失败测试**
+- [x] **Step 2: 编写数据库约束失败测试**
 
 ```python
 def test_closed_incident_requires_resolved_and_closed_times(session, incident):
@@ -183,13 +183,13 @@ def test_operation_hash_and_fingerprint_are_fixed_length(session, incident):
         session.commit()
 ```
 
-- [ ] **Step 3: 运行迁移与约束测试确认失败**
+- [x] **Step 3: 运行迁移与约束测试确认失败**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/integration/persistence/test_correlation_migration.py tests/integration/persistence/test_constraints.py -q`
 
 Expected: FAIL，明确指向 `0004`、新表或新字段缺失。
 
-- [ ] **Step 4: 实现 `0004` 可逆迁移和 ORM**
+- [x] **Step 4: 实现 `0004` 可逆迁移和 ORM**
 
 迁移顺序：增加三个可空时间字段；按现有状态执行确定性回填；把 `state_changed_at` 改为非空；创建解决/关闭时间检查约束；创建 `incident_activities` 和 `incident_operations` 及索引。`downgrade` 先删除两张新表和检查约束，再删除三个时间字段。
 
@@ -213,13 +213,13 @@ class IncidentActivityRow(Base):
 
 `IncidentOperationRow` 只保存固定字段：`id`、`scope`、64 字符幂等键摘要、64 字符请求指纹、Incident ID、操作类型、结果状态、可空结果 assignee、结果版本、活动 ID 和完成时间。
 
-- [ ] **Step 5: 运行迁移往返、ORM 一致性和约束测试**
+- [x] **Step 5: 运行迁移往返、ORM 一致性和约束测试**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/integration/persistence/test_correlation_migration.py tests/integration/persistence/test_constraints.py -q`
 
 Expected: 全部通过，`alembic check` 无差异。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add backend/migrations/versions/0004_incident_operations_lifecycle.py backend/src/incident_intelligence/persistence/models.py backend/src/incident_intelligence/ids.py backend/tests/integration/persistence/test_correlation_migration.py backend/tests/integration/persistence/test_constraints.py

@@ -147,6 +147,9 @@ class CorrelationService:
                         service=alert.service,
                         environment=alert.environment,
                         detected_at=alert.last_observed_at,
+                        state_changed_at=now,
+                        resolved_at=None,
+                        closed_at=None,
                         created_at=now,
                         version=1,
                     )
