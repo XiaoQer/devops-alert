@@ -1,5 +1,7 @@
 # Backend Foundation and Manual Intake Implementation Plan
 
+> 历史说明：本文记录 PostgreSQL 基线当时的实施与验证事实；当前持久化基线已由 MySQL 8.4 取代。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the first runnable backend slice in which an authenticated, bounded manual incident report is stored idempotently as a `SignalEvent`, projected to an `Alert`, opened as an `Incident`, and queued as a `DiagnosisRun`, with health and read APIs.

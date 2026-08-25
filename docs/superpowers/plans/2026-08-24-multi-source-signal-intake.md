@@ -1,5 +1,7 @@
 # 多源信号接入与告警投影实施计划
 
+> 历史说明：本文中的 PostgreSQL 迁移任务记录当时的实施事实；当前持久化基线已由 MySQL 8.4 单一初始迁移取代。
+
 > **供智能执行者：** 必须逐任务使用 `superpowers:executing-plans`；步骤使用复选框跟踪。用户已明确要求只在 `main` 分支开发且不使用子 Agent，因此不得创建工作树、功能分支或派发子 Agent。
 
 **目标：** 实现 Alertmanager Webhook v4 与 CloudEvents 1.0 两个独立认证的生产事件入口，共享一套原子、幂等、可审计的 `SignalEvent → Alert` 接入核心，并保证外部告警不会直接创建 Incident 或 DiagnosisRun。

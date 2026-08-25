@@ -577,7 +577,7 @@ git commit -m "test: 恢复 MySQL 业务回归"
 **接口：**
 - 产生：当前唯一 MySQL 8.4 架构事实和可复现验收记录
 
-- [ ] **步骤 1：更新当前架构和长期决策**
+- [x] **步骤 1：更新当前架构和长期决策**
 
 把所有当前态 PostgreSQL 描述改为 MySQL 8.4、InnoDB、PyMySQL、READ COMMITTED 和 UTC DATETIME(6)。`0002` 决策明确：无数据保留、MySQL-only、旧迁移替换、测试隔离和回退策略。
 
@@ -589,7 +589,7 @@ git commit -m "test: 恢复 MySQL 业务回归"
 
 多源信号规格删除“回填现有 PostgreSQL 人工数据”验收条件，改为“从空 MySQL 建立完整当前结构”。
 
-- [ ] **步骤 2：更新 README 本地运行说明**
+- [x] **步骤 2：更新 README 本地运行说明**
 
 日常运行示例只包含占位符：
 
@@ -603,7 +603,7 @@ cd backend
 
 测试示例要求用户现场生成密码，不在仓库写任何固定凭据。
 
-- [ ] **步骤 3：运行项目独立 MySQL 的统一验证**
+- [x] **步骤 3：运行项目独立 MySQL 的统一验证**
 
 ```bash
 II_TEST_DATABASE_URL="$II_MYSQL_TEST_BOOTSTRAP_URL" ./scripts/verify-backend.sh
@@ -611,7 +611,7 @@ II_TEST_DATABASE_URL="$II_MYSQL_TEST_BOOTSTRAP_URL" ./scripts/verify-backend.sh
 
 必须确认 Ruff、格式、Mypy、全部测试和覆盖率门槛通过，并记录精确测试数与覆盖率。
 
-- [ ] **步骤 4：扫描 PostgreSQL 运行残留与 Secret**
+- [x] **步骤 4：扫描 PostgreSQL 运行残留与 Secret**
 
 ```bash
 rg -n "psycopg|JSONB|postgresql\+|postgres:16|II_POSTGRES" backend compose.yaml README.md docs specs

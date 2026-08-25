@@ -1,6 +1,6 @@
 # 架构意图
 
-> 状态：总体设计已确认，后端阶段 1 已验收，多源信号接入阶段待实施。
+> 状态：总体设计已确认，后端阶段 1 已验收，MySQL 8.4 持久化基线实施中，多源信号接入阶段待实施。
 
 ## 项目边界
 
@@ -85,11 +85,11 @@
 ## 技术约束
 
 - 后端统一采用 Python，HTTP API 使用 FastAPI，输入输出模型使用 Pydantic；
-- 数据访问使用 SQLAlchemy，数据库迁移使用 Alembic，主数据库使用 PostgreSQL；
+- 数据访问使用 SQLAlchemy，数据库迁移使用 Alembic，主数据库使用 MySQL 8.4、InnoDB、utf8mb4 和 READ COMMITTED；
 - 前端采用 Vue 3、TypeScript 和 Vite，页面状态使用 Pinia；
 - 后端发布 OpenAPI 契约，前端从契约生成接口类型，不手工维护重复 DTO；
 - Diagnosis Worker 和 Analysis Worker 继续采用 Python，通过版本化任务契约按能力注册，不直接依赖前端；
-- 首期异步任务使用 PostgreSQL 持久任务、租约、心跳和超时接管，暂不引入 Kafka；
+- 首期异步任务使用 MySQL 持久任务、租约、心跳和超时接管，暂不引入 Kafka；
 - 后端测试使用 Pytest，前端单元测试使用 Vitest，关键业务旅程使用 Playwright；
 - 前后端形成独立构建制品，默认作为一套平台部署；可选 Worker 独立部署和扩缩容；
 - 首版不使用 Kafka、图数据库或完整 Backstage；

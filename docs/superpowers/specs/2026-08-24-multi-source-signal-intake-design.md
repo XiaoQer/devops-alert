@@ -14,7 +14,7 @@
 - CloudEvents Adapter：认证、结构化或 Binary 协议解析、受限 data 校验；
 - Signal Intake Service：来源事件幂等、SignalEvent 保存、Alert 投影、乱序规则、审计和事务；
 - Record Repositories：带锁 Alert 查询、SignalEvent 与审计写入、投影更新；
-- PostgreSQL：保存规范化事实，不保存原始外部负载。
+- MySQL 8.4：保存规范化事实，不保存原始外部负载。
 
 不采用两套独立业务链路，避免幂等和状态规则分叉。不采用原始事件先落盘再异步转换，避免引入无界负载、敏感数据保留和当前阶段不需要的消息基础设施。
 

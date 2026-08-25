@@ -73,7 +73,7 @@ AI 可以综合根因候选、因果链、证据缺口、人工验证和候选�
 
 ## 技术架构
 
-核心控制器、Diagnosis Worker 和 Analysis Worker 统一使用 Python。核心控制器以 FastAPI 提供 HTTP API，使用 Pydantic 定义边界模型；持久化采用 PostgreSQL、SQLAlchemy 和 Alembic。首期异步任务保存在 PostgreSQL，通过租约、心跳与超时接管保证任务可恢复，暂不引入 Kafka。
+核心控制器、Diagnosis Worker 和 Analysis Worker 统一使用 Python。核心控制器以 FastAPI 提供 HTTP API，使用 Pydantic 定义边界模型；持久化采用 MySQL 8.4、SQLAlchemy 和 Alembic。首期异步任务保存在 MySQL，通过租约、心跳与超时接管保证任务可恢复，暂不引入 Kafka。
 
 统一 UI 使用 Vue 3、TypeScript、Vite 和 Pinia。后端以 OpenAPI 作为前后端接口事实来源，前端从契约生成接口类型，避免手工维护重复模型。后端使用 Pytest，前端使用 Vitest，关键端到端旅程使用 Playwright。
 

@@ -20,7 +20,7 @@
 - firing、更新、resolved、迟到、重开和相同时间冲突规则；
 - Alertmanager 最多 100 条、256 KiB；CloudEvents 单事件、64 KiB；
 - 原子事务、有界审计、并发重放和数据库失败回滚；
-- 领域模型与 PostgreSQL 迁移，兼容并回填现有人工报告数据。
+- 领域模型与单一 MySQL 8.4 初始迁移，从空库建立完整当前结构。
 
 ## 非目标
 
@@ -68,16 +68,16 @@ Alertmanager 使用 `fingerprint`，CloudEvents 使用受限 `data.alert_key` �
 - 一批中任一步失败后 SignalEvent、Alert 和审计均无部分残留；
 - 原始负载、凭据、禁止实验身份、任意查询和生成器 URL 不进入数据库、响应或日志；
 - 外部事件接入后 Incident 与 DiagnosisRun 记录数保持不变；
-- 数据库迁移可升级、降级，并为现有人工报告记录生成兼容投影身份；
+- 数据库迁移可从空库升级、降级，并包含人工报告和外部信号投影所需的完整结构；
 - 所有自动状态决定都有固定原因码和有界审计证据。
 
 ## 验证证据
 
-- 任务 1 已验证 `0001_initial_domain → 0002_multi_source_signal_intake → base` 迁移往返；
-- 历史人工报告数据已验证回填 `event_type`、来源摘要和状态变更时间，原始幂等键未复制到 Alert；
+- 历史 PostgreSQL 两段迁移和回填验证已由无数据保留的 MySQL 基线取代；
+- 当前已验证 `0001_mysql_initial → base` 往返、ORM 元数据一致性和完整投影结构；
 - SignalEvent、Alert 和 `signal_intake_results` 的新增数据库约束及 ORM 元数据一致性已验证；
 - 人工报告首次提交、重放、事务回滚与四类资源读取契约已回归；
 - Alert 投影已验证 opened、updated、resolved、reopened、stale、orphan_resolved 六类结果，以及乱序、同时间恢复优先和人工抑制保护；
-- 当前统一验证为 107 项测试通过，覆盖率 96.83%，Ruff、格式和 Mypy 通过。
+- 历史 PostgreSQL 阶段统一验证为 107 项测试通过、覆盖率 96.83%；当前 MySQL 8.4 全部后端测试为 133 项通过，最终覆盖率验收见 MySQL 基线验证记录。
 
 Alertmanager、CloudEvents、共享接入服务和真实外部 HTTP 冒烟仍未实施，不得据此把完整规格标记为可用。
