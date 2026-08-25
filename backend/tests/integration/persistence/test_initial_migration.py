@@ -17,22 +17,22 @@ EXPECTED_TABLES = {
 
 
 def test_upgrade_creates_all_initial_domain_tables(
-    alembic_config: Config, postgres_engine: Engine
+    alembic_config: Config, mysql_engine: Engine
 ) -> None:
     command.upgrade(alembic_config, "head")
 
-    assert set(inspect(postgres_engine).get_table_names()) >= EXPECTED_TABLES
+    assert set(inspect(mysql_engine).get_table_names()) >= EXPECTED_TABLES
 
     command.downgrade(alembic_config, "base")
 
 
 def test_downgrade_removes_initial_domain_tables(
-    alembic_config: Config, postgres_engine: Engine
+    alembic_config: Config, mysql_engine: Engine
 ) -> None:
     command.upgrade(alembic_config, "head")
     command.downgrade(alembic_config, "base")
 
-    assert EXPECTED_TABLES.isdisjoint(inspect(postgres_engine).get_table_names())
+    assert EXPECTED_TABLES.isdisjoint(inspect(mysql_engine).get_table_names())
 
 
 def test_migration_matches_orm_metadata(alembic_config: Config) -> None:

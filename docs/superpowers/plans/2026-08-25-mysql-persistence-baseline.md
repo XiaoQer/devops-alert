@@ -261,7 +261,7 @@ git commit -m "feat: 增加 MySQL UTC 与 JSON 映射"
 - 产生：session fixture `mysql_engine() -> Iterator[Engine]`
 - 保持：`alembic_config`、`migrated_engine`（迁移在任务 4 恢复）
 
-- [ ] **步骤 1：编写测试 URL 和删除保护失败测试**
+- [x] **步骤 1：编写测试 URL 和删除保护失败测试**
 
 覆盖非 MySQL、错误驱动、数据库名不是 `mysql`、错误前缀、不同 UUID 和合法精确名称：
 
@@ -277,13 +277,13 @@ def test_database_guard_accepts_only_exact_generated_name() -> None:
     validate_test_database_name(name, name)
 ```
 
-- [ ] **步骤 2：运行测试并确认保护函数不存在**
+- [x] **步骤 2：运行测试并确认保护函数不存在**
 
 运行：`cd backend && .venv/bin/python -m pytest tests/unit/persistence/test_database_guard.py -q`
 
 预期：导入失败，明确指向测试数据库保护模块尚未实现。
 
-- [ ] **步骤 3：把 Compose 改为独立 MySQL 8.4**
+- [x] **步骤 3：把 Compose 改为独立 MySQL 8.4**
 
 服务名改为 `mysql-test`，配置只从环境读取：
 
@@ -305,7 +305,7 @@ services:
 
 卷名改为 `incident-intelligence-mysql-test`。仓库不提供默认密码。
 
-- [ ] **步骤 4：实现临时数据库 fixture 与会话属性测试**
+- [x] **步骤 4：实现临时数据库 fixture 与会话属性测试**
 
 从 `II_TEST_DATABASE_URL` 读取 `mysql+pymysql://<凭据>@<主机>/mysql`，生成 `ii_test_<uuid4.hex>`。在 AUTOCOMMIT 连接中执行受控字面量：
 
@@ -328,7 +328,7 @@ with mysql_engine.connect() as connection:
 assert row == ("READ-COMMITTED", "+00:00", "utf8mb4")
 ```
 
-- [ ] **步骤 5：启动项目测试 MySQL 并验证隔离生命周期**
+- [x] **步骤 5：启动项目测试 MySQL 并验证隔离生命周期**
 
 使用当前终端随机密码：
 

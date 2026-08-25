@@ -11,11 +11,15 @@ from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine, make_url
+from sqlalchemy.engine import Engine
 
 from incident_intelligence.main import create_app
+from incident_intelligence.persistence.session import get_engine
 from incident_intelligence.settings import Settings
+from tests.support.database import (
+    parse_mysql_test_bootstrap_url,
+    validate_test_database_name,
+)
 
 
 @pytest.fixture
@@ -39,50 +43,57 @@ def client(settings_factory: Callable[..., Settings]) -> Iterator[TestClient]:
 
 
 @pytest.fixture(scope="session")
-def postgres_engine() -> Iterator[Engine]:
+def mysql_engine() -> Iterator[Engine]:
     database_url = os.environ.get("II_TEST_DATABASE_URL")
     if database_url is None:
-        pytest.fail("需要通过 II_TEST_DATABASE_URL 提供专用 PostgreSQL 测试库")
+        pytest.fail("需要通过 II_TEST_DATABASE_URL 提供 MySQL 测试引导库")
 
-    parsed_url = make_url(database_url)
-    if parsed_url.get_backend_name() != "postgresql":
-        pytest.fail("II_TEST_DATABASE_URL 必须指向 PostgreSQL")
-
-    schema_name = f"ii_test_{uuid4().hex}"
-    bootstrap_engine = create_engine(database_url, pool_pre_ping=True)
-    with bootstrap_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
-        connection.execute(text(f'CREATE SCHEMA "{schema_name}"'))
-
-    isolated_engine = create_engine(
-        database_url,
-        connect_args={"options": f"-csearch_path={schema_name}"},
-        pool_pre_ping=True,
-    )
     try:
-        yield isolated_engine
-    finally:
-        isolated_engine.dispose()
+        parsed_url = parse_mysql_test_bootstrap_url(database_url)
+    except ValueError as error:
+        pytest.fail(str(error))
+
+    database_name = f"ii_test_{uuid4().hex}"
+    bootstrap_engine = get_engine(database_url)
+    isolated_engine: Engine | None = None
+    database_created = False
+    try:
         with bootstrap_engine.connect().execution_options(
             isolation_level="AUTOCOMMIT"
         ) as connection:
-            connection.execute(text(f'DROP SCHEMA "{schema_name}" CASCADE'))
+            connection.exec_driver_sql(
+                f"CREATE DATABASE `{database_name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_bin"
+            )
+        database_created = True
+        isolated_url = parsed_url.set(database=database_name)
+        isolated_engine = get_engine(isolated_url.render_as_string(hide_password=False))
+        yield isolated_engine
+    finally:
+        if isolated_engine is not None:
+            isolated_engine.dispose()
+        if database_created:
+            validate_test_database_name(database_name, database_name)
+            with bootstrap_engine.connect().execution_options(
+                isolation_level="AUTOCOMMIT"
+            ) as connection:
+                connection.exec_driver_sql(f"DROP DATABASE `{database_name}`")
         bootstrap_engine.dispose()
 
 
 @pytest.fixture
-def alembic_config(postgres_engine: Engine) -> Config:
+def alembic_config(mysql_engine: Engine) -> Config:
     backend_dir = Path(__file__).resolve().parents[1]
     config = Config(str(backend_dir / "alembic.ini"))
     config.set_main_option("script_location", str(backend_dir / "migrations"))
-    config.attributes["engine"] = postgres_engine
+    config.attributes["engine"] = mysql_engine
     return config
 
 
 @pytest.fixture
-def migrated_engine(alembic_config: Config, postgres_engine: Engine) -> Iterator[Engine]:
+def migrated_engine(alembic_config: Config, mysql_engine: Engine) -> Iterator[Engine]:
     command.downgrade(alembic_config, "base")
     command.upgrade(alembic_config, "head")
     try:
-        yield postgres_engine
+        yield mysql_engine
     finally:
         command.downgrade(alembic_config, "base")

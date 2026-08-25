@@ -43,14 +43,14 @@ def insert_legacy_manual_record(engine: Engine, source_event_id: str) -> None:
 
 
 def test_existing_manual_rows_are_backfilled_without_plain_idempotency_key(
-    alembic_config: Config, postgres_engine: Engine
+    alembic_config: Config, mysql_engine: Engine
 ) -> None:
     command.upgrade(alembic_config, "0001_initial_domain")
-    insert_legacy_manual_record(postgres_engine, source_event_id="private-key-1")
+    insert_legacy_manual_record(mysql_engine, source_event_id="private-key-1")
 
     command.upgrade(alembic_config, "head")
 
-    with postgres_engine.connect() as connection:
+    with mysql_engine.connect() as connection:
         signal = connection.execute(text("SELECT event_type FROM signal_events")).one()
         alert = connection.execute(
             text("SELECT source, source_instance, source_alert_key, state_changed_at FROM alerts")
@@ -66,14 +66,14 @@ def test_existing_manual_rows_are_backfilled_without_plain_idempotency_key(
 
 
 def test_alert_source_identity_and_event_type_are_database_constraints(
-    alembic_config: Config, postgres_engine: Engine
+    alembic_config: Config, mysql_engine: Engine
 ) -> None:
     command.upgrade(alembic_config, "head")
-    columns = {item["name"] for item in inspect(postgres_engine).get_columns("alerts")}
+    columns = {item["name"] for item in inspect(mysql_engine).get_columns("alerts")}
     assert {"source", "source_instance", "source_alert_key", "state_changed_at"} <= columns
 
     with (
-        postgres_engine.begin() as connection,
+        mysql_engine.begin() as connection,
         pytest.raises((IntegrityError, DataError)),
     ):
         connection.execute(
@@ -92,12 +92,12 @@ def test_alert_source_identity_and_event_type_are_database_constraints(
 
 
 def test_signal_intake_results_enforces_fixed_outcomes_and_fingerprints(
-    alembic_config: Config, postgres_engine: Engine
+    alembic_config: Config, mysql_engine: Engine
 ) -> None:
     command.upgrade(alembic_config, "head")
 
     with (
-        postgres_engine.begin() as connection,
+        mysql_engine.begin() as connection,
         pytest.raises((IntegrityError, DataError)),
     ):
         connection.execute(

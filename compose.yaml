@@ -1,19 +1,19 @@
 services:
-  postgres:
-    image: postgres:16-alpine
+  mysql-test:
+    image: mysql:8.4
     environment:
-      POSTGRES_DB: ${II_POSTGRES_DB:?请设置 II_POSTGRES_DB}
-      POSTGRES_USER: ${II_POSTGRES_USER:?请设置 II_POSTGRES_USER}
-      POSTGRES_PASSWORD: ${II_POSTGRES_PASSWORD:?请设置 II_POSTGRES_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${II_MYSQL_TEST_ROOT_PASSWORD:?请设置测试数据库密码}
     ports:
-      - "${II_POSTGRES_PORT:-55432}:5432"
+      - "127.0.0.1:${II_MYSQL_TEST_PORT:-43306}:3306"
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_bin"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test:
+        ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 2s
       timeout: 3s
-      retries: 20
+      retries: 30
     volumes:
-      - incident-intelligence-postgres:/var/lib/postgresql/data
+      - incident-intelligence-mysql-test:/var/lib/mysql
 
 volumes:
-  incident-intelligence-postgres:
+  incident-intelligence-mysql-test:
