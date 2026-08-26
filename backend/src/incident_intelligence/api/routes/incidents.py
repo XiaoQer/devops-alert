@@ -82,11 +82,10 @@ def get_incident_overview(
     actor: ManualActor,
     service: IncidentService,
 ) -> IncidentOverviewResponse:
-    del actor
     _require_incident_id(incident_id)
     try:
         return IncidentOverviewResponse.model_validate(
-            service.get_overview(incident_id), from_attributes=True
+            service.get_overview(incident_id, actor=actor), from_attributes=True
         )
     except IncidentResourceNotFound as error:
         raise _not_found() from error

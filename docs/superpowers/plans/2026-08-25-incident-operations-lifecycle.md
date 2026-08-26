@@ -489,7 +489,7 @@ git commit -m "feat: 提供事故处置写接口"
 - Produces overview 字段：`state_changed_at`、`resolved_at`、`closed_at`、`activities`、`activities_truncated`、`allowed_actions`、`allowed_transitions`、`primary_action`。
 - Consumes: Task 1 状态机、Task 2 `IncidentActivityRow`。
 
-- [ ] **Step 1: 编写活动截断、排序和允许操作失败测试**
+- [x] **Step 1: 编写活动截断、排序和允许操作失败测试**
 
 ```python
 def test_overview_returns_bounded_activities_and_actor_specific_actions(service, seeded):
@@ -504,15 +504,15 @@ def test_overview_returns_bounded_activities_and_actor_specific_actions(service,
     assert overview.primary_action.target_state == "TRIAGING"
 ```
 
-- [ ] **Step 2: 编写列表最近活动和固定查询数失败测试**
+- [x] **Step 2: 编写列表最近活动和固定查询数失败测试**
 
 添加一条晚于告警的 `NOTE_ADDED`，断言列表 `last_activity_at` 使用该活动时间。使用 SQLAlchemy 事件计数器分别读取 1 条和 200 条活动，overview 查询数必须相同。
 
-- [ ] **Step 3: 运行聚焦测试确认视图字段缺失失败**
+- [x] **Step 3: 运行聚焦测试确认视图字段缺失失败**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/integration/services/test_incident_center.py tests/api/test_incidents.py -q`
 
-- [ ] **Step 4: 实现活动固定查询、列表聚合和 actor 视图**
+- [x] **Step 4: 实现活动固定查询、列表聚合和 actor 视图**
 
 仓储新增 `activities(incident_id, limit=201)`；列表聚合增加每个 Incident 的活动最大时间子查询，并与关联告警最大时间、Incident 创建时间取最大值。Overview 只返回白名单列，活动正文按类型映射，不返回幂等摘要或审计详情。
 
@@ -524,13 +524,13 @@ def get_incident_overview(incident_id: str, actor: ManualActor, service: Inciden
     )
 ```
 
-- [ ] **Step 5: 运行聚焦与 API 测试**
+- [x] **Step 5: 运行聚焦与 API 测试**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/integration/services/test_incident_center.py tests/api/test_incidents.py -q`
 
 Expected: 全部通过，活动 200 条时 `activities_truncated=true`。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add backend/src/incident_intelligence/persistence/incident_center_repository.py backend/src/incident_intelligence/services/incident_center.py backend/src/incident_intelligence/api/schemas/incidents.py backend/src/incident_intelligence/api/routes/incidents.py backend/tests/integration/services/test_incident_center.py backend/tests/api/test_incidents.py

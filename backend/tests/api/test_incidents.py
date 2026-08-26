@@ -156,6 +156,17 @@ def test_list_and_overview_return_real_bounded_aggregate(
     assert detail.status_code == 200
     body = detail.json()
     assert body["id"] == incident_id
+    assert body["state_changed_at"] is not None
+    assert body["resolved_at"] is None
+    assert body["closed_at"] is None
+    assert body["activities"] == []
+    assert body["activities_truncated"] is False
+    assert "TRANSITION" in body["allowed_actions"]
+    assert body["allowed_transitions"] == ["TRIAGING", "INVESTIGATING"]
+    assert body["primary_action"] == {
+        "action": "TRANSITION",
+        "target_state": "TRIAGING",
+    }
     assert len(body["alerts"]) == 2
     assert body["correlation"]["rule_version"] == "correlation.v1"
     assert body["correlation"]["explanation"] == "窗口内只有一个同服务事故，已自动关联。"  # noqa: RUF001

@@ -4,17 +4,19 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
 from incident_intelligence.persistence.models import (
     AlertRow,
     CorrelationDecisionRow,
+    IncidentActivityRow,
     IncidentAlertLinkRow,
     IncidentRow,
     ServiceCatalogEntryRow,
 )
+from incident_intelligence.persistence.types import UtcDateTime
 
 ACTIVE_INCIDENT_STATES = (
     "DETECTED",
@@ -62,12 +64,30 @@ class IncidentCenterRepository:
             .group_by(IncidentAlertLinkRow.incident_id)
             .subquery()
         )
+        activity_aggregate = (
+            select(
+                IncidentActivityRow.incident_id.label("incident_id"),
+                func.max(IncidentActivityRow.created_at).label("last_activity_at"),
+            )
+            .group_by(IncidentActivityRow.incident_id)
+            .subquery()
+        )
         statement = (
             select(
                 IncidentRow,
                 ServiceCatalogEntryRow.owner_team,
                 func.coalesce(aggregate.c.alert_count, 0),
-                func.coalesce(aggregate.c.last_activity_at, IncidentRow.detected_at),
+                cast(
+                    func.greatest(
+                        IncidentRow.detected_at,
+                        func.coalesce(aggregate.c.last_activity_at, IncidentRow.detected_at),
+                        func.coalesce(
+                            activity_aggregate.c.last_activity_at,
+                            IncidentRow.detected_at,
+                        ),
+                    ),
+                    UtcDateTime(),
+                ),
             )
             .outerjoin(
                 ServiceCatalogEntryRow,
@@ -78,6 +98,10 @@ class IncidentCenterRepository:
                 ),
             )
             .outerjoin(aggregate, aggregate.c.incident_id == IncidentRow.id)
+            .outerjoin(
+                activity_aggregate,
+                activity_aggregate.c.incident_id == IncidentRow.id,
+            )
         )
         statement = self._filters(statement, environment, state, query)
         rows = self._session.execute(
@@ -141,6 +165,16 @@ class IncidentCenterRepository:
             .limit(limit)
         )
         return tuple(LinkedAlertRecord(link=link, alert=alert) for link, alert in rows)
+
+    def activities(self, incident_id: str, *, limit: int) -> tuple[IncidentActivityRow, ...]:
+        return tuple(
+            self._session.scalars(
+                select(IncidentActivityRow)
+                .where(IncidentActivityRow.incident_id == incident_id)
+                .order_by(IncidentActivityRow.created_at, IncidentActivityRow.id)
+                .limit(limit)
+            )
+        )
 
     def latest_decision(self, incident_id: str) -> CorrelationDecisionRow | None:
         return self._session.scalar(

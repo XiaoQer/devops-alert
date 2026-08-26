@@ -68,6 +68,30 @@ class IncidentTimelineResponse(BaseModel):
     detail: str
 
 
+class IncidentActivityResponse(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", from_attributes=True)
+
+    id: str
+    kind: str
+    actor: str
+    from_state: str | None
+    to_state: str | None
+    note_category: str | None
+    message: str | None
+    resolution_category: str | None
+    resolution_actions: str | None
+    root_cause: str | None
+    incident_version: int
+    created_at: datetime
+
+
+class IncidentPrimaryActionResponse(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", from_attributes=True)
+
+    action: str
+    target_state: str | None
+
+
 class IncidentOverviewResponse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", from_attributes=True)
 
@@ -81,11 +105,19 @@ class IncidentOverviewResponse(BaseModel):
     claimed_at: datetime | None
     owner_team: str | None
     detected_at: datetime
+    state_changed_at: datetime
+    resolved_at: datetime | None
+    closed_at: datetime | None
     created_at: datetime
     version: int
     alerts: tuple[IncidentAlertResponse, ...]
     alerts_truncated: bool
     correlation: IncidentCorrelationResponse | None
+    activities: tuple[IncidentActivityResponse, ...]
+    activities_truncated: bool
+    allowed_actions: tuple[str, ...]
+    allowed_transitions: tuple[str, ...]
+    primary_action: IncidentPrimaryActionResponse | None
     timeline: tuple[IncidentTimelineResponse, ...]
 
 

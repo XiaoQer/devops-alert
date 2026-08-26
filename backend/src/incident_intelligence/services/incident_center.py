@@ -1,16 +1,20 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session, sessionmaker
 
-from incident_intelligence.ids import new_id
+from incident_intelligence.domain.enums import IncidentState
+from incident_intelligence.domain.incident_operations import (
+    allowed_actions,
+    allowed_transitions,
+    primary_action,
+)
 from incident_intelligence.persistence.incident_center_repository import (
     IncidentCenterRepository,
 )
-from incident_intelligence.persistence.repositories import RecordRepositories
+from incident_intelligence.persistence.models import IncidentActivityRow
 
 
 class IncidentListQuery(BaseModel):
@@ -82,6 +86,30 @@ class IncidentTimelineEvent(BaseModel):
     detail: str
 
 
+class IncidentActivityView(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str
+    kind: str
+    actor: str
+    from_state: str | None
+    to_state: str | None
+    note_category: str | None
+    message: str | None
+    resolution_category: str | None
+    resolution_actions: str | None
+    root_cause: str | None
+    incident_version: int
+    created_at: datetime
+
+
+class IncidentPrimaryActionView(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    action: str
+    target_state: str | None
+
+
 class IncidentOverview(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -95,32 +123,23 @@ class IncidentOverview(BaseModel):
     claimed_at: datetime | None
     owner_team: str | None
     detected_at: datetime
+    state_changed_at: datetime
+    resolved_at: datetime | None
+    closed_at: datetime | None
     created_at: datetime
     version: int
     alerts: tuple[IncidentAlertView, ...]
     alerts_truncated: bool
     correlation: IncidentCorrelationView | None
+    activities: tuple[IncidentActivityView, ...]
+    activities_truncated: bool
+    allowed_actions: tuple[str, ...]
+    allowed_transitions: tuple[str, ...]
+    primary_action: IncidentPrimaryActionView | None
     timeline: tuple[IncidentTimelineEvent, ...]
 
 
-class IncidentClaimResult(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    id: str
-    assignee: str
-    claimed_at: datetime
-    version: int
-
-
 class IncidentResourceNotFound(Exception):
-    pass
-
-
-class IncidentAlreadyClaimed(Exception):
-    pass
-
-
-class IncidentNotClaimable(Exception):
     pass
 
 
@@ -129,10 +148,8 @@ class IncidentCenterService:
         self,
         *,
         session_factory: sessionmaker[Session],
-        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._session_factory = session_factory
-        self._clock = clock or (lambda: datetime.now(UTC))
 
     def list_incidents(self, query: IncidentListQuery) -> IncidentListResult:
         with self._session_factory() as session:
@@ -172,7 +189,7 @@ class IncidentCenterService:
                 offset=query.offset,
             )
 
-    def get_overview(self, incident_id: str) -> IncidentOverview:
+    def get_overview(self, incident_id: str, *, actor: str) -> IncidentOverview:
         with self._session_factory() as session:
             repository = IncidentCenterRepository(session)
             incident = repository.find_incident(incident_id)
@@ -181,6 +198,8 @@ class IncidentCenterService:
             linked = repository.linked_alerts(incident_id, limit=101)
             visible = linked[:100]
             decision = repository.latest_decision(incident_id)
+            activities = repository.activities(incident_id, limit=201)
+            visible_activities = activities[:200]
             timeline = [
                 IncidentTimelineEvent(
                     id=f"created:{incident.id}",
@@ -200,16 +219,7 @@ class IncidentCenterService:
                 )
                 for record in visible
             )
-            if incident.assignee is not None and incident.claimed_at is not None:
-                timeline.append(
-                    IncidentTimelineEvent(
-                        id=f"claimed:{incident.id}:{incident.version}",
-                        kind="incident_claimed",
-                        occurred_at=incident.claimed_at,
-                        title="事故已认领",
-                        detail=incident.assignee,
-                    )
-                )
+            timeline.extend(_activity_timeline(activity) for activity in visible_activities)
             timeline.sort(
                 key=lambda item: (
                     item.occurred_at,
@@ -228,6 +238,9 @@ class IncidentCenterService:
                 claimed_at=incident.claimed_at,
                 owner_team=repository.find_owner_team(incident),
                 detected_at=incident.detected_at,
+                state_changed_at=incident.state_changed_at,
+                resolved_at=incident.resolved_at,
+                closed_at=incident.closed_at,
                 created_at=incident.created_at,
                 version=incident.version,
                 alerts=tuple(
@@ -255,44 +268,72 @@ class IncidentCenterService:
                         created_at=decision.created_at,
                     )
                 ),
+                activities=tuple(
+                    IncidentActivityView(
+                        id=activity.id,
+                        kind=activity.kind,
+                        actor=activity.actor,
+                        from_state=activity.from_state,
+                        to_state=activity.to_state,
+                        note_category=activity.note_category,
+                        message=activity.message,
+                        resolution_category=activity.resolution_category,
+                        resolution_actions=activity.resolution_actions,
+                        root_cause=activity.root_cause,
+                        incident_version=activity.incident_version,
+                        created_at=activity.created_at,
+                    )
+                    for activity in visible_activities
+                ),
+                activities_truncated=len(activities) > 200,
+                allowed_actions=tuple(
+                    action.value
+                    for action in allowed_actions(
+                        IncidentState(incident.state), incident.assignee, actor
+                    )
+                ),
+                allowed_transitions=tuple(
+                    state.value for state in allowed_transitions(IncidentState(incident.state))
+                ),
+                primary_action=(
+                    None
+                    if (suggested := primary_action(IncidentState(incident.state))) is None
+                    else IncidentPrimaryActionView(
+                        action=suggested.action.value,
+                        target_state=(
+                            None if suggested.target_state is None else suggested.target_state.value
+                        ),
+                    )
+                ),
                 timeline=tuple(timeline),
             )
 
-    def claim(self, incident_id: str, *, actor: str, request_id: str) -> IncidentClaimResult:
-        now = self._clock().astimezone(UTC)
-        with self._session_factory.begin() as session:
-            repository = IncidentCenterRepository(session)
-            incident = repository.find_incident(incident_id, for_update=True)
-            if incident is None:
-                raise IncidentResourceNotFound()
-            if incident.state in {"RESOLVED", "CLOSED"}:
-                raise IncidentNotClaimable()
-            if incident.assignee is not None:
-                if incident.assignee != actor or incident.claimed_at is None:
-                    raise IncidentAlreadyClaimed()
-                return IncidentClaimResult(
-                    id=incident.id,
-                    assignee=incident.assignee,
-                    claimed_at=incident.claimed_at,
-                    version=incident.version,
-                )
-            incident.assignee = actor
-            incident.claimed_at = now
-            incident.version += 1
-            RecordRepositories(session).add_audit(
-                audit_id=new_id("aud"),
-                actor=actor,
-                action="incident.claimed",
-                resource_type="incident",
-                resource_id=incident.id,
-                request_id=request_id,
-                details={"reason_code": "manual_claim_requested"},
-                created_at=now,
-            )
-            session.flush()
-            return IncidentClaimResult(
-                id=incident.id,
-                assignee=actor,
-                claimed_at=now,
-                version=incident.version,
-            )
+
+def _activity_timeline(activity: IncidentActivityRow) -> IncidentTimelineEvent:
+    kind = activity.kind
+    titles = {
+        "INCIDENT_CLAIMED": "事故已认领",
+        "INCIDENT_RELEASED": "已解除认领",
+        "STATE_TRANSITIONED": "处置阶段已更新",
+        "NOTE_ADDED": "添加处置记录",
+        "INCIDENT_RESOLVED": "事故已解决",
+        "INCIDENT_REOPENED": "事故已重新打开",
+        "INCIDENT_CLOSED": "事故已关闭",
+    }
+    detail = activity.message
+    if not detail:
+        if kind == "INCIDENT_CLAIMED":
+            detail = f"{activity.actor} 开始负责本次事故"
+        elif kind == "INCIDENT_RELEASED":
+            detail = f"{activity.actor} 解除事故认领"
+        elif activity.from_state and activity.to_state:
+            detail = f"{activity.from_state} → {activity.to_state}"
+        else:
+            detail = "处置状态已更新"
+    return IncidentTimelineEvent(
+        id=activity.id,
+        kind=kind.lower(),
+        occurred_at=activity.created_at,
+        title=titles[kind],
+        detail=detail,
+    )
