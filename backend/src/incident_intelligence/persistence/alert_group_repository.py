@@ -162,9 +162,7 @@ class AlertGroupRepository:
     def active_candidates(
         self,
         *,
-        entity_key: str,
-        environment: str,
-        symptom: str,
+        problem_key: str,
         limit: int,
     ) -> tuple[AlertGroupRow, ...]:
         return tuple(
@@ -172,9 +170,7 @@ class AlertGroupRepository:
                 select(AlertGroupRow)
                 .where(
                     AlertGroupRow.state == "ACTIVE",
-                    AlertGroupRow.entity_key == entity_key,
-                    AlertGroupRow.environment == environment,
-                    AlertGroupRow.symptom == symptom,
+                    AlertGroupRow.problem_key == problem_key,
                 )
                 .order_by(AlertGroupRow.last_observed_at.desc(), AlertGroupRow.id)
                 .limit(limit)

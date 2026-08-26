@@ -113,21 +113,32 @@ def test_two_similar_alerts_converge_to_one_explainable_group(
         )
 
 
-def test_alerts_without_service_converge_by_entity_identity(
+def test_alerts_without_service_converge_by_problem_signature(
     migrated_engine: Engine,
 ) -> None:
     session_factory = sessionmaker(bind=migrated_engine, expire_on_commit=False)
     clock = [NOW + timedelta(minutes=1)]
     intake, jobs, grouping = services(session_factory, clock)
-    shared_facts = {
-        "symptom": "errors",
-        "namespace": "payments",
-        "pod": "payment-worker-0",
-    }
     intake.submit_batch(
         [
-            command(30, service=None, facts=shared_facts),
-            command(31, service=None, facts=shared_facts),
+            command(
+                30,
+                service=None,
+                facts={
+                    "alertname": "KubePodNotReady",
+                    "namespace": "payments",
+                    "pod": "payment-worker-0",
+                },
+            ),
+            command(
+                31,
+                service=None,
+                facts={
+                    "alertname": "KubePodNotReady",
+                    "namespace": "payments",
+                    "pod": "payment-worker-1",
+                },
+            ),
         ],
         "alertmanager-adapter",
         "req-no-service",
@@ -143,7 +154,9 @@ def test_alerts_without_service_converge_by_entity_identity(
             assert group is not None
             assert group.service is None
             assert group.entity_type == "POD"
-            assert group.entity_display_name == "payments/payment-worker-0"
+            assert group.problem_type == "KubePodNotReady"
+            assert group.scope_type == "NAMESPACE"
+            assert group.scope_display_name == "payments"
             assert group.total_count == 2
             assert group.active_count == 2
             assert session.scalar(select(func.count()).select_from(AlertGroupMemberRow)) == 2

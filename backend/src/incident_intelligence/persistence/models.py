@@ -27,7 +27,8 @@ CORRELATION_JOB_STATE_VALUES = "'PENDING', 'LEASED', 'SUCCEEDED', 'FAILED'"
 ALERT_GROUP_STATE_VALUES = "'ACTIVE', 'RESOLVED'"
 STORM_STATE_VALUES = "'NORMAL', 'STORM'"
 CORRELATION_OUTCOME_VALUES = (
-    "'CREATED_NO_MATCH', 'LINKED_EXACT_SERVICE', 'LINKED_EXISTING', "
+    "'SKIPPED_SERVICE_MISSING', 'CREATED_NO_MATCH', "
+    "'LINKED_EXACT_SERVICE', 'LINKED_EXISTING', "
     "'CREATED_AMBIGUOUS', 'CREATED_DEPENDENCY_CANDIDATE', "
     "'REJECTED_INELIGIBLE', 'RECORDED_RESOLUTION', 'SUPERSEDED'"
 )
@@ -347,6 +348,16 @@ class AlertGroupRow(Base):
             name="alert_group_entity_type",
         ),
         CheckConstraint("char_length(entity_key) = 64", name="alert_group_entity_key"),
+        CheckConstraint("char_length(problem_key) = 64", name="alert_group_problem_key"),
+        CheckConstraint("char_length(scope_key) = 64", name="alert_group_scope_key"),
+        CheckConstraint(
+            "scope_type IN ('SERVICE','WORKLOAD','NAMESPACE','CLUSTER','JOB','SOURCE')",
+            name="alert_group_scope_type",
+        ),
+        CheckConstraint(
+            "signature_version = 'problem-signature.v1'",
+            name="alert_group_signature_version",
+        ),
         CheckConstraint(
             "active_count >= 0 AND total_count >= 1 "
             "AND active_count <= total_count AND impacted_resource_count >= 1",
@@ -361,9 +372,7 @@ class AlertGroupRow(Base):
         Index(
             "ix_alert_groups_candidate",
             "state",
-            "entity_key",
-            "environment",
-            "symptom",
+            "problem_key",
             "last_observed_at",
         ),
         Index("ix_alert_groups_incident_id", "incident_id"),
@@ -379,6 +388,12 @@ class AlertGroupRow(Base):
     entity_type: Mapped[str] = mapped_column(String(16), nullable=False)
     entity_key: Mapped[str] = mapped_column(String(64), nullable=False)
     entity_display_name: Mapped[str] = mapped_column(String(257), nullable=False)
+    problem_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    problem_type: Mapped[str] = mapped_column(String(200), nullable=False)
+    scope_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    scope_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope_display_name: Mapped[str] = mapped_column(String(257), nullable=False)
+    signature_version: Mapped[str] = mapped_column(String(32), nullable=False)
     environment: Mapped[str] = mapped_column(String(32), nullable=False)
     symptom: Mapped[str] = mapped_column(String(64), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)

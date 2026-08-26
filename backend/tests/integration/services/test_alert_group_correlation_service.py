@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from functools import partial
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
@@ -13,9 +13,11 @@ from incident_intelligence.persistence.models import (
     AlertGroupCorrelationJobRow,
     AlertGroupDecisionRow,
     AlertGroupRow,
+    AlertRow,
     IncidentAlertLinkRow,
     IncidentRow,
     ServiceCatalogEntryRow,
+    SignalEventRow,
 )
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.alert_group_correlation import (
@@ -51,6 +53,76 @@ def command(number: int, *, symptom: str = "errors") -> SignalCommand:
             "facts": {"symptom": symptom, "pod": f"payment-{number}"},
         }
     )
+
+
+def no_service_command(number: int) -> SignalCommand:
+    return SignalCommand.model_validate(
+        {
+            "alert_source_id": SOURCE_ID,
+            "source": "alertmanager",
+            "source_instance": f"{number:064x}",
+            "source_event_id": f"{number:064x}",
+            "source_alert_key": f"pod-not-ready-{number}",
+            "event_type": "alert.firing",
+            "event_at": NOW + timedelta(seconds=number),
+            "episode_started_at": NOW,
+            "title": "Pod 未就绪",
+            "summary": "Pod 持续未就绪",
+            "severity": "high",
+            "service": None,
+            "environment": "production",
+            "facts": {
+                "alertname": "KubePodNotReady",
+                "namespace": "payments",
+                "pod": f"payment-{number}",
+                "symptom": "unknown",
+            },
+        }
+    )
+
+
+def test_group_without_service_records_skip_and_does_not_create_incident(
+    migrated_engine: Engine,
+) -> None:
+    session_factory = sessionmaker(bind=migrated_engine, expire_on_commit=False)
+    uow_factory = partial(SqlAlchemyUnitOfWork, session_factory)
+    intake = SignalIntakeService(uow_factory=uow_factory, clock=lambda: NOW)
+    grouping_jobs = AlertGroupingJobService(uow_factory=uow_factory)
+    grouping = AlertGroupingService(uow_factory=uow_factory, clock=lambda: NOW)
+    correlation_jobs = AlertGroupCorrelationJobService(uow_factory=uow_factory)
+    correlation = AlertGroupCorrelationService(uow_factory=uow_factory, clock=lambda: NOW)
+
+    intake.submit_batch(
+        [no_service_command(1), no_service_command(2)],
+        "alertmanager-adapter",
+        "req-no-service",
+    )
+    for lease in grouping_jobs.claim_batch("grouping", NOW, limit=10, lease_seconds=30):
+        grouping.process(lease)
+
+    leases = correlation_jobs.claim_batch("correlation", NOW, limit=10, lease_seconds=30)
+    assert len(leases) == 1
+    result = correlation.process(leases[0])
+
+    assert result.outcome == "SKIPPED_SERVICE_MISSING"
+    assert result.incident_id is None
+    assert result.linked_alert_count == 0
+    with session_factory() as session:
+        group = session.scalar(select(AlertGroupRow))
+        decision = session.scalar(select(AlertGroupDecisionRow))
+        assert group is not None
+        assert group.total_count == 2
+        assert group.incident_id is None
+        assert decision is not None
+        assert decision.reason_codes == ["service_missing"]
+        assert decision.facts["problem_type"] == "KubePodNotReady"
+        assert decision.facts["signature_version"] == "problem-signature.v1"
+        assert session.scalar(select(func.count()).select_from(IncidentRow)) == 0
+        for model in (SignalEventRow, AlertRow, AlertGroupRow):
+            session.execute(
+                update(model).where(model.service.is_(None)).values(service="test-cleanup")
+            )
+        session.commit()
 
 
 def test_group_correlation_links_every_member_and_catches_up_after_leased_update(

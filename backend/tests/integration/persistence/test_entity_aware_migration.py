@@ -19,5 +19,16 @@ def test_head_allows_nullable_service_and_persists_entity_columns(
         assert columns["entity_key"]["nullable"] is False
         assert columns["entity_display_name"]["nullable"] is False
 
+    group_columns = {column["name"]: column for column in inspector.get_columns("alert_groups")}
+    for column_name in (
+        "problem_key",
+        "problem_type",
+        "scope_type",
+        "scope_key",
+        "scope_display_name",
+        "signature_version",
+    ):
+        assert group_columns[column_name]["nullable"] is False
+
     command.check(alembic_config)
     command.downgrade(alembic_config, "base")

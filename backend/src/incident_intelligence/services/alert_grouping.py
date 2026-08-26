@@ -15,6 +15,10 @@ from incident_intelligence.domain.alert_grouping import (
 )
 from incident_intelligence.domain.catalog import normalize_symptom
 from incident_intelligence.domain.enums import CatalogState
+from incident_intelligence.domain.problem_signatures import (
+    ProblemSignature,
+    derive_problem_signature,
+)
 from incident_intelligence.ids import IdPrefix, new_id
 from incident_intelligence.persistence.alert_group_repository import AlertGroupRepository
 from incident_intelligence.persistence.catalog_repository import ServiceCatalogRepository
@@ -31,7 +35,7 @@ from incident_intelligence.services.alert_grouping_jobs import (
     AlertGroupingJobNotRetryable,
 )
 
-GROUPING_RULE_VERSION = "alert-grouping.v1"
+GROUPING_RULE_VERSION = "alert-grouping.v2"
 GROUPING_CANDIDATE_LIMIT = 21
 STORM_MEMBER_THRESHOLD = 20
 STORM_WINDOW_SECONDS = 60
@@ -97,6 +101,16 @@ class AlertGroupingService:
                 raise RuntimeError("alert_grouping_signal_not_found")
             symptom = normalize_symptom(signal.facts.get("symptom")) or "unknown"
             service = alert.service
+            signature_facts = dict(signal.facts)
+            if service is not None:
+                signature_facts["service"] = service
+            signature = derive_problem_signature(
+                alert_source_id=alert.alert_source_id,
+                problem_type=signal.facts.get("alertname") or alert.title,
+                symptom=symptom,
+                environment=alert.environment,
+                facts=signature_facts,
+            )
             catalog_entry = (
                 None
                 if service is None
@@ -107,9 +121,7 @@ class AlertGroupingService:
             existing_member = repository.find_member(alert.id, alert.cycle, for_update=True)
             existing_link = repository.find_incident_link(alert.id)
             candidates = repository.active_candidates(
-                entity_key=alert.entity_key,
-                environment=alert.environment,
-                symptom=symptom,
+                problem_key=signature.problem_key,
                 limit=GROUPING_CANDIDATE_LIMIT,
             )
             decision = decide_alert_group(
@@ -117,7 +129,8 @@ class AlertGroupingService:
                     {
                         "alert_id": alert.id,
                         "service": alert.service,
-                        "entity_key": alert.entity_key,
+                        "problem_key": signature.problem_key,
+                        "window_seconds": signature.window_seconds,
                         "environment": alert.environment,
                         "symptom": symptom,
                         "observed_at": alert.last_observed_at,
@@ -140,6 +153,7 @@ class AlertGroupingService:
                 group = _new_group(
                     group_id=self._id_factory("agr"),
                     alert=alert,
+                    signature=signature,
                     symptom=symptom,
                     reason_code=decision.reason_codes[0],
                     explanation=decision.explanation,
@@ -212,6 +226,7 @@ def _new_group(
     *,
     group_id: str,
     alert: AlertRow,
+    signature: ProblemSignature,
     symptom: str,
     reason_code: str,
     explanation: str,
@@ -228,6 +243,12 @@ def _new_group(
         entity_type=alert.entity_type,
         entity_key=alert.entity_key,
         entity_display_name=alert.entity_display_name,
+        problem_key=signature.problem_key,
+        problem_type=signature.problem_type,
+        scope_type=signature.scope_type,
+        scope_key=signature.scope_key,
+        scope_display_name=signature.scope_display_name,
+        signature_version=signature.version,
         environment=alert.environment,
         symptom=symptom,
         title=alert.title,
@@ -320,7 +341,7 @@ def _candidate(row: AlertGroupRow) -> AlertGroupCandidate:
         {
             "id": row.id,
             "service": row.service,
-            "entity_key": row.entity_key,
+            "problem_key": row.problem_key,
             "environment": row.environment,
             "symptom": row.symptom,
             "last_observed_at": row.last_observed_at,
@@ -359,10 +380,15 @@ def _append_audit(
 def _requires_correlation(group: AlertGroupRow, catalog_entry: object | None) -> bool:
     if group.incident_id is not None:
         return True
-    return (
+    base_eligible = (
         group.state == "ACTIVE"
         and group.severity in {"critical", "high"}
         and group.environment == "production"
+    )
+    if group.service is None:
+        return base_eligible
+    return (
+        base_eligible
         and catalog_entry is not None
         and getattr(catalog_entry, "state", None) == "ACTIVE"
     )

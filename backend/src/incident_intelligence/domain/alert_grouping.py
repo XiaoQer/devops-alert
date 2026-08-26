@@ -17,6 +17,7 @@ GroupingReasonCode = Literal[
     "alert_already_grouped",
     "same_service_environment_symptom_window",
     "same_entity_environment_symptom_window",
+    "same_problem_signature_window",
     "no_eligible_group",
     "multiple_eligible_groups",
     "service_not_registered",
@@ -31,7 +32,6 @@ AlertGroupId = Annotated[str, StringConstraints(pattern=r"^agr_[0-9a-f]{32}$")]
 IncidentId = Annotated[str, StringConstraints(pattern=r"^inc_[0-9a-f]{32}$")]
 Symptom = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
 
-GROUPING_WINDOW_SECONDS = 120
 SAFE_RESOURCE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 RESOURCE_FIELDS: tuple[tuple[ResourceType, tuple[str, ...]], ...] = (
     ("pod", ("pod", "pod_name", "kubernetes_pod_name")),
@@ -44,10 +44,13 @@ ALERT_ID_ADAPTER = TypeAdapter(AlertId)
 EXPLANATIONS: dict[GroupingReasonCode, str] = {
     "alert_already_grouped": "该告警轮次已经属于现有告警组，保持原成员关系。",
     "same_service_environment_symptom_window": (
-        "服务、环境和症状一致，且位于 120 秒活动窗口内，已归入现有告警组。"
+        "服务、环境和症状一致，且位于配置的活动窗口内，已归入现有告警组。"
     ),
     "same_entity_environment_symptom_window": (
-        "对象、环境和症状一致，且位于 120 秒活动窗口内，已归入现有告警组。"
+        "对象、环境和症状一致，且位于配置的活动窗口内，已归入现有告警组。"
+    ),
+    "same_problem_signature_window": (
+        "问题类型、影响范围和环境一致，且位于活动窗口内，已归入现有告警组。"
     ),
     "no_eligible_group": "没有唯一且满足安全条件的现有告警组，已建立独立告警组。",
     "multiple_eligible_groups": "同时存在多个符合条件的告警组，为避免误合并已建立独立告警组。",
@@ -64,7 +67,7 @@ class AlertGroupCandidate(BaseModel):
 
     id: AlertGroupId
     service: ServiceName | None
-    entity_key: str = Field(pattern=r"^[0-9a-f]{64}$")
+    problem_key: str = Field(pattern=r"^[0-9a-f]{64}$")
     environment: Environment
     symptom: Symptom
     last_observed_at: UtcAwareDatetime
@@ -76,7 +79,8 @@ class GroupingContext(BaseModel):
 
     alert_id: AlertId
     service: ServiceName | None
-    entity_key: str = Field(pattern=r"^[0-9a-f]{64}$")
+    problem_key: str = Field(pattern=r"^[0-9a-f]{64}$")
+    window_seconds: int = Field(ge=1, le=3_600)
     environment: Environment
     symptom: Symptom
     observed_at: UtcAwareDatetime
@@ -111,13 +115,10 @@ def decide_alert_group(context: GroupingContext) -> GroupingDecision:
         return _decision("CREATE_GROUP", "service_not_registered")
     if context.service is not None and context.catalog_state is CatalogState.INACTIVE:
         return _decision("CREATE_GROUP", "service_inactive")
-    if context.symptom.casefold() == "unknown":
-        return _decision("CREATE_GROUP", "symptom_unknown")
-
     exact_candidates = tuple(
         item
         for item in context.candidates
-        if item.entity_key == context.entity_key
+        if item.problem_key == context.problem_key
         and item.environment == context.environment
         and item.symptom == context.symptom
     )
@@ -131,7 +132,7 @@ def decide_alert_group(context: GroupingContext) -> GroupingDecision:
     if len(eligible_candidates) == 1:
         item = eligible_candidates[0]
         reason: GroupingReasonCode = (
-            "same_entity_environment_symptom_window"
+            "same_problem_signature_window"
             if context.service is None
             else "same_service_environment_symptom_window"
         )
@@ -210,7 +211,7 @@ def _incident_is_compatible(
 
 def _is_in_window(context: GroupingContext, candidate: AlertGroupCandidate) -> bool:
     age_seconds = (context.observed_at - candidate.last_observed_at).total_seconds()
-    return abs(age_seconds) <= GROUPING_WINDOW_SECONDS
+    return abs(age_seconds) <= context.window_seconds
 
 
 def _resource_digest(resource_type: str, resource_name: str) -> str:

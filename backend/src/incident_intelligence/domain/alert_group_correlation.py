@@ -22,6 +22,7 @@ class AlertGroupCorrelationContext(BaseModel):
     group_state: AlertGroupState
     severity: Severity
     environment: Environment
+    service_present: bool
     catalog_state: CatalogState | None
     existing_incident_id: IncidentId | None = None
     exact_candidate_ids: tuple[IncidentId, ...] = Field(default=(), max_length=21)
@@ -41,6 +42,7 @@ def decide_alert_group_correlation(
                 ),
                 "severity": context.severity,
                 "environment": context.environment,
+                "service_present": context.service_present,
                 "catalog_state": context.catalog_state,
                 "existing_incident_id": context.existing_incident_id,
                 "exact_candidate_ids": context.exact_candidate_ids,

@@ -26,9 +26,11 @@ BoundedText = Annotated[str, StringConstraints(max_length=2_048)]
 
 FACT_LABELS = frozenset(
     {
+        "alertname",
         "region",
         "cluster",
         "namespace",
+        "workload",
         "pod",
         "instance",
         "job",

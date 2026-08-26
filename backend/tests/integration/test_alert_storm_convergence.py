@@ -49,7 +49,11 @@ def _command(index: int) -> SignalCommand:
             "severity": "high",
             "service": "payment-api",
             "environment": "production",
-            "facts": {"symptom": "errors", "pod": f"payment-{index}"},
+            "facts": {
+                "alertname": "PaymentHighErrorRate",
+                "symptom": "errors",
+                "pod": f"payment-{index}",
+            },
         }
     )
 

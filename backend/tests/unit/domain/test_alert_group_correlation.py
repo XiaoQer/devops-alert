@@ -13,6 +13,7 @@ def context(**overrides: object) -> AlertGroupCorrelationContext:
         "group_state": "ACTIVE",
         "severity": "high",
         "environment": "production",
+        "service_present": True,
         "catalog_state": "ACTIVE",
         "existing_incident_id": None,
         "exact_candidate_ids": (),
@@ -59,6 +60,15 @@ def test_non_production_group_is_not_correlated() -> None:
     assert decision.action == "NONE"
     assert decision.outcome == "REJECTED_INELIGIBLE"
     assert decision.reason_codes == ("non_production_environment",)
+
+
+def test_group_without_service_is_explicitly_skipped() -> None:
+    decision = decide_alert_group_correlation(context(service_present=False, catalog_state=None))
+
+    assert decision.action == "NONE"
+    assert decision.outcome == "SKIPPED_SERVICE_MISSING"
+    assert decision.reason_codes == ("service_missing",)
+    assert decision.explanation == "告警未提供服务标识，已保留告警组但不自动创建事故。"  # noqa: RUF001
 
 
 def test_ambiguous_candidates_are_not_merged() -> None:

@@ -63,7 +63,10 @@ def test_alertmanager_firing_maps_to_bounded_signal_command() -> None:
     assert command.severity == "high"
     assert command.service == "payment-api"
     assert command.environment == "production"
-    assert command.facts == {"region": "cn-east-1"}
+    assert command.facts == {
+        "alertname": "PaymentHighErrorRate",
+        "region": "cn-east-1",
+    }
     assert len(command.source_instance) == 64
     assert len(command.source_event_id) == 64
     assert "generatorURL" not in command.model_dump_json()
@@ -79,6 +82,7 @@ def test_alertmanager_keeps_symptom_as_a_bounded_correlation_fact() -> None:
     command = to_signal_commands(AlertmanagerWebhook.model_validate(payload), NOW)[0]
 
     assert command.facts == {
+        "alertname": "PaymentHighErrorRate",
         "region": "cn-east-1",
         "symptom": "high-error-rate",
     }
@@ -97,6 +101,27 @@ def test_pod_alert_without_service_is_accepted_with_real_entity() -> None:
     assert command.service is None
     assert command.entity_type == "POD"
     assert command.entity_display_name == "devops-platform/aegis-demo-0"
+
+
+def test_alertname_and_workload_are_kept_as_bounded_grouping_facts() -> None:
+    payload = deepcopy(FIRING_PAYLOAD)
+    payload["commonLabels"] = {}
+    del payload["alerts"][0]["labels"]["service"]
+    payload["alerts"][0]["labels"].update(
+        {
+            "namespace": "payments",
+            "workload": "payment-worker",
+            "pod": "payment-worker-0",
+            "unknown_grouping_hint": "must-not-be-stored",
+        }
+    )
+
+    command = to_signal_commands(AlertmanagerWebhook.model_validate(payload), NOW)[0]
+
+    assert command.facts["alertname"] == "PaymentHighErrorRate"
+    assert command.facts["workload"] == "payment-worker"
+    assert command.entity_type == "WORKLOAD"
+    assert "unknown_grouping_hint" not in command.facts
 
 
 def test_per_alert_labels_override_common_labels() -> None:

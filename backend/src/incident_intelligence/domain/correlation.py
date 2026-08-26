@@ -13,6 +13,7 @@ from incident_intelligence.domain.models import Environment, Severity
 
 CorrelationAction = Literal["CREATE", "LINK", "NONE"]
 CorrelationReasonCode = Literal[
+    "service_missing",
     "alert_not_active",
     "severity_below_threshold",
     "non_production_environment",
@@ -31,6 +32,7 @@ IncidentId = Annotated[str, StringConstraints(pattern=r"^inc_[0-9a-f]{32}$")]
 Explanation = Annotated[str, StringConstraints(min_length=1, max_length=500)]
 
 EXPLANATIONS: dict[CorrelationReasonCode, str] = {
+    "service_missing": "告警未提供服务标识，已保留告警组但不自动创建事故。",
     "alert_not_active": "告警当前不是活动状态，未进入事故关联。",
     "severity_below_threshold": "告警严重度未达到 critical/high，未创建事故。",
     "non_production_environment": "告警不属于生产环境，未创建事故。",
@@ -55,6 +57,7 @@ class CorrelationContext(BaseModel):
     alert_state: AlertState
     severity: Severity
     environment: Environment
+    service_present: bool = True
     catalog_state: CatalogState | None
     existing_incident_id: IncidentId | None = None
     exact_candidate_ids: tuple[IncidentId, ...] = Field(default=(), max_length=21)
@@ -122,6 +125,12 @@ def decide_correlation(context: CorrelationContext) -> CorrelationDecisionDraft:
             CorrelationOutcome.REJECTED_INELIGIBLE,
             "NONE",
             "alert_not_active",
+        )
+    if not context.service_present:
+        return _decision(
+            CorrelationOutcome.SKIPPED_SERVICE_MISSING,
+            "NONE",
+            "service_missing",
         )
     if context.severity not in {"critical", "high"}:
         return _decision(

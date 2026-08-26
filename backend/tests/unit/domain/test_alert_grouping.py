@@ -24,7 +24,7 @@ def candidate(**overrides: object) -> AlertGroupCandidate:
     values: dict[str, object] = {
         "id": GROUP_1,
         "service": "payment-api",
-        "entity_key": "a" * 64,
+        "problem_key": "a" * 64,
         "environment": "production",
         "symptom": "errors",
         "last_observed_at": NOW - timedelta(seconds=30),
@@ -38,7 +38,8 @@ def context(**overrides: object) -> GroupingContext:
     values: dict[str, object] = {
         "alert_id": ALERT_ID,
         "service": "payment-api",
-        "entity_key": "a" * 64,
+        "problem_key": "a" * 64,
+        "window_seconds": 300,
         "environment": "production",
         "symptom": "errors",
         "observed_at": NOW,
@@ -58,7 +59,7 @@ def test_unique_compatible_candidate_is_joined() -> None:
     assert decision.selected_group_id == GROUP_1
     assert decision.reason_codes == ("same_service_environment_symptom_window",)
     assert (
-        decision.explanation == "服务、环境和症状一致，且位于 120 秒活动窗口内，已归入现有告警组。"
+        decision.explanation == "服务、环境和症状一致，且位于配置的活动窗口内，已归入现有告警组。"
     )
 
 
@@ -92,9 +93,9 @@ def test_existing_membership_is_kept_before_reconsidering_candidates() -> None:
         ({"candidates": ()}, "no_eligible_group"),
         ({"catalog_state": None}, "service_not_registered"),
         ({"catalog_state": "INACTIVE"}, "service_inactive"),
-        ({"symptom": "unknown"}, "symptom_unknown"),
+        ({"symptom": "unknown"}, "no_eligible_group"),
         (
-            {"candidates": (candidate(last_observed_at=NOW - timedelta(seconds=121)),)},
+            {"candidates": (candidate(last_observed_at=NOW - timedelta(seconds=301)),)},
             "candidate_outside_window",
         ),
         (
@@ -106,7 +107,7 @@ def test_existing_membership_is_kept_before_reconsidering_candidates() -> None:
         ),
         ({"candidates": (candidate(environment="staging"),)}, "no_eligible_group"),
         (
-            {"candidates": (candidate(service="order-api", entity_key="b" * 64),)},
+            {"candidates": (candidate(service="order-api", problem_key="b" * 64),)},
             "no_eligible_group",
         ),
         ({"candidates": (candidate(symptom="latency"),)}, "no_eligible_group"),
@@ -140,13 +141,14 @@ def test_source_is_not_a_grouping_key() -> None:
     assert not hasattr(context(), "source")
 
 
-def test_service_missing_alert_joins_matching_entity_candidate() -> None:
+def test_service_missing_alert_joins_matching_problem_candidate() -> None:
     decision = decide_alert_group(
         GroupingContext.model_validate(
             {
                 "alert_id": ALERT_ID,
                 "service": None,
-                "entity_key": "e" * 64,
+                "problem_key": "e" * 64,
+                "window_seconds": 300,
                 "environment": "unknown",
                 "symptom": "pod_not_ready",
                 "observed_at": NOW,
@@ -155,7 +157,7 @@ def test_service_missing_alert_joins_matching_entity_candidate() -> None:
                     {
                         "id": GROUP_1,
                         "service": None,
-                        "entity_key": "e" * 64,
+                        "problem_key": "e" * 64,
                         "environment": "unknown",
                         "symptom": "pod_not_ready",
                         "last_observed_at": NOW - timedelta(seconds=30),
@@ -168,7 +170,28 @@ def test_service_missing_alert_joins_matching_entity_candidate() -> None:
 
     assert decision.action == "JOIN_GROUP"
     assert decision.selected_group_id == GROUP_1
-    assert decision.reason_codes == ("same_entity_environment_symptom_window",)
+    assert decision.reason_codes == ("same_problem_signature_window",)
+
+
+def test_unknown_symptom_can_join_when_problem_signature_matches() -> None:
+    decision = decide_alert_group(
+        context(
+            service=None,
+            catalog_state=None,
+            symptom="unknown",
+            problem_key="f" * 64,
+            candidates=(
+                candidate(
+                    service=None,
+                    symptom="unknown",
+                    problem_key="f" * 64,
+                ),
+            ),
+        )
+    )
+
+    assert decision.action == "JOIN_GROUP"
+    assert decision.reason_codes == ("same_problem_signature_window",)
 
 
 @pytest.mark.parametrize(

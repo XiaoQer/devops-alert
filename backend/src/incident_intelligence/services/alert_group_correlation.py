@@ -107,6 +107,7 @@ class AlertGroupCorrelationService:
                         "group_state": group.state,
                         "severity": group.severity,
                         "environment": group.environment,
+                        "service_present": service is not None,
                         "catalog_state": (
                             None if catalog_entry is None else CatalogState(catalog_entry.state)
                         ),
@@ -163,6 +164,10 @@ class AlertGroupCorrelationService:
                         "environment": group.environment,
                         "severity": group.severity,
                         "symptom": group.symptom,
+                        "problem_type": group.problem_type,
+                        "scope_type": group.scope_type,
+                        "scope_display_name": group.scope_display_name,
+                        "signature_version": group.signature_version,
                         "window_seconds": CORRELATION_WINDOW_SECONDS,
                         "member_count": group.total_count,
                     },
