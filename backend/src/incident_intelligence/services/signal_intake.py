@@ -121,13 +121,18 @@ class SignalIntakeService:
         actor: str,
         request_id: str,
     ) -> SignalIntakeItemResult:
-        existing = records.find_signal_result(command.source, command.source_event_id)
+        existing = records.find_signal_result(
+            command.alert_source_id,
+            command.source,
+            command.source_event_id,
+        )
         if existing is not None:
             return _replay_result(existing, fingerprint)
 
         now = self._clock().astimezone(UTC)
         signal = SignalEvent(
             id=self._id_factory("sig"),
+            alert_source_id=command.alert_source_id,
             source=command.source,
             source_event_id=command.source_event_id,
             event_type=command.event_type,
@@ -144,6 +149,7 @@ class SignalIntakeService:
         )
         records.add_signal(signal)
         current = records.find_alert_for_update(
+            command.alert_source_id,
             command.source,
             command.source_instance,
             command.source_alert_key,
@@ -163,12 +169,14 @@ class SignalIntakeService:
         alert_id = None if decision.alert is None else decision.alert.id
         if decision.changes_projection and decision.alert is not None:
             correlation.enqueue(
+                alert_source_id=decision.alert.alert_source_id,
                 alert_id=decision.alert.id,
                 alert_version=decision.alert.version,
                 now=now,
             )
         records.add_signal_result(
             SignalIntakeResultRow(
+                alert_source_id=command.alert_source_id,
                 source=command.source,
                 source_event_id=command.source_event_id,
                 command_fingerprint=fingerprint,
@@ -267,6 +275,7 @@ def _alert_from_row(row: AlertRow) -> Alert:
         {
             "id": row.id,
             "signal_event_id": row.signal_event_id,
+            "alert_source_id": row.alert_source_id,
             "source": row.source,
             "source_instance": row.source_instance,
             "source_alert_key": row.source_alert_key,

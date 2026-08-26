@@ -8,6 +8,10 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import DataError, IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
+from incident_intelligence.domain.alert_sources import (
+    ALERTMANAGER_COMPAT_SOURCE_ID,
+    MANUAL_SYSTEM_SOURCE_ID,
+)
 from incident_intelligence.ids import new_id
 from incident_intelligence.persistence.models import (
     AlertRow,
@@ -28,6 +32,7 @@ NOW = datetime(2026, 8, 24, 8, 0, tzinfo=UTC)
 def make_signal(**overrides: object) -> SignalEventRow:
     values: dict[str, object] = {
         "id": new_id("sig"),
+        "alert_source_id": MANUAL_SYSTEM_SOURCE_ID,
         "source": "manual",
         "source_event_id": "manual-001",
         "event_type": "manual.reported",
@@ -51,6 +56,7 @@ def make_alert(signal_event_id: str, **overrides: object) -> AlertRow:
     values: dict[str, object] = {
         "id": new_id("alt"),
         "signal_event_id": signal_event_id,
+        "alert_source_id": ALERTMANAGER_COMPAT_SOURCE_ID,
         "source": "alertmanager",
         "source_instance": "a" * 64,
         "source_alert_key": "payment-high-error-rate",
@@ -164,6 +170,7 @@ def make_operation(incident_id: str, activity_id: str, **overrides: object) -> I
 def make_job(alert_id: str, **overrides: object) -> CorrelationJobRow:
     values: dict[str, object] = {
         "id": new_id("cjob"),
+        "alert_source_id": ALERTMANAGER_COMPAT_SOURCE_ID,
         "alert_id": alert_id,
         "alert_version": 1,
         "state": "PENDING",
@@ -296,6 +303,7 @@ def test_alert_rejects_incident_state_value(migrated_engine: Engine) -> None:
             AlertRow(
                 id=new_id("alt"),
                 signal_event_id=signal.id,
+                alert_source_id=MANUAL_SYSTEM_SOURCE_ID,
                 source="manual",
                 source_instance="a" * 64,
                 source_alert_key="b" * 64,
@@ -324,6 +332,7 @@ def test_alert_requires_existing_signal(migrated_engine: Engine) -> None:
             AlertRow(
                 id=new_id("alt"),
                 signal_event_id=new_id("sig"),
+                alert_source_id=MANUAL_SYSTEM_SOURCE_ID,
                 source="manual",
                 source_instance="a" * 64,
                 source_alert_key="b" * 64,

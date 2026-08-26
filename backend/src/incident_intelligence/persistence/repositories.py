@@ -34,11 +34,20 @@ class RecordRepositories:
     def find_diagnosis(self, diagnosis_run_id: str) -> DiagnosisRunRow | None:
         return self._session.get(DiagnosisRunRow, diagnosis_run_id)
 
-    def find_signal_result(self, source: str, source_event_id: str) -> SignalIntakeResultRow | None:
-        return self._session.get(SignalIntakeResultRow, (source, source_event_id))
+    def find_signal_result(
+        self,
+        alert_source_id: str,
+        source: str,
+        source_event_id: str,
+    ) -> SignalIntakeResultRow | None:
+        return self._session.get(
+            SignalIntakeResultRow,
+            (alert_source_id, source, source_event_id),
+        )
 
     def find_alert_for_update(
         self,
+        alert_source_id: str,
         source: str,
         source_instance: str,
         source_alert_key: str,
@@ -46,6 +55,7 @@ class RecordRepositories:
         statement = (
             select(AlertRow)
             .where(
+                AlertRow.alert_source_id == alert_source_id,
                 AlertRow.source == source,
                 AlertRow.source_instance == source_instance,
                 AlertRow.source_alert_key == source_alert_key,
@@ -58,6 +68,7 @@ class RecordRepositories:
         self._session.add(
             SignalEventRow(
                 id=signal.id,
+                alert_source_id=signal.alert_source_id,
                 source=signal.source,
                 source_event_id=signal.source_event_id,
                 event_type=signal.event_type,
@@ -81,6 +92,7 @@ class RecordRepositories:
             AlertRow(
                 id=alert.id,
                 signal_event_id=alert.signal_event_id,
+                alert_source_id=alert.alert_source_id,
                 source=alert.source,
                 source_instance=alert.source_instance,
                 source_alert_key=alert.source_alert_key,

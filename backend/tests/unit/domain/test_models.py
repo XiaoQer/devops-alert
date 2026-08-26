@@ -11,11 +11,13 @@ from incident_intelligence.domain.models import Alert, DiagnosisRun, Incident, S
 from incident_intelligence.ids import new_id
 
 NOW = datetime(2026, 8, 24, 8, 0, tzinfo=UTC)
+ALERT_SOURCE_ID = "src_" + "1" * 32
 
 
 def signal_payload() -> dict[str, object]:
     return {
         "id": new_id("sig"),
+        "alert_source_id": ALERT_SOURCE_ID,
         "source": "manual",
         "source_event_id": "manual-001",
         "event_type": "manual.reported",
@@ -46,10 +48,19 @@ def test_signal_event_is_immutable() -> None:
         signal.title = "被修改的标题"
 
 
+def test_signal_event_preserves_trusted_alert_source_identity() -> None:
+    payload = signal_payload()
+
+    signal = SignalEvent.model_validate(payload)
+
+    assert signal.alert_source_id == ALERT_SOURCE_ID
+
+
 def test_domain_models_keep_state_families_separate() -> None:
     alert = Alert(
         id=new_id("alt"),
         signal_event_id=new_id("sig"),
+        alert_source_id=ALERT_SOURCE_ID,
         source="manual",
         source_instance="a" * 64,
         source_alert_key="b" * 64,
@@ -83,6 +94,7 @@ def test_domain_models_keep_state_families_separate() -> None:
     )
 
     assert alert.state is AlertState.ACTIVE
+    assert alert.alert_source_id == ALERT_SOURCE_ID
     assert incident.state is IncidentState.DETECTED
     assert diagnosis.state is DiagnosisState.QUEUED
 

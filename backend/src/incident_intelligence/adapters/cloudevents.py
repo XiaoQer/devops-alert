@@ -11,6 +11,7 @@ from incident_intelligence.adapters.common import (
     AdapterValidationError,
     normalize_source_uri,
 )
+from incident_intelligence.domain.alert_sources import CLOUDEVENTS_COMPAT_SOURCE_ID
 from incident_intelligence.domain.forbidden_identity import reject_forbidden_identity
 from incident_intelligence.domain.models import (
     Environment,
@@ -111,14 +112,20 @@ class StructuredCloudEvent(BinaryCloudEventContext):
 def structured_to_signal_command(
     event: StructuredCloudEvent,
     now: datetime,
+    *,
+    alert_source_id: str = CLOUDEVENTS_COMPAT_SOURCE_ID,
 ) -> SignalCommand:
-    return binary_to_signal_command(event.context(), event.data, now)
+    return binary_to_signal_command(
+        event.context(), event.data, now, alert_source_id=alert_source_id
+    )
 
 
 def binary_to_signal_command(
     context: BinaryCloudEventContext,
     data: CloudEventData,
     now: datetime,
+    *,
+    alert_source_id: str = CLOUDEVENTS_COMPAT_SOURCE_ID,
 ) -> SignalCommand:
     reject_forbidden_identity(context.model_dump(mode="json"))
     reject_forbidden_identity(data.model_dump(mode="json"))
@@ -134,6 +141,7 @@ def binary_to_signal_command(
     ).hexdigest()
     return SignalCommand.model_validate(
         {
+            "alert_source_id": alert_source_id,
             "source": "cloudevents",
             "source_instance": source_instance,
             "source_event_id": source_event_id,

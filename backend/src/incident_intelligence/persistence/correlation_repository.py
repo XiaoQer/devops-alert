@@ -33,12 +33,14 @@ class CorrelationRepository:
     def enqueue(
         self,
         *,
+        alert_source_id: str,
         alert_id: str,
         alert_version: int,
         now: datetime,
     ) -> CorrelationJobRow:
         row = CorrelationJobRow(
             id=new_id("cjob"),
+            alert_source_id=alert_source_id,
             alert_id=alert_id,
             alert_version=alert_version,
             state="PENDING",

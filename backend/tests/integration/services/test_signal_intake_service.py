@@ -34,6 +34,7 @@ from incident_intelligence.services.signal_intake import (
 )
 
 NOW = datetime(2026, 8, 25, 8, 0, tzinfo=UTC)
+ALERT_SOURCE_ID = "src_00000000000000000000000000000002"
 TIME_2 = NOW + timedelta(minutes=5)
 TIME_3 = TIME_2 + timedelta(minutes=5)
 TIME_4 = TIME_3 + timedelta(minutes=5)
@@ -41,6 +42,7 @@ TIME_4 = TIME_3 + timedelta(minutes=5)
 
 def firing_command(**overrides: object) -> SignalCommand:
     values: dict[str, object] = {
+        "alert_source_id": ALERT_SOURCE_ID,
         "source": "alertmanager",
         "source_instance": "1" * 64,
         "source_event_id": "2" * 64,

@@ -49,7 +49,7 @@
 - `SignalCommand.alert_source_id: str`、`SignalEvent.alert_source_id: str`、`Alert.alert_source_id: str` 均使用 `^src_[0-9a-f]{32}$`。
 - `RecordRepositories.get_intake_result()`、`get_alert()` 和唯一身份查询全部接收 `alert_source_id`。
 
-- [ ] **步骤 1：先写领域和迁移失败测试**
+- [x] **步骤 1：先写领域和迁移失败测试**
 
 ```python
 def test_signal_command_requires_trusted_alert_source_id() -> None:
@@ -64,7 +64,7 @@ def test_migration_backfills_system_sources(mysql_database_url: str) -> None:
     assert_source_ids_are_non_null_and_match_expected_system_sources(mysql_database_url)
 ```
 
-- [ ] **步骤 2：运行聚焦测试确认失败**
+- [x] **步骤 2：运行聚焦测试确认失败**
 
 运行：
 
@@ -75,7 +75,7 @@ cd backend
 
 预期：因来源类型、`alert_source_id` 字段和 `0005_alert_sources` 迁移尚不存在而失败。
 
-- [ ] **步骤 3：实现领域类型和 ORM 字段**
+- [x] **步骤 3：实现领域类型和 ORM 字段**
 
 ```python
 AlertSourceType = Literal["ALERTMANAGER", "CLOUDEVENTS", "MANUAL"]
@@ -93,11 +93,11 @@ class SignalCommand(BaseModel):
 
 同时新增 `AlertSourceRow`、`AlertSourceCredentialRow`、`AlertSourceReceiptRow` 和 `AlertSourceOperationRow`；为 `signal_events`、`alerts`、`signal_intake_results`、`correlation_jobs` 增加非空来源外键，并把事件与告警唯一约束改为包含 `alert_source_id`。
 
-- [ ] **步骤 4：实现可升级和可降级迁移**
+- [x] **步骤 4：实现可升级和可降级迁移**
 
 迁移必须先创建三个确定性系统来源，再按原 `source` 回填现有领域数据，最后增加非空和外键约束。降级先恢复旧唯一约束，再删除新增列和四张来源表。测试必须证明升级、降级和 ORM 元数据一致。
 
-- [ ] **步骤 5：更新现有测试工厂和仓储签名**
+- [x] **步骤 5：更新现有测试工厂和仓储签名**
 
 所有 `SignalCommand` 测试工厂显式使用系统或测试来源 ID；仓储查询示例：
 
@@ -112,7 +112,7 @@ def get_alert(
     ...
 ```
 
-- [ ] **步骤 6：运行迁移和领域回归**
+- [x] **步骤 6：运行迁移和领域回归**
 
 运行：
 

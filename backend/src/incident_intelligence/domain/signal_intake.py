@@ -33,6 +33,7 @@ NormalizationReasonCode = Annotated[
 class SignalCommand(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    alert_source_id: str = Field(pattern=r"^src_[0-9a-f]{32}$")
     source: Literal["alertmanager", "cloudevents"]
     source_instance: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_event_id: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -80,6 +81,7 @@ def decide_alert_projection(
             alert=Alert(
                 id=new_alert_id,
                 signal_event_id=signal_event_id,
+                alert_source_id=command.alert_source_id,
                 source=command.source,
                 source_instance=command.source_instance,
                 source_alert_key=command.source_alert_key,

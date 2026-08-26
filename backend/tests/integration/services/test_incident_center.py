@@ -6,6 +6,7 @@ from sqlalchemy import event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from incident_intelligence.domain.alert_sources import MANUAL_SYSTEM_SOURCE_ID
 from incident_intelligence.ids import new_id
 from incident_intelligence.persistence.models import (
     AlertRow,
@@ -29,6 +30,7 @@ def seed_incident(session_factory: sessionmaker[Session], *, identity: str) -> s
         session.add(
             SignalEventRow(
                 id=signal_id,
+                alert_source_id=MANUAL_SYSTEM_SOURCE_ID,
                 source="manual",
                 source_event_id=f"overview-{identity}",
                 event_type="manual.reported",
@@ -50,6 +52,7 @@ def seed_incident(session_factory: sessionmaker[Session], *, identity: str) -> s
             AlertRow(
                 id=alert_id,
                 signal_event_id=signal_id,
+                alert_source_id=MANUAL_SYSTEM_SOURCE_ID,
                 source="manual",
                 source_instance="b" * 64,
                 source_alert_key=f"overview-{identity}",

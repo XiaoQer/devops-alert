@@ -21,10 +21,12 @@ ALERT_ID = "alt_" + "a" * 32
 NEW_ALERT_ID = "alt_" + "b" * 32
 CURRENT_SIGNAL_ID = "sig_" + "c" * 32
 NEW_SIGNAL_ID = "sig_" + "d" * 32
+ALERT_SOURCE_ID = "src_" + "1" * 32
 
 
 def firing_command(**overrides: object) -> SignalCommand:
     values: dict[str, object] = {
+        "alert_source_id": ALERT_SOURCE_ID,
         "source": "alertmanager",
         "source_instance": "1" * 64,
         "source_event_id": "2" * 64,
@@ -58,6 +60,7 @@ def current_alert(state: AlertState = AlertState.ACTIVE, **overrides: object) ->
     values: dict[str, object] = {
         "id": ALERT_ID,
         "signal_event_id": CURRENT_SIGNAL_ID,
+        "alert_source_id": ALERT_SOURCE_ID,
         "source": "alertmanager",
         "source_instance": "1" * 64,
         "source_alert_key": "payment-high-error-rate",
@@ -86,6 +89,7 @@ def test_first_firing_opens_active_alert() -> None:
     assert decision.changes_projection is True
     assert decision.alert is not None
     assert decision.alert.id == NEW_ALERT_ID
+    assert decision.alert.alert_source_id == ALERT_SOURCE_ID
     assert decision.alert.signal_event_id == NEW_SIGNAL_ID
     assert decision.alert.state is AlertState.ACTIVE
     assert decision.alert.first_observed_at == TIME_1

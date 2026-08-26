@@ -11,6 +11,7 @@ from incident_intelligence.adapters.common import (
     AdapterValidationError,
     normalize_source_uri,
 )
+from incident_intelligence.domain.alert_sources import ALERTMANAGER_COMPAT_SOURCE_ID
 from incident_intelligence.domain.forbidden_identity import reject_forbidden_identity
 from incident_intelligence.domain.models import UtcAwareDatetime
 from incident_intelligence.domain.signal_intake import SignalCommand
@@ -86,14 +87,19 @@ class AlertmanagerWebhook(BaseModel):
 def to_signal_commands(
     webhook: AlertmanagerWebhook,
     now: datetime,
+    *,
+    alert_source_id: str = ALERTMANAGER_COMPAT_SOURCE_ID,
 ) -> tuple[SignalCommand, ...]:
     reject_forbidden_identity(webhook.model_dump(mode="json"))
     normalized_uri = normalize_source_uri(webhook.external_url)
     source_instance = sha256(normalized_uri.encode("utf-8")).hexdigest()
-    return tuple(_to_signal_command(source_instance, alert, now) for alert in webhook.alerts)
+    return tuple(
+        _to_signal_command(alert_source_id, source_instance, alert, now) for alert in webhook.alerts
+    )
 
 
 def _to_signal_command(
+    alert_source_id: str,
     source_instance: str,
     alert: AlertmanagerAlert,
     now: datetime,
@@ -146,6 +152,7 @@ def _to_signal_command(
     return SignalCommand.model_validate(
         {
             **command_content,
+            "alert_source_id": alert_source_id,
             "source": "alertmanager",
             "source_instance": source_instance,
             "source_event_id": source_event_id,

@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from incident_intelligence.domain.alert_sources import MANUAL_SYSTEM_SOURCE_ID
 from incident_intelligence.domain.enums import IncidentState
 from incident_intelligence.domain.incident_operations import (
     IncidentNoteCategory,
@@ -62,6 +63,7 @@ def seed_incident(
         session.add(
             SignalEventRow(
                 id=signal_id,
+                alert_source_id=MANUAL_SYSTEM_SOURCE_ID,
                 source="manual",
                 source_event_id=new_id("sig"),
                 event_type="manual.reported",
@@ -83,6 +85,7 @@ def seed_incident(
             AlertRow(
                 id=alert_id,
                 signal_event_id=signal_id,
+                alert_source_id=MANUAL_SYSTEM_SOURCE_ID,
                 source="manual",
                 source_instance="b" * 64,
                 source_alert_key=new_id("alt"),

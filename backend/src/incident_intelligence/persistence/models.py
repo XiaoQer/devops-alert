@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, CheckConstraint, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from incident_intelligence.persistence.base import Base
@@ -38,6 +46,14 @@ INCIDENT_NOTE_CATEGORY_VALUES = (
 INCIDENT_RESOLUTION_CATEGORY_VALUES = (
     "'RECOVERED', 'FALSE_POSITIVE', 'DUPLICATE', 'NO_ACTION', 'OTHER'"
 )
+ALERT_SOURCE_TYPE_VALUES = "'ALERTMANAGER', 'CLOUDEVENTS', 'MANUAL'"
+ALERT_SOURCE_MANAGEMENT_VALUES = "'USER_MANAGED', 'SYSTEM_MANAGED'"
+ALERT_SOURCE_STATE_VALUES = "'ENABLED', 'DISABLED'"
+CREDENTIAL_STATE_VALUES = "'ACTIVE', 'REVOKED'"
+RECEIPT_OUTCOME_VALUES = (
+    "'ACCEPTED', 'REPLAYED', 'VALIDATED', 'PAYLOAD_REJECTED', "
+    "'SOURCE_DISABLED', 'PROCESSING_FAILED'"
+)
 
 
 def _mysql_table_options() -> dict[str, str]:
@@ -48,10 +64,140 @@ def _mysql_table_options() -> dict[str, str]:
     }
 
 
+class AlertSourceRow(Base):
+    __tablename__ = "alert_sources"
+    __table_args__ = (
+        UniqueConstraint("name", name="alert_source_name"),
+        CheckConstraint(f"source_type IN ({ALERT_SOURCE_TYPE_VALUES})", name="source_type"),
+        CheckConstraint(
+            f"management_type IN ({ALERT_SOURCE_MANAGEMENT_VALUES})", name="management_type"
+        ),
+        CheckConstraint(f"state IN ({ALERT_SOURCE_STATE_VALUES})", name="state"),
+        CheckConstraint("version >= 1", name="version"),
+        CheckConstraint(
+            "accepted_requests >= 0 AND rejected_requests >= 0 "
+            "AND opened_count >= 0 AND updated_count >= 0 AND resolved_count >= 0 "
+            "AND replayed_count >= 0 AND ignored_count >= 0",
+            name="non_negative_counts",
+        ),
+        Index("ix_alert_sources_state", "state"),
+        Index("ix_alert_sources_source_type", "source_type"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    management_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    version: Mapped[int] = mapped_column(nullable=False)
+    last_accepted_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    last_rejected_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    last_validated_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    accepted_requests: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    rejected_requests: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    opened_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    updated_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    resolved_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    replayed_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    ignored_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class AlertSourceCredentialRow(Base):
+    __tablename__ = "alert_source_credentials"
+    __table_args__ = (
+        UniqueConstraint("token_digest", name="alert_source_credential_digest"),
+        CheckConstraint(f"state IN ({CREDENTIAL_STATE_VALUES})", name="state"),
+        CheckConstraint(
+            "(state = 'ACTIVE' AND revoked_at IS NULL AND revoked_by IS NULL) OR "
+            "(state = 'REVOKED' AND revoked_at IS NOT NULL AND revoked_by IS NOT NULL)",
+            name="revocation_pair",
+        ),
+        CheckConstraint("char_length(token_digest) = 64", name="token_digest"),
+        Index("ix_alert_source_credentials_source_state", "alert_source_id", "state"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    alert_source_id: Mapped[str] = mapped_column(
+        ForeignKey("alert_sources.id", ondelete="RESTRICT"), nullable=False
+    )
+    token_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    revoked_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class AlertSourceReceiptRow(Base):
+    __tablename__ = "alert_source_receipts"
+    __table_args__ = (
+        CheckConstraint(f"adapter_type IN ({ALERT_SOURCE_TYPE_VALUES})", name="adapter_type"),
+        CheckConstraint(f"outcome IN ({RECEIPT_OUTCOME_VALUES})", name="outcome"),
+        CheckConstraint(
+            "input_count >= 0 AND opened_count >= 0 AND updated_count >= 0 "
+            "AND resolved_count >= 0 AND replayed_count >= 0 AND ignored_count >= 0",
+            name="non_negative_counts",
+        ),
+        Index("ix_alert_source_receipts_source_time", "alert_source_id", "received_at", "id"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    alert_source_id: Mapped[str] = mapped_column(
+        ForeignKey("alert_sources.id", ondelete="RESTRICT"), nullable=False
+    )
+    adapter_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    input_count: Mapped[int] = mapped_column(nullable=False)
+    opened_count: Mapped[int] = mapped_column(nullable=False)
+    updated_count: Mapped[int] = mapped_column(nullable=False)
+    resolved_count: Mapped[int] = mapped_column(nullable=False)
+    replayed_count: Mapped[int] = mapped_column(nullable=False)
+    ignored_count: Mapped[int] = mapped_column(nullable=False)
+    received_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class AlertSourceOperationRow(Base):
+    __tablename__ = "alert_source_operations"
+    __table_args__ = (
+        UniqueConstraint("scope", "idempotency_key_hash", name="alert_source_operation_key"),
+        CheckConstraint("action IN ('CREATE', 'UPDATE', 'ROTATE', 'REVOKE')", name="action"),
+        CheckConstraint(
+            "char_length(idempotency_key_hash) = 64 AND char_length(command_fingerprint) = 64",
+            name="hashes",
+        ),
+        CheckConstraint("result_version >= 1", name="result_version"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    scope: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    command_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    alert_source_id: Mapped[str] = mapped_column(
+        ForeignKey("alert_sources.id", ondelete="RESTRICT"), nullable=False
+    )
+    credential_id: Mapped[str | None] = mapped_column(
+        ForeignKey("alert_source_credentials.id", ondelete="RESTRICT"), nullable=True
+    )
+    result_version: Mapped[int] = mapped_column(nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
 class SignalEventRow(Base):
     __tablename__ = "signal_events"
     __table_args__ = (
-        UniqueConstraint("source", "source_event_id", name="source_identity"),
+        UniqueConstraint(
+            "alert_source_id", "source", "source_event_id", name="signal_source_identity"
+        ),
         CheckConstraint(f"severity IN ({SEVERITY_VALUES})", name="signal_severity"),
         CheckConstraint(f"environment IN ({ENVIRONMENT_VALUES})", name="signal_environment"),
         CheckConstraint(f"event_type IN ({EVENT_TYPE_VALUES})", name="signal_event_type"),
@@ -60,6 +206,9 @@ class SignalEventRow(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    alert_source_id: Mapped[str] = mapped_column(
+        ForeignKey("alert_sources.id", ondelete="RESTRICT"), nullable=False
+    )
     source: Mapped[str] = mapped_column(String(64), nullable=False)
     source_event_id: Mapped[str] = mapped_column(String(256), nullable=False)
     event_type: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -85,7 +234,11 @@ class AlertRow(Base):
         CheckConstraint("char_length(source_instance) = 64", name="alert_source_instance"),
         CheckConstraint("char_length(source_alert_key) >= 1", name="alert_source_alert_key"),
         UniqueConstraint(
-            "source", "source_instance", "source_alert_key", name="alert_source_identity"
+            "alert_source_id",
+            "source",
+            "source_instance",
+            "source_alert_key",
+            name="alert_source_identity",
         ),
         Index("ix_alerts_state", "state"),
         Index("ix_alerts_signal_event_id", "signal_event_id"),
@@ -95,6 +248,9 @@ class AlertRow(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     signal_event_id: Mapped[str] = mapped_column(
         ForeignKey("signal_events.id", ondelete="RESTRICT"), nullable=False
+    )
+    alert_source_id: Mapped[str] = mapped_column(
+        ForeignKey("alert_sources.id", ondelete="RESTRICT"), nullable=False
     )
     source: Mapped[str] = mapped_column(String(64), nullable=False)
     source_instance: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -301,6 +457,9 @@ class SignalIntakeResultRow(Base):
         _mysql_table_options(),
     )
 
+    alert_source_id: Mapped[str] = mapped_column(
+        ForeignKey("alert_sources.id", ondelete="RESTRICT"), primary_key=True
+    )
     source: Mapped[str] = mapped_column(String(64), primary_key=True)
     source_event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     command_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -425,10 +584,14 @@ class CorrelationJobRow(Base):
         ),
         Index("ix_correlation_jobs_claim", "state", "available_at", "created_at"),
         Index("ix_correlation_jobs_alert_id", "alert_id"),
+        Index("ix_correlation_jobs_alert_source_id", "alert_source_id"),
         _mysql_table_options(),
     )
 
     id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    alert_source_id: Mapped[str] = mapped_column(
+        ForeignKey("alert_sources.id", ondelete="RESTRICT"), nullable=False
+    )
     alert_id: Mapped[str] = mapped_column(
         ForeignKey("alerts.id", ondelete="RESTRICT"),
         nullable=False,

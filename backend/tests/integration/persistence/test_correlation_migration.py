@@ -11,12 +11,10 @@ from sqlalchemy.orm import Session
 
 from incident_intelligence.ids import new_id
 from incident_intelligence.persistence.models import (
-    AlertRow,
     IncidentActivityRow,
     IncidentAlertLinkRow,
     IncidentOperationRow,
     IncidentRow,
-    SignalEventRow,
 )
 
 NOW = datetime(2026, 8, 25, 8, 0, tzinfo=UTC)
@@ -47,8 +45,26 @@ def _seed_manual_incident(
     alert_id = new_id("alt")
     incident_id = new_id("inc")
     with Session(engine) as session:
-        session.add(
-            SignalEventRow(
+        historical_signals = table(
+            "signal_events",
+            column("id"),
+            column("source"),
+            column("source_event_id"),
+            column("event_type"),
+            column("title"),
+            column("summary"),
+            column("severity"),
+            column("service"),
+            column("environment"),
+            column("observed_at"),
+            column("received_at"),
+            column("facts", mysql.JSON),
+            column("payload_fingerprint"),
+            column("created_at"),
+            column("version"),
+        )
+        session.execute(
+            insert(historical_signals).values(
                 id=signal_id,
                 source="manual",
                 source_event_id=f"manual-correlation-migration-{identity}",
@@ -66,9 +82,26 @@ def _seed_manual_incident(
                 version=1,
             )
         )
-        session.flush()
-        session.add(
-            AlertRow(
+        historical_alerts = table(
+            "alerts",
+            column("id"),
+            column("signal_event_id"),
+            column("source"),
+            column("source_instance"),
+            column("source_alert_key"),
+            column("state"),
+            column("title"),
+            column("severity"),
+            column("service"),
+            column("environment"),
+            column("first_observed_at"),
+            column("last_observed_at"),
+            column("state_changed_at"),
+            column("created_at"),
+            column("version"),
+        )
+        session.execute(
+            insert(historical_alerts).values(
                 id=alert_id,
                 signal_event_id=signal_id,
                 source="manual",
@@ -86,7 +119,6 @@ def _seed_manual_incident(
                 version=1,
             )
         )
-        session.flush()
         historical_incidents = table(
             "incidents",
             column("id"),

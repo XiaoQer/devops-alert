@@ -41,6 +41,7 @@ def queued_job_id(session_factory: sessionmaker[Session]) -> str:
     result = intake.submit_batch(
         [
             SignalCommand(
+                alert_source_id="src_00000000000000000000000000000002",
                 source="alertmanager",
                 source_instance="1" * 64,
                 source_event_id="2" * 64,

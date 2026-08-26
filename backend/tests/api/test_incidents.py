@@ -84,6 +84,7 @@ def seed_linked_incident(context: IncidentApiContext) -> str:
         result = context.intake.submit_batch(
             [
                 SignalCommand(
+                    alert_source_id="src_00000000000000000000000000000002",
                     source="alertmanager",
                     source_instance="a" * 64,
                     source_event_id=f"{index:064x}",

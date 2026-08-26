@@ -31,6 +31,7 @@ class FrozenDomainModel(BaseModel):
 
 class SignalEvent(FrozenDomainModel):
     id: str = Field(pattern=r"^sig_[0-9a-f]{32}$")
+    alert_source_id: str = Field(pattern=r"^src_[0-9a-f]{32}$")
     source: str = Field(min_length=1, max_length=64)
     source_event_id: str = Field(min_length=1, max_length=256)
     event_type: EventType
@@ -48,6 +49,7 @@ class SignalEvent(FrozenDomainModel):
 class Alert(FrozenDomainModel):
     id: str = Field(pattern=r"^alt_[0-9a-f]{32}$")
     signal_event_id: str = Field(pattern=r"^sig_[0-9a-f]{32}$")
+    alert_source_id: str = Field(pattern=r"^src_[0-9a-f]{32}$")
     source: str = Field(min_length=1, max_length=64)
     source_instance: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_alert_key: str = Field(min_length=1, max_length=128)

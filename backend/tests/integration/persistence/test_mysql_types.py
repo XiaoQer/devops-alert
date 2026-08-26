@@ -8,6 +8,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from incident_intelligence.domain.alert_sources import CLOUDEVENTS_COMPAT_SOURCE_ID
 from incident_intelligence.ids import new_id
 from incident_intelligence.persistence.models import SignalEventRow
 
@@ -17,6 +18,7 @@ NOW = datetime(2026, 8, 25, 8, 0, 0, 123456, tzinfo=UTC)
 def make_signal(**overrides: object) -> SignalEventRow:
     values: dict[str, object] = {
         "id": new_id("sig"),
+        "alert_source_id": CLOUDEVENTS_COMPAT_SOURCE_ID,
         "source": "cloudevents",
         "source_event_id": "Event-A",
         "event_type": "alert.firing",

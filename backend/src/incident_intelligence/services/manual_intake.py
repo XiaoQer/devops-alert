@@ -10,6 +10,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from sqlalchemy.exc import IntegrityError
 
+from incident_intelligence.domain.alert_sources import MANUAL_SYSTEM_SOURCE_ID
 from incident_intelligence.domain.enums import AlertState, DiagnosisState, IncidentState
 from incident_intelligence.domain.forbidden_identity import reject_forbidden_identity
 from incident_intelligence.domain.models import (
@@ -115,6 +116,7 @@ class ManualIntakeService:
             now = self._clock().astimezone(UTC)
             signal = SignalEvent(
                 id=self._id_factory("sig"),
+                alert_source_id=MANUAL_SYSTEM_SOURCE_ID,
                 source="manual",
                 source_event_id=idempotency_key,
                 event_type="manual.reported",
@@ -132,6 +134,7 @@ class ManualIntakeService:
             alert = Alert(
                 id=self._id_factory("alt"),
                 signal_event_id=signal.id,
+                alert_source_id=MANUAL_SYSTEM_SOURCE_ID,
                 source="manual",
                 source_instance=self.SOURCE_INSTANCE,
                 source_alert_key=sha256(idempotency_key.encode("utf-8")).hexdigest(),

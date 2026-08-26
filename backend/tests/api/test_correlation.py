@@ -81,6 +81,7 @@ def seed_decision(context: CorrelationApiContext) -> tuple[str, str]:
     intake_result = context.intake.submit_batch(
         [
             SignalCommand(
+                alert_source_id="src_00000000000000000000000000000002",
                 source="alertmanager",
                 source_instance="a" * 64,
                 source_event_id="b" * 64,
@@ -173,6 +174,7 @@ def test_failed_job_retry_resets_attempts_and_writes_bounded_audit(
     context.intake.submit_batch(
         [
             SignalCommand(
+                alert_source_id="src_00000000000000000000000000000002",
                 source="alertmanager",
                 source_instance="c" * 64,
                 source_event_id="d" * 64,
