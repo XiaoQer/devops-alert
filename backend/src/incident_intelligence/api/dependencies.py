@@ -8,6 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import SecretStr
 
 from incident_intelligence.api.errors import ApiError
+from incident_intelligence.services.alert_sources import AlertSourceService
 from incident_intelligence.services.catalog import ServiceCatalogService
 from incident_intelligence.services.correlation import CorrelationReadService
 from incident_intelligence.services.correlation_jobs import CorrelationJobService
@@ -69,6 +70,10 @@ def require_idempotency_key(
 
 def get_manual_intake_service(request: Request) -> ManualIntakeService:
     return cast(ManualIntakeService, request.app.state.manual_intake_service)
+
+
+def get_alert_source_service(request: Request) -> AlertSourceService:
+    return cast(AlertSourceService, request.app.state.alert_source_service)
 
 
 def get_signal_intake_service(request: Request) -> SignalIntakeService:

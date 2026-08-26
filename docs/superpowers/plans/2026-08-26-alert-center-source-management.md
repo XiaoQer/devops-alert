@@ -123,7 +123,7 @@ cd backend
 
 预期：全部通过，已有三类数据被确定性回填且跨来源身份不冲突。
 
-- [ ] **步骤 7：提交任务 1**
+- [x] **步骤 7：提交任务 1**
 
 ```bash
 git add backend/migrations/versions/0005_alert_sources.py backend/src/incident_intelligence/domain backend/src/incident_intelligence/persistence backend/tests
@@ -155,7 +155,7 @@ git commit -m "feat: 建立告警源身份模型"
 - `AlertSourceService.list_sources(filters) -> AlertSourcePage`、`get_source(source_id) -> AlertSourceOverview`、`list_receipts(source_id, limit, offset, now) -> ReceiptPage`。
 - 一次性 Token 形态为 `iisrc_<credential_id>.<secret>`；`credential_id` 为 `acr_` 加 32 位十六进制，`secret` 由 `secrets.token_urlsafe(32)` 生成。
 
-- [ ] **步骤 1：写服务失败测试**
+- [x] **步骤 1：写服务失败测试**
 
 ```python
 def test_create_source_returns_secret_once_and_persists_only_digest(service) -> None:
@@ -174,7 +174,7 @@ def test_enabled_source_cannot_revoke_last_active_credential(service) -> None:
         service.revoke_credential(source.id, source.credential_id, source.version, ...)
 ```
 
-- [ ] **步骤 2：运行服务测试确认失败**
+- [x] **步骤 2：运行服务测试确认失败**
 
 运行：
 
@@ -185,7 +185,7 @@ cd backend
 
 预期：因服务、仓储和凭据生成逻辑不存在而失败。
 
-- [ ] **步骤 3：实现凭据与幂等服务**
+- [x] **步骤 3：实现凭据与幂等服务**
 
 ```python
 def issue_token(credential_id: str) -> tuple[str, str]:
@@ -196,11 +196,11 @@ def issue_token(credential_id: str) -> tuple[str, str]:
 
 创建、修改、轮换和撤销均使用行锁、乐观版本和摘要化幂等操作。幂等记录只保存固定动作、命令指纹、结果来源 ID、结果凭据 ID、结果版本和 `secret_retrievable=False` 的重放事实。
 
-- [ ] **步骤 4：写管理 API 失败测试**
+- [x] **步骤 4：写管理 API 失败测试**
 
 覆盖创建 201、精确重放 200 且不返回 Token、名称冲突 409、旧版本 409、系统来源只读、停用/启用、轮换、撤销和最后凭据保护。响应检查不得出现 `token_digest`、actor、请求正文或内部异常。
 
-- [ ] **步骤 5：实现 Schema、路由和依赖注入**
+- [x] **步骤 5：实现 Schema、路由和依赖注入**
 
 ```python
 @router.post("", response_model=AlertSourceMutationResponse, status_code=201)
@@ -215,7 +215,7 @@ def create_alert_source(
 
 列表 `limit` 默认 50、最大 100；详情只返回凭据 ID、状态、创建/最后使用/撤销时间，永不返回摘要。
 
-- [ ] **步骤 6：运行服务和 API 测试**
+- [x] **步骤 6：运行服务和 API 测试**
 
 运行：
 
