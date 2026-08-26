@@ -37,7 +37,7 @@
 
 ## 持久化与归组
 
-SignalEvent、Alert、AlertGroup 的 service 改为可空，并增加实体类型、键和显示名。旧数据以真实 service 回填 SERVICE 实体。AlertGroup 的相似性键改为 entity_key + environment + symptom + 时间窗口，因此无服务 Pod 或 Node 告警仍能完成风暴收敛。
+SignalEvent、Alert、AlertGroup 的 service 改为可空，并增加实体类型、键和显示名。旧数据以真实 service 回填 SERVICE 实体。AlertGroup 保留真实实体摘要，但资源实例不充当问题边界；相似性由独立的 `problem-signature.v1` 使用问题类型、影响范围、环境、症状和时间窗口判断，因此多个不同 Pod 可以作为同一问题组的影响成员。
 
 Incident 暂时保持 service 必填。服务为空的告警组保存 `SKIPPED_SERVICE_MISSING` 决策，不创建 Incident；服务存在时维持现有服务目录和事故关联规则。
 
