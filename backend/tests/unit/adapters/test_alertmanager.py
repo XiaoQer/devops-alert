@@ -86,6 +86,31 @@ def test_alertmanager_keeps_symptom_as_a_bounded_correlation_fact() -> None:
     assert "must-not-be-stored" not in command.model_dump_json()
 
 
+def test_pod_alert_without_service_is_accepted_with_real_entity() -> None:
+    payload = deepcopy(FIRING_PAYLOAD)
+    payload["commonLabels"] = {}
+    del payload["alerts"][0]["labels"]["service"]
+    payload["alerts"][0]["labels"].update({"namespace": "devops-platform", "pod": "aegis-demo-0"})
+
+    command = to_signal_commands(AlertmanagerWebhook.model_validate(payload), NOW)[0]
+
+    assert command.service is None
+    assert command.entity_type == "POD"
+    assert command.entity_display_name == "devops-platform/aegis-demo-0"
+
+
+def test_per_alert_labels_override_common_labels() -> None:
+    payload = deepcopy(FIRING_PAYLOAD)
+    payload["commonLabels"] = {"service": "shared-service", "environment": "staging"}
+    payload["alerts"][0]["labels"]["service"] = "payment-api"
+    payload["alerts"][0]["labels"]["environment"] = "production"
+
+    command = to_signal_commands(AlertmanagerWebhook.model_validate(payload), NOW)[0]
+
+    assert command.service == "payment-api"
+    assert command.environment == "production"
+
+
 def test_source_uri_is_normalized_without_credentials_query_or_fragment() -> None:
     assert (
         normalize_source_uri(
@@ -180,24 +205,42 @@ def test_resolved_requires_real_end_time_and_events_cannot_be_far_future() -> No
     assert future_event.value.reason_code == "event_time_in_future"
 
 
-def test_required_alert_identity_and_content_are_rejected_when_missing() -> None:
-    missing_service = deepcopy(FIRING_PAYLOAD)
-    del missing_service["alerts"][0]["labels"]["service"]
-    with pytest.raises(AdapterValidationError) as service_error:
-        to_signal_commands(AlertmanagerWebhook.model_validate(missing_service), NOW)
-    assert service_error.value.reason_code == "missing_service"
-
+def test_missing_business_title_uses_safe_fallback_but_fingerprint_remains_required() -> None:
     missing_title = deepcopy(FIRING_PAYLOAD)
     del missing_title["alerts"][0]["labels"]["alertname"]
     del missing_title["alerts"][0]["annotations"]["summary"]
-    with pytest.raises(AdapterValidationError) as title_error:
-        to_signal_commands(AlertmanagerWebhook.model_validate(missing_title), NOW)
-    assert title_error.value.reason_code == "missing_title"
+    del missing_title["alerts"][0]["annotations"]["description"]
+
+    command = to_signal_commands(AlertmanagerWebhook.model_validate(missing_title), NOW)[0]
+
+    assert command.title == "未命名告警"
+    assert command.summary == "未命名告警"
 
     missing_fingerprint = deepcopy(FIRING_PAYLOAD)
     missing_fingerprint["alerts"][0]["fingerprint"] = ""
     with pytest.raises(ValidationError):
         AlertmanagerWebhook.model_validate(missing_fingerprint)
+
+
+def test_unknown_extension_fields_are_ignored_without_being_persisted() -> None:
+    payload = deepcopy(FIRING_PAYLOAD)
+    payload["futureWebhookField"] = {"arbitrary": "value"}
+    payload["alerts"][0]["futureAlertField"] = "value"
+
+    webhook = AlertmanagerWebhook.model_validate(payload)
+    command = to_signal_commands(webhook, NOW)[0]
+
+    assert "futureWebhookField" not in webhook.model_dump_json()
+    assert "futureAlertField" not in webhook.model_dump_json()
+    assert "arbitrary" not in command.model_dump_json()
+
+
+def test_forbidden_identity_is_scanned_before_unknown_fields_are_ignored() -> None:
+    payload = deepcopy(FIRING_PAYLOAD)
+    payload["futureWebhookField"] = {"scenario_id": "hidden"}
+
+    with pytest.raises(ForbiddenIdentityError):
+        AlertmanagerWebhook.model_validate(payload)
 
 
 def test_forbidden_identity_is_rejected_from_alert_labels() -> None:

@@ -5,13 +5,14 @@ from datetime import datetime, timedelta
 from hashlib import sha256
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from incident_intelligence.adapters.common import (
     AdapterValidationError,
     normalize_source_uri,
 )
 from incident_intelligence.domain.alert_sources import ALERTMANAGER_COMPAT_SOURCE_ID
+from incident_intelligence.domain.entities import derive_entity_identity
 from incident_intelligence.domain.forbidden_identity import reject_forbidden_identity
 from incident_intelligence.domain.models import UtcAwareDatetime
 from incident_intelligence.domain.signal_intake import SignalCommand
@@ -56,7 +57,7 @@ SEVERITY_ALIASES = {
 
 
 class AlertmanagerAlert(BaseModel):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     status: Literal["firing", "resolved"]
     labels: dict[BoundedKey, BoundedValue] = Field(max_length=100)
@@ -68,7 +69,7 @@ class AlertmanagerAlert(BaseModel):
 
 
 class AlertmanagerWebhook(BaseModel):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     version: Literal["4"]
     group_key: BoundedText = Field(alias="groupKey")
@@ -83,6 +84,12 @@ class AlertmanagerWebhook(BaseModel):
     external_url: BoundedText = Field(alias="externalURL")
     alerts: tuple[AlertmanagerAlert, ...] = Field(min_length=1, max_length=100)
 
+    @model_validator(mode="before")
+    @classmethod
+    def reject_forbidden_input(cls, value: object) -> object:
+        reject_forbidden_identity(value)
+        return value
+
 
 def to_signal_commands(
     webhook: AlertmanagerWebhook,
@@ -94,7 +101,14 @@ def to_signal_commands(
     normalized_uri = normalize_source_uri(webhook.external_url)
     source_instance = sha256(normalized_uri.encode("utf-8")).hexdigest()
     return tuple(
-        _to_signal_command(alert_source_id, source_instance, alert, now) for alert in webhook.alerts
+        _to_signal_command(
+            alert_source_id,
+            source_instance,
+            alert,
+            {**webhook.common_labels, **alert.labels},
+            now,
+        )
+        for alert in webhook.alerts
     )
 
 
@@ -102,14 +116,11 @@ def _to_signal_command(
     alert_source_id: str,
     source_instance: str,
     alert: AlertmanagerAlert,
+    labels: dict[str, str],
     now: datetime,
 ) -> SignalCommand:
-    title = alert.annotations.get("summary") or alert.labels.get("alertname")
-    if title is None:
-        raise AdapterValidationError("missing_title")
-    service = alert.labels.get("service")
-    if service is None:
-        raise AdapterValidationError("missing_service")
+    title = alert.annotations.get("summary") or labels.get("alertname") or "未命名告警"
+    identity = derive_entity_identity(labels)
 
     event_at = alert.starts_at if alert.status == "firing" else alert.ends_at
     if event_at > now + timedelta(minutes=5):
@@ -117,11 +128,11 @@ def _to_signal_command(
     if alert.status == "resolved" and alert.ends_at.year == 1:
         raise AdapterValidationError("missing_resolved_time")
 
-    severity_value = alert.labels.get("severity", "").casefold()
+    severity_value = labels.get("severity", "").casefold()
     severity = SEVERITY_ALIASES.get(severity_value, "medium")
     reason_codes = () if severity_value in SEVERITY_ALIASES else ("severity_defaulted",)
-    environment = alert.labels.get("environment", "unknown")
-    facts = {key: value for key, value in alert.labels.items() if key in FACT_LABELS}
+    environment = labels.get("environment", "unknown")
+    facts = {key: value for key, value in labels.items() if key in FACT_LABELS}
     summary = alert.annotations.get("description") or title
     event_type = "alert.firing" if alert.status == "firing" else "alert.resolved"
     command_content = {
@@ -131,19 +142,22 @@ def _to_signal_command(
         "title": title,
         "summary": summary,
         "severity": severity,
-        "service": service,
+        "service": identity.service,
+        "entity_type": identity.entity_type,
+        "entity_key": identity.entity_key,
+        "entity_display_name": identity.display_name,
         "environment": environment,
         "facts": facts,
         "normalization_reason_codes": reason_codes,
     }
-    identity = {
+    event_identity = {
         "source_instance": source_instance,
         "fingerprint": alert.fingerprint,
         **command_content,
     }
     source_event_id = sha256(
         json.dumps(
-            identity,
+            event_identity,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),

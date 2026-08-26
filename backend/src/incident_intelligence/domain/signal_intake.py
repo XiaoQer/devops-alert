@@ -8,10 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 from incident_intelligence.domain.entities import (
     EntityIdentity,
     EntityType,
-    ResolutionConfidence,
-    ResolutionReasonCode,
-    ServiceResolutionSource,
-    ServiceResolutionStatus,
     derive_entity_identity,
 )
 from incident_intelligence.domain.enums import AlertState
@@ -57,12 +53,6 @@ class SignalCommand(BaseModel):
     entity_type: EntityType
     entity_key: str = Field(pattern=r"^[0-9a-f]{64}$")
     entity_display_name: str = Field(min_length=1, max_length=257)
-    service_resolution_status: ServiceResolutionStatus
-    service_resolution_source: ServiceResolutionSource | None = None
-    service_resolution_confidence: ResolutionConfidence | None = None
-    service_resolution_reason_codes: tuple[ResolutionReasonCode, ...] = Field(
-        default=(), max_length=10
-    )
     environment: Environment
     facts: dict[FactKey, FactValue] = Field(default_factory=dict, max_length=20)
     normalization_reason_codes: tuple[NormalizationReasonCode, ...] = Field(
@@ -123,10 +113,6 @@ def decide_alert_projection(
                 entity_type=command.entity_type,
                 entity_key=command.entity_key,
                 entity_display_name=command.entity_display_name,
-                service_resolution_status=command.service_resolution_status,
-                service_resolution_source=command.service_resolution_source,
-                service_resolution_confidence=command.service_resolution_confidence,
-                service_resolution_reason_codes=command.service_resolution_reason_codes,
                 environment=command.environment,
                 first_observed_at=command.episode_started_at,
                 last_observed_at=command.event_at,
@@ -208,10 +194,6 @@ def _project_command(
             "entity_type": command.entity_type,
             "entity_key": command.entity_key,
             "entity_display_name": command.entity_display_name,
-            "service_resolution_status": command.service_resolution_status,
-            "service_resolution_source": command.service_resolution_source,
-            "service_resolution_confidence": command.service_resolution_confidence,
-            "service_resolution_reason_codes": command.service_resolution_reason_codes,
             "environment": command.environment,
             "first_observed_at": first_observed_at or current.first_observed_at,
             "last_observed_at": command.event_at,
@@ -239,8 +221,4 @@ def _identity_values(identity: EntityIdentity) -> dict[str, object]:
         "entity_type": identity.entity_type,
         "entity_key": identity.entity_key,
         "entity_display_name": identity.display_name,
-        "service_resolution_status": identity.service_resolution_status,
-        "service_resolution_source": identity.service_resolution_source,
-        "service_resolution_confidence": identity.service_resolution_confidence,
-        "service_resolution_reason_codes": identity.service_resolution_reason_codes,
     }
