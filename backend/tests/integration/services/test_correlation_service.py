@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -27,10 +28,60 @@ from incident_intelligence.services.catalog import (
 )
 from incident_intelligence.services.correlation import CorrelationService
 from incident_intelligence.services.correlation_jobs import CorrelationJobService
-from incident_intelligence.services.signal_intake import SignalIntakeService
+from incident_intelligence.services.signal_intake import (
+    SignalIntakeBatchResult,
+    SignalIntakeService,
+)
+from incident_intelligence.services.source_receipts import ReceiptContext
 
 NOW = datetime(2026, 8, 25, 8, 0, tzinfo=UTC)
 SOURCE_INSTANCE = "a" * 64
+
+
+class LegacyCorrelationIntake(SignalIntakeService):
+    """仅在历史关联兼容测试中重建旧生产者行为。"""
+
+    def __init__(
+        self,
+        *,
+        uow_factory: Callable[[], SqlAlchemyUnitOfWork],
+    ) -> None:
+        super().__init__(uow_factory=uow_factory, clock=lambda: NOW)
+        self._legacy_uow_factory = uow_factory
+
+    def submit_batch(
+        self,
+        commands: Sequence[SignalCommand],
+        actor: str,
+        request_id: str,
+        receipt_context: ReceiptContext | None = None,
+    ) -> SignalIntakeBatchResult:
+        result = super().submit_batch(commands, actor, request_id, receipt_context)
+        with self._legacy_uow_factory() as uow:
+            assert uow.correlation is not None
+            for item in result.items:
+                if (
+                    item.replayed
+                    or item.alert_id is None
+                    or item.outcome
+                    not in {
+                        "opened",
+                        "updated",
+                        "resolved",
+                        "reopened",
+                    }
+                ):
+                    continue
+                alert = uow.correlation.find_alert_for_update(item.alert_id)
+                assert alert is not None
+                uow.correlation.enqueue(
+                    alert_source_id=alert.alert_source_id,
+                    alert_id=alert.id,
+                    alert_version=alert.version,
+                    now=NOW,
+                )
+            uow.commit()
+        return result
 
 
 @pytest.fixture
@@ -45,7 +96,7 @@ def services(
     uow_factory = partial(SqlAlchemyUnitOfWork, session_factory)
     return (
         ServiceCatalogService(uow_factory=uow_factory, clock=lambda: NOW),
-        SignalIntakeService(uow_factory=uow_factory, clock=lambda: NOW),
+        LegacyCorrelationIntake(uow_factory=uow_factory),
         CorrelationJobService(uow_factory=uow_factory),
         CorrelationService(uow_factory=uow_factory, clock=lambda: NOW),
     )

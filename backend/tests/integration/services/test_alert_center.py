@@ -16,13 +16,17 @@ from incident_intelligence.services.alert_center import (
     AlertListFilters,
     AlertResourceNotFound,
 )
+from incident_intelligence.services.alert_group_correlation import AlertGroupCorrelationService
+from incident_intelligence.services.alert_group_correlation_jobs import (
+    AlertGroupCorrelationJobService,
+)
+from incident_intelligence.services.alert_grouping import AlertGroupingService
+from incident_intelligence.services.alert_grouping_jobs import AlertGroupingJobService
 from incident_intelligence.services.alert_sources import (
     AlertSourceService,
     CreateAlertSourceCommand,
 )
 from incident_intelligence.services.catalog import CreateServiceCommand, ServiceCatalogService
-from incident_intelligence.services.correlation import CorrelationService
-from incident_intelligence.services.correlation_jobs import CorrelationJobService
 from incident_intelligence.services.signal_intake import SignalIntakeService
 
 NOW = datetime(2026, 8, 26, 13, 0, tzinfo=UTC)
@@ -144,18 +148,31 @@ def seeded(migrated_engine: Engine) -> SeededAlerts:
         request_id="req-update",
     )
 
-    jobs = CorrelationJobService(uow_factory=uow_factory)
-    processor = CorrelationService(
+    grouping_jobs = AlertGroupingJobService(uow_factory=uow_factory)
+    grouping = AlertGroupingService(
         uow_factory=uow_factory, clock=lambda: NOW + timedelta(minutes=3)
     )
-    while leases := jobs.claim_batch(
+    while leases := grouping_jobs.claim_batch(
         "alert-center-test",
         NOW + timedelta(minutes=3),
         limit=10,
         lease_seconds=30,
     ):
         for lease in leases:
-            processor.process(lease)
+            grouping.process(lease)
+
+    correlation_jobs = AlertGroupCorrelationJobService(uow_factory=uow_factory)
+    correlation = AlertGroupCorrelationService(
+        uow_factory=uow_factory, clock=lambda: NOW + timedelta(minutes=3)
+    )
+    while leases := correlation_jobs.claim_batch(
+        "alert-center-test",
+        NOW + timedelta(minutes=3),
+        limit=10,
+        lease_seconds=30,
+    ):
+        for lease in leases:
+            correlation.process(lease)
 
     overview_service = AlertCenterService(session_factory=session_factory)
     overview = overview_service.get_overview(linked_alert_id)

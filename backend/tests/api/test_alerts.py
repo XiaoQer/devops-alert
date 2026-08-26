@@ -92,13 +92,17 @@ def context(migrated_engine: Engine) -> Iterator[AlertApiContext]:
         )
         assert intake.status_code == 202
         alert_id = intake.json()["items"][0]["alert_id"]
-        lease = app.state.correlation_job_service.claim_batch(
-            "alert-api-test",
+        grouping_lease = app.state.alert_grouping_job_service.claim_batch(
+            "alert-grouping-api-test",
             datetime.now(UTC),
             limit=1,
             lease_seconds=30,
         )[0]
-        result = app.state.correlation_service.process(lease)
+        app.state.alert_grouping_service.process(grouping_lease)
+        lease = app.state.alert_group_correlation_job_service.claim_batch(
+            "alert-api-test", datetime.now(UTC), limit=1, lease_seconds=30
+        )[0]
+        result = app.state.alert_group_correlation_service.process(lease)
         assert result.incident_id is not None
         yield AlertApiContext(
             client=client,

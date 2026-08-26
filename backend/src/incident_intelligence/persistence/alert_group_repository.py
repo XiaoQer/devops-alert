@@ -7,11 +7,14 @@ from sqlalchemy.orm import Session
 
 from incident_intelligence.ids import new_id
 from incident_intelligence.persistence.models import (
+    AlertGroupCorrelationJobRow,
+    AlertGroupDecisionRow,
     AlertGroupingJobRow,
     AlertGroupMemberRow,
     AlertGroupRow,
     AlertRow,
     IncidentAlertLinkRow,
+    IncidentRow,
     SignalEventRow,
 )
 
@@ -151,6 +154,96 @@ class AlertGroupRepository:
 
     def find_alert(self, alert_id: str) -> AlertRow | None:
         return self._session.get(AlertRow, alert_id)
+
+    def find_active_correlation_job(
+        self, group_id: str, *, for_update: bool = False
+    ) -> AlertGroupCorrelationJobRow | None:
+        statement = select(AlertGroupCorrelationJobRow).where(
+            AlertGroupCorrelationJobRow.alert_group_id == group_id,
+            AlertGroupCorrelationJobRow.active_slot == 1,
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return self._session.scalar(statement)
+
+    def schedule_correlation(
+        self, group: AlertGroupRow, *, target_version: int, now: datetime
+    ) -> AlertGroupCorrelationJobRow | None:
+        group.desired_correlation_version = max(group.desired_correlation_version, target_version)
+        active = self.find_active_correlation_job(group.id, for_update=True)
+        if active is not None:
+            if active.state == "PENDING":
+                active.target_group_version = max(active.target_group_version, target_version)
+                active.available_at = min(active.available_at, now)
+                active.updated_at = now
+            self._session.flush()
+            return active
+        row = AlertGroupCorrelationJobRow(
+            id=new_id("gcj"),
+            alert_group_id=group.id,
+            target_group_version=target_version,
+            state="PENDING",
+            active_slot=1,
+            attempts=0,
+            available_at=now,
+            lease_owner=None,
+            lease_expires_at=None,
+            last_error_code=None,
+            created_at=now,
+            updated_at=now,
+        )
+        self._session.add(row)
+        self._session.flush()
+        return row
+
+    def claimable_correlation_jobs(
+        self, *, now: datetime, limit: int
+    ) -> tuple[AlertGroupCorrelationJobRow, ...]:
+        statement = (
+            select(AlertGroupCorrelationJobRow)
+            .where(
+                or_(
+                    and_(
+                        AlertGroupCorrelationJobRow.state == "PENDING",
+                        AlertGroupCorrelationJobRow.available_at <= now,
+                    ),
+                    and_(
+                        AlertGroupCorrelationJobRow.state == "LEASED",
+                        AlertGroupCorrelationJobRow.lease_expires_at <= now,
+                    ),
+                )
+            )
+            .order_by(
+                AlertGroupCorrelationJobRow.available_at,
+                AlertGroupCorrelationJobRow.created_at,
+                AlertGroupCorrelationJobRow.id,
+            )
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        return tuple(self._session.scalars(statement))
+
+    def find_correlation_job(
+        self, job_id: str, *, for_update: bool = False
+    ) -> AlertGroupCorrelationJobRow | None:
+        statement = select(AlertGroupCorrelationJobRow).where(
+            AlertGroupCorrelationJobRow.id == job_id
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return self._session.scalar(statement)
+
+    def add_group_decision(self, row: AlertGroupDecisionRow) -> None:
+        self._session.add(row)
+        self._session.flush()
+
+    def add_incident(self, row: IncidentRow) -> None:
+        self._session.add(row)
+        self._session.flush()
+
+    def add_incident_link(self, row: IncidentAlertLinkRow) -> None:
+        self._session.add(row)
+        self._session.flush()
 
     def flush(self) -> None:
         self._session.flush()

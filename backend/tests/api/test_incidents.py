@@ -23,9 +23,13 @@ from incident_intelligence.persistence.models import (
 )
 from incident_intelligence.persistence.session import make_session_factory
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from incident_intelligence.services.alert_group_correlation import AlertGroupCorrelationService
+from incident_intelligence.services.alert_group_correlation_jobs import (
+    AlertGroupCorrelationJobService,
+)
+from incident_intelligence.services.alert_grouping import AlertGroupingService
+from incident_intelligence.services.alert_grouping_jobs import AlertGroupingJobService
 from incident_intelligence.services.catalog import CreateServiceCommand, ServiceCatalogService
-from incident_intelligence.services.correlation import CorrelationService
-from incident_intelligence.services.correlation_jobs import CorrelationJobService
 from incident_intelligence.services.signal_intake import SignalIntakeService
 from incident_intelligence.settings import Settings
 
@@ -39,8 +43,10 @@ class IncidentApiContext:
     alertmanager_headers: dict[str, str]
     catalog: ServiceCatalogService
     intake: SignalIntakeService
-    jobs: CorrelationJobService
-    correlation: CorrelationService
+    grouping_jobs: AlertGroupingJobService
+    grouping: AlertGroupingService
+    correlation_jobs: AlertGroupCorrelationJobService
+    correlation: AlertGroupCorrelationService
     session_factory: sessionmaker[Session]
 
 
@@ -65,8 +71,10 @@ def context(migrated_engine: Engine) -> Iterator[IncidentApiContext]:
             alertmanager_headers={"Authorization": f"Bearer {alertmanager_token}"},
             catalog=ServiceCatalogService(uow_factory=uow_factory, clock=lambda: NOW),
             intake=SignalIntakeService(uow_factory=uow_factory, clock=lambda: NOW),
-            jobs=CorrelationJobService(uow_factory=uow_factory),
-            correlation=CorrelationService(uow_factory=uow_factory, clock=lambda: NOW),
+            grouping_jobs=AlertGroupingJobService(uow_factory=uow_factory),
+            grouping=AlertGroupingService(uow_factory=uow_factory, clock=lambda: NOW),
+            correlation_jobs=AlertGroupCorrelationJobService(uow_factory=uow_factory),
+            correlation=AlertGroupCorrelationService(uow_factory=uow_factory, clock=lambda: NOW),
             session_factory=session_factory,
         )
 
@@ -105,7 +113,11 @@ def seed_linked_incident(context: IncidentApiContext) -> str:
         )
         alert_id = result.items[0].alert_id
         assert alert_id is not None
-        lease = context.jobs.claim_batch(
+        grouping_lease = context.grouping_jobs.claim_batch(
+            "incident-grouping-runner", event_at, limit=1, lease_seconds=30
+        )[0]
+        context.grouping.process(grouping_lease)
+        lease = context.correlation_jobs.claim_batch(
             "incident-api-runner", event_at, limit=1, lease_seconds=30
         )[0]
         correlation = context.correlation.process(lease)
@@ -170,8 +182,8 @@ def test_list_and_overview_return_real_bounded_aggregate(
     }
     assert body["alert_total"] == 2
     assert len(body["alerts"]) == 2
-    assert body["correlation"]["rule_version"] == "correlation.v1"
-    assert body["correlation"]["explanation"] == "窗口内只有一个同服务事故，已自动关联。"  # noqa: RUF001
+    assert body["correlation"]["rule_version"] == "group-correlation.v1"
+    assert body["correlation"]["explanation"] == "告警已经属于现有事故，保持原关联。"  # noqa: RUF001
     assert [event["kind"] for event in body["timeline"]][:2] == [
         "incident_created",
         "alert_linked",

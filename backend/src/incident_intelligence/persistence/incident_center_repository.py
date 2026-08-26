@@ -4,11 +4,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import and_, case, cast, func, or_, select
+from sqlalchemy import and_, case, cast, func, literal, or_, select, union_all
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
 from incident_intelligence.persistence.models import (
+    AlertGroupDecisionRow,
     AlertRow,
     CorrelationDecisionRow,
     IncidentActivityRow,
@@ -39,6 +40,15 @@ class IncidentListRecord:
 class LinkedAlertRecord:
     link: IncidentAlertLinkRow
     alert: AlertRow
+
+
+@dataclass(frozen=True, slots=True)
+class IncidentDecisionRecord:
+    outcome: str
+    rule_version: str
+    reason_codes: list[str]
+    explanation: str
+    created_at: datetime
 
 
 class IncidentCenterRepository:
@@ -186,24 +196,58 @@ class IncidentCenterRepository:
             )
         )
 
-    def latest_decision(self, incident_id: str) -> CorrelationDecisionRow | None:
-        return self._session.scalar(
-            select(CorrelationDecisionRow)
-            .where(CorrelationDecisionRow.incident_id == incident_id)
-            .order_by(
-                case(
-                    (
-                        CorrelationDecisionRow.outcome.in_(
-                            ("LINKED_EXACT_SERVICE", "LINKED_EXISTING")
-                        ),
-                        0,
-                    ),
-                    else_=1,
+    def latest_decision(self, incident_id: str) -> IncidentDecisionRecord | None:
+        linked_outcomes = ("LINKED_EXACT_SERVICE", "LINKED_EXISTING")
+        decisions = union_all(
+            select(
+                AlertGroupDecisionRow.id.label("id"),
+                AlertGroupDecisionRow.outcome.label("outcome"),
+                AlertGroupDecisionRow.rule_version.label("rule_version"),
+                AlertGroupDecisionRow.reason_codes.label("reason_codes"),
+                AlertGroupDecisionRow.explanation.label("explanation"),
+                AlertGroupDecisionRow.created_at.label("created_at"),
+                literal(0).label("source_priority"),
+                case((AlertGroupDecisionRow.outcome.in_(linked_outcomes), 0), else_=1).label(
+                    "outcome_priority"
                 ),
-                CorrelationDecisionRow.created_at.desc(),
-                CorrelationDecisionRow.id.desc(),
+            ).where(AlertGroupDecisionRow.incident_id == incident_id),
+            select(
+                CorrelationDecisionRow.id.label("id"),
+                CorrelationDecisionRow.outcome.label("outcome"),
+                CorrelationDecisionRow.rule_version.label("rule_version"),
+                CorrelationDecisionRow.reason_codes.label("reason_codes"),
+                CorrelationDecisionRow.explanation.label("explanation"),
+                CorrelationDecisionRow.created_at.label("created_at"),
+                literal(1).label("source_priority"),
+                case((CorrelationDecisionRow.outcome.in_(linked_outcomes), 0), else_=1).label(
+                    "outcome_priority"
+                ),
+            ).where(CorrelationDecisionRow.incident_id == incident_id),
+        ).subquery()
+        row = self._session.execute(
+            select(
+                decisions.c.outcome,
+                decisions.c.rule_version,
+                decisions.c.reason_codes,
+                decisions.c.explanation,
+                decisions.c.created_at,
+            )
+            .order_by(
+                decisions.c.source_priority,
+                decisions.c.outcome_priority,
+                decisions.c.created_at.desc(),
+                decisions.c.id.desc(),
             )
             .limit(1)
+        ).first()
+        if row is None:
+            return None
+        return IncidentDecisionRecord(
+            outcome=row.outcome,
+            rule_version=row.rule_version,
+            reason_codes=row.reason_codes,
+            explanation=row.explanation,
+            created_at=row.created_at,
         )
 
     @staticmethod

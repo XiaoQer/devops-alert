@@ -15,9 +15,9 @@ from sqlalchemy.orm import Session
 
 from incident_intelligence.main import create_app
 from incident_intelligence.persistence.models import (
+    AlertGroupingJobRow,
     AlertRow,
     AlertSourceReceiptRow,
-    CorrelationJobRow,
     SignalEventRow,
     SignalIntakeResultRow,
 )
@@ -41,6 +41,7 @@ def context(migrated_engine: Engine) -> Iterator[DynamicIntakeContext]:
             alertmanager_token=SecretStr(token_urlsafe(32)),
             cloudevents_token=SecretStr(token_urlsafe(32)),
             correlation_runner_enabled=False,
+            alert_grouping_runner_enabled=False,
         ),
         engine=migrated_engine,
     )
@@ -53,7 +54,7 @@ def context(migrated_engine: Engine) -> Iterator[DynamicIntakeContext]:
             )
         finally:
             with Session(migrated_engine) as session:
-                session.execute(delete(CorrelationJobRow))
+                session.execute(delete(AlertGroupingJobRow))
                 session.execute(delete(AlertSourceReceiptRow))
                 session.execute(delete(SignalIntakeResultRow))
                 session.execute(delete(AlertRow))
@@ -163,7 +164,7 @@ def test_two_registered_sources_isolate_same_external_alert_and_record_receipts(
     )
     assert _count(context.engine, SignalEventRow) == 2
     assert _count(context.engine, AlertRow) == 2
-    assert _count(context.engine, CorrelationJobRow) == 2
+    assert _count(context.engine, AlertGroupingJobRow) == 2
     assert _count(context.engine, AlertSourceReceiptRow) == 2
 
 
@@ -181,7 +182,7 @@ def test_validation_writes_receipt_without_domain_records(
     assert _count(context.engine, AlertSourceReceiptRow) == 1
     assert _count(context.engine, SignalEventRow) == 0
     assert _count(context.engine, AlertRow) == 0
-    assert _count(context.engine, CorrelationJobRow) == 0
+    assert _count(context.engine, AlertGroupingJobRow) == 0
 
 
 def test_cross_source_token_is_rejected_without_receipt(

@@ -60,7 +60,19 @@ def queued_job_id(session_factory: sessionmaker[Session]) -> str:
         "alertmanager-adapter",
         "req-1",
     )
-    assert result.items[0].alert_id is not None
+    alert_id = result.items[0].alert_id
+    assert alert_id is not None
+    with SqlAlchemyUnitOfWork(session_factory) as uow:
+        assert uow.correlation is not None
+        alert = uow.correlation.find_alert_for_update(alert_id)
+        assert alert is not None
+        uow.correlation.enqueue(
+            alert_source_id=alert.alert_source_id,
+            alert_id=alert.id,
+            alert_version=alert.version,
+            now=NOW,
+        )
+        uow.commit()
     with session_factory() as session:
         job_id = session.scalar(select(CorrelationJobRow.id))
     assert job_id is not None

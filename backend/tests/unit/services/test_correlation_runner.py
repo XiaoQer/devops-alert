@@ -5,8 +5,14 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import SecretStr
 
+from incident_intelligence.services.alert_group_correlation_jobs import (
+    AlertGroupCorrelationLease,
+)
 from incident_intelligence.services.correlation_jobs import CorrelationJobLease
-from incident_intelligence.services.correlation_runner import CorrelationRunner
+from incident_intelligence.services.correlation_runner import (
+    AlertGroupCorrelationRunner,
+    CorrelationRunner,
+)
 from incident_intelligence.settings import Settings
 
 NOW = datetime(2026, 8, 25, 8, 0, tzinfo=UTC)
@@ -111,3 +117,67 @@ def test_runner_cycle_failure_is_bounded_and_stop_prevents_polling() -> None:
     asyncio.run(exercise())
 
     assert jobs.claim_calls == 0
+
+
+class FakeGroupJobs:
+    def __init__(self) -> None:
+        self.claimed_at: datetime | None = None
+        self.failed: list[tuple[str, str, datetime]] = []
+
+    def claim_batch(
+        self,
+        lease_owner: str,
+        now: datetime,
+        *,
+        limit: int,
+        lease_seconds: int,
+    ) -> tuple[AlertGroupCorrelationLease, ...]:
+        del limit, lease_seconds
+        self.claimed_at = now
+        return (
+            AlertGroupCorrelationLease(
+                id=f"gcj_{1:032x}",
+                alert_group_id=f"agr_{1:032x}",
+                target_group_version=2,
+                state="LEASED",
+                attempts=1,
+                available_at=NOW,
+                lease_owner=lease_owner,
+                lease_expires_at=NOW + timedelta(seconds=30),
+                last_error_code=None,
+            ),
+        )
+
+    def fail(
+        self,
+        job_id: str,
+        lease_owner: str,
+        error_code: str,
+        now: datetime,
+    ) -> str:
+        del lease_owner
+        self.failed.append((job_id, error_code, now))
+        return "PENDING"
+
+
+class FailingGroupProcessor:
+    def process(self, lease: AlertGroupCorrelationLease) -> object:
+        del lease
+        raise RuntimeError("不得外泄的数据库详情")
+
+
+def test_group_runner_uses_injected_clock_and_fixed_safe_error_code() -> None:
+    jobs = FakeGroupJobs()
+    runner = AlertGroupCorrelationRunner(
+        job_service=jobs,
+        processor=FailingGroupProcessor(),
+        settings=settings(),
+        clock=lambda: NOW,
+    )
+
+    processed = asyncio.run(runner.run_once())
+
+    assert processed == 1
+    assert jobs.claimed_at == NOW
+    assert jobs.failed == [(f"gcj_{1:032x}", "group_correlation_processing_failed", NOW)]
+    assert runner.last_cycle_error_code is None

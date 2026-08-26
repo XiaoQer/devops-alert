@@ -102,6 +102,7 @@ def seed_decision(context: CorrelationApiContext) -> tuple[str, str]:
     )
     alert_id = intake_result.items[0].alert_id
     assert alert_id is not None
+    _enqueue_legacy_job(context, alert_id)
     lease = context.jobs.claim_batch("api-test-runner", NOW, limit=1, lease_seconds=30)[0]
     result = context.correlation.process(lease)
     return alert_id, result.decision_id
@@ -171,7 +172,7 @@ def test_only_failed_job_can_be_retried_and_list_is_bounded(
 def test_failed_job_retry_resets_attempts_and_writes_bounded_audit(
     context: CorrelationApiContext,
 ) -> None:
-    context.intake.submit_batch(
+    intake_result = context.intake.submit_batch(
         [
             SignalCommand(
                 alert_source_id="src_00000000000000000000000000000002",
@@ -193,6 +194,9 @@ def test_failed_job_retry_resets_attempts_and_writes_bounded_audit(
         actor="alertmanager-adapter",
         request_id="req-retry-alert",
     )
+    alert_id = intake_result.items[0].alert_id
+    assert alert_id is not None
+    _enqueue_legacy_job(context, alert_id)
     lease = None
     for attempt in range(5):
         current = NOW + timedelta(minutes=attempt * 10)
@@ -219,6 +223,20 @@ def test_failed_job_retry_resets_attempts_and_writes_bounded_audit(
         )
     assert audit is not None
     assert audit.details == {"reason_code": "manual_retry_requested"}
+
+
+def _enqueue_legacy_job(context: CorrelationApiContext, alert_id: str) -> None:
+    with SqlAlchemyUnitOfWork(context.session_factory) as uow:
+        assert uow.correlation is not None
+        alert = uow.correlation.find_alert_for_update(alert_id)
+        assert alert is not None
+        uow.correlation.enqueue(
+            alert_source_id=alert.alert_source_id,
+            alert_id=alert.id,
+            alert_version=alert.version,
+            now=NOW,
+        )
+        uow.commit()
 
 
 def test_enabled_runner_lifespan_starts_and_stops_cleanly(

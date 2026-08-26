@@ -10,10 +10,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from incident_intelligence.domain.signal_intake import SignalCommand
 from incident_intelligence.persistence.models import (
+    AlertGroupingJobRow,
     AlertRow,
     AlertSourceReceiptRow,
     AlertSourceRow,
-    CorrelationJobRow,
     IncidentRow,
     SignalEventRow,
 )
@@ -115,7 +115,7 @@ def test_success_and_replay_write_safe_receipts_in_domain_transaction(
         source = session.get(AlertSourceRow, source_id)
         assert _count(session, SignalEventRow) == 1
         assert _count(session, AlertRow) == 1
-        assert _count(session, CorrelationJobRow) == 1
+        assert _count(session, AlertGroupingJobRow) == 1
         assert _count(session, IncidentRow) == 0
     assert [row.outcome for row in receipts] == ["ACCEPTED", "REPLAYED"]
     assert [row.request_id for row in receipts] == ["req-intake-1", "req-intake-2"]
@@ -162,7 +162,7 @@ def test_authenticated_failure_and_validation_write_only_bounded_safe_receipts(
         source = session.get(AlertSourceRow, source_id)
         assert _count(session, SignalEventRow) == 0
         assert _count(session, AlertRow) == 0
-        assert _count(session, CorrelationJobRow) == 0
+        assert _count(session, AlertGroupingJobRow) == 0
     assert len(receipts) == 2
     assert all(
         set(vars(row))
@@ -309,5 +309,5 @@ def test_failed_batch_rolls_back_new_domain_rows_and_success_receipt(
     with session_factory() as session:
         assert _count(session, SignalEventRow) == 1
         assert _count(session, AlertRow) == 1
-        assert _count(session, CorrelationJobRow) == 1
+        assert _count(session, AlertGroupingJobRow) == 1
         assert _count(session, AlertSourceReceiptRow) == 1

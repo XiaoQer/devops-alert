@@ -173,6 +173,13 @@ class AlertGroupingService:
                     now=now,
                 )
 
+            if _requires_correlation(group, catalog_entry):
+                repository.schedule_correlation(
+                    group,
+                    target_version=group.version,
+                    now=now,
+                )
+
             _append_audit(
                 _records(uow),
                 audit_id=self._id_factory("aud"),
@@ -347,6 +354,18 @@ def _append_audit(
             "alert_id": alert.id,
         },
         created_at=now,
+    )
+
+
+def _requires_correlation(group: AlertGroupRow, catalog_entry: object | None) -> bool:
+    if group.incident_id is not None:
+        return True
+    return (
+        group.state == "ACTIVE"
+        and group.severity in {"critical", "high"}
+        and group.environment == "production"
+        and catalog_entry is not None
+        and getattr(catalog_entry, "state", None) == "ACTIVE"
     )
 
 

@@ -11,6 +11,10 @@ from incident_intelligence.api.router import create_router
 from incident_intelligence.persistence.session import get_engine, make_session_factory
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.alert_center import AlertCenterService
+from incident_intelligence.services.alert_group_correlation import AlertGroupCorrelationService
+from incident_intelligence.services.alert_group_correlation_jobs import (
+    AlertGroupCorrelationJobService,
+)
 from incident_intelligence.services.alert_grouping import AlertGroupingService
 from incident_intelligence.services.alert_grouping_jobs import AlertGroupingJobService
 from incident_intelligence.services.alert_grouping_runner import AlertGroupingRunner
@@ -18,7 +22,10 @@ from incident_intelligence.services.alert_sources import AlertSourceService
 from incident_intelligence.services.catalog import ServiceCatalogService
 from incident_intelligence.services.correlation import CorrelationReadService, CorrelationService
 from incident_intelligence.services.correlation_jobs import CorrelationJobService
-from incident_intelligence.services.correlation_runner import CorrelationRunner
+from incident_intelligence.services.correlation_runner import (
+    AlertGroupCorrelationRunner,
+    CorrelationRunner,
+)
 from incident_intelligence.services.incident_center import IncidentCenterService
 from incident_intelligence.services.incident_operations import IncidentOperationService
 from incident_intelligence.services.manual_intake import ManualIntakeService
@@ -32,10 +39,15 @@ from incident_intelligence.settings import Settings
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     runner_task: asyncio.Task[None] | None = None
     grouping_runner_task: asyncio.Task[None] | None = None
+    group_correlation_task: asyncio.Task[None] | None = None
     if app.state.settings.correlation_runner_enabled:
         runner_task = asyncio.create_task(app.state.correlation_runner.run_forever())
     if app.state.settings.alert_grouping_runner_enabled:
         grouping_runner_task = asyncio.create_task(app.state.alert_grouping_runner.run_forever())
+    if app.state.settings.correlation_runner_enabled:
+        group_correlation_task = asyncio.create_task(
+            app.state.alert_group_correlation_runner.run_forever()
+        )
     try:
         yield
     finally:
@@ -45,6 +57,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if grouping_runner_task is not None:
             await app.state.alert_grouping_runner.stop()
             await grouping_runner_task
+        if group_correlation_task is not None:
+            await app.state.alert_group_correlation_runner.stop()
+            await group_correlation_task
 
 
 def create_app(settings: Settings | None = None, *, engine: Engine | None = None) -> FastAPI:
@@ -94,6 +109,12 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
     app.state.alert_grouping_service = AlertGroupingService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
+    app.state.alert_group_correlation_job_service = AlertGroupCorrelationJobService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
+    )
+    app.state.alert_group_correlation_service = AlertGroupCorrelationService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
+    )
     app.state.incident_center_service = IncidentCenterService(session_factory=session_factory)
     app.state.incident_operation_service = IncidentOperationService(session_factory=session_factory)
     app.state.correlation_runner = CorrelationRunner(
@@ -104,6 +125,11 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
     app.state.alert_grouping_runner = AlertGroupingRunner(
         job_service=app.state.alert_grouping_job_service,
         processor=app.state.alert_grouping_service,
+        settings=resolved_settings,
+    )
+    app.state.alert_group_correlation_runner = AlertGroupCorrelationRunner(
+        job_service=app.state.alert_group_correlation_job_service,
+        processor=app.state.alert_group_correlation_service,
         settings=resolved_settings,
     )
     app.add_middleware(

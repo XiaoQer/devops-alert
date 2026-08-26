@@ -8,6 +8,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from incident_intelligence.persistence.models import (
+    AlertGroupCorrelationJobRow,
+    AlertGroupDecisionRow,
     AlertRow,
     AlertSourceRow,
     CorrelationDecisionRow,
@@ -35,8 +37,8 @@ class AlertOverviewRecord:
 
 @dataclass(frozen=True, slots=True)
 class CorrelationRecord:
-    job: CorrelationJobRow | None
-    decision: CorrelationDecisionRow | None
+    job: CorrelationJobRow | AlertGroupCorrelationJobRow | None
+    decision: CorrelationDecisionRow | AlertGroupDecisionRow | None
     incident: IncidentRow | None
 
 
@@ -172,6 +174,22 @@ class AlertCenterRepository:
         )
 
     def correlation(self, alert_id: str) -> CorrelationRecord:
+        link = self._session.scalar(
+            select(IncidentAlertLinkRow).where(IncidentAlertLinkRow.alert_id == alert_id)
+        )
+        if link is not None and link.group_decision_id is not None:
+            group_decision = self._session.get(AlertGroupDecisionRow, link.group_decision_id)
+            group_job = (
+                None
+                if group_decision is None
+                else self._session.get(AlertGroupCorrelationJobRow, group_decision.job_id)
+            )
+            incident = self._session.get(IncidentRow, link.incident_id)
+            return CorrelationRecord(
+                job=group_job,
+                decision=group_decision,
+                incident=incident,
+            )
         job = self._session.scalar(
             select(CorrelationJobRow)
             .where(CorrelationJobRow.alert_id == alert_id)
@@ -182,9 +200,6 @@ class AlertCenterRepository:
             return CorrelationRecord(job=None, decision=None, incident=None)
         decision = self._session.scalar(
             select(CorrelationDecisionRow).where(CorrelationDecisionRow.job_id == job.id)
-        )
-        link = self._session.scalar(
-            select(IncidentAlertLinkRow).where(IncidentAlertLinkRow.alert_id == alert_id)
         )
         incident = None if link is None else self._session.get(IncidentRow, link.incident_id)
         return CorrelationRecord(job=job, decision=decision, incident=incident)

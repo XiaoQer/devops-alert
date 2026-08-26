@@ -14,9 +14,9 @@ from incident_intelligence.domain.alert_sources import (
 )
 from incident_intelligence.domain.signal_intake import SignalCommand
 from incident_intelligence.persistence.models import (
+    AlertGroupingJobRow,
     AlertRow,
     AlertSourceRow,
-    CorrelationJobRow,
     DiagnosisRunRow,
     IncidentRow,
     SignalEventRow,
@@ -110,8 +110,9 @@ def test_same_alert_key_from_two_cloudevents_sources_creates_two_alerts(
             select(AlertRow).where(AlertRow.alert_source_id == second_source_id)
         )
         assert second_alert is not None
+        second_alert_id = second_alert.id
         session.execute(
-            delete(CorrelationJobRow).where(CorrelationJobRow.alert_source_id == second_source_id)
+            delete(AlertGroupingJobRow).where(AlertGroupingJobRow.alert_id == second_alert_id)
         )
         session.execute(
             delete(SignalIntakeResultRow).where(
