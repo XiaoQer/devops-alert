@@ -1,0 +1,22 @@
+import { onBeforeUnmount, onMounted, ref } from "vue";
+import { createAlertSource, fetchAlertSource, fetchAlertSourceReceipts, fetchAlertSources, revokeAlertSourceCredential, rotateAlertSourceCredential, updateAlertSource } from "../api/alertSources";
+import { toAlertSourceDetail, toAlertSourceListItem, toReceiptView } from "../presentation/alertSourceView";
+
+const safeMessage = (error, fallback) => typeof error?.userMessage === "string" ? error.userMessage : fallback;
+export function useAlertSources() {
+  const sources = ref([]); const selectedId = ref(null); const detail = ref(null); const receipts = ref([]); const listState = ref("loading"); const detailState = ref("idle"); const error = ref(""); const operationState = ref("idle"); const operationError = ref(""); const retryableOperation = ref(null); const oneTimeToken = ref(null);
+  let listController; let detailController;
+  async function loadDetail(id) { if (!id) return; detailController?.abort(); detailController = new AbortController(); detailState.value = "loading"; try { const [source, receiptPage] = await Promise.all([fetchAlertSource(id, { signal: detailController.signal }), fetchAlertSourceReceipts(id, { limit: 50 }, { signal: detailController.signal })]); detail.value = toAlertSourceDetail(source); receipts.value = receiptPage.items.map(toReceiptView); detailState.value = "ready"; } catch (caught) { if (caught?.name === "AbortError") return; detail.value = null; receipts.value = []; detailState.value = "error"; error.value = safeMessage(caught, "告警源详情暂时不可用"); } }
+  async function loadList(preferredId = null) { listController?.abort(); listController = new AbortController(); listState.value = "loading"; error.value = ""; try { const response = await fetchAlertSources({}, { signal: listController.signal }); sources.value = response.items.map(toAlertSourceListItem); listState.value = sources.value.length ? "ready" : "empty"; if (!sources.value.length) { selectedId.value = null; detail.value = null; return; } selectedId.value = sources.value.some((item) => item.id === (preferredId ?? selectedId.value)) ? (preferredId ?? selectedId.value) : sources.value[0].id; await loadDetail(selectedId.value); } catch (caught) { if (caught?.name === "AbortError") return; sources.value = []; detail.value = null; listState.value = "error"; error.value = safeMessage(caught, "告警源数据暂时不可用"); } }
+  async function selectSource(id) { selectedId.value = id; await loadDetail(id); }
+  async function perform(operation) { operationState.value = "pending"; operationError.value = ""; try { const result = await operation.execute(operation.idempotencyKey); retryableOperation.value = null; if (result.secret_retrievable && result.token) oneTimeToken.value = result.token; await loadList(result.source.id); operationState.value = "succeeded"; return true; } catch (caught) { if (caught?.code === "api_unavailable") { retryableOperation.value = operation; operationState.value = "unknown"; } else { retryableOperation.value = null; operationState.value = caught?.code === "alert_source_version_conflict" ? "conflict" : "error"; } operationError.value = safeMessage(caught, "告警源操作未完成"); return false; } }
+  function operation(type, execute) { return { type, idempotencyKey: globalThis.crypto.randomUUID(), execute }; }
+  function submitCreate(command) { return perform(operation("create", (key) => createAlertSource(command, key))); }
+  function submitUpdate(command) { const id = selectedId.value; return perform(operation("update", (key) => updateAlertSource(id, command, key))); }
+  function rotateCredential() { const current = detail.value; return perform(operation("rotate", (key) => rotateAlertSourceCredential(current.id, current.version, key))); }
+  function revokeCredential(credentialId) { const current = detail.value; return perform(operation("revoke", (key) => revokeAlertSourceCredential(current.id, credentialId, current.version, key))); }
+  function retryLastOperation() { return retryableOperation.value ? perform(retryableOperation.value) : false; }
+  function clearOneTimeToken() { oneTimeToken.value = null; }
+  onMounted(loadList); onBeforeUnmount(() => { oneTimeToken.value = null; listController?.abort(); detailController?.abort(); });
+  return { sources, selectedId, detail, receipts, listState, detailState, error, operationState, operationError, retryableOperation, oneTimeToken, loadList, loadDetail, selectSource, submitCreate, submitUpdate, rotateCredential, revokeCredential, retryLastOperation, clearOneTimeToken };
+}

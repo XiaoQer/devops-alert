@@ -12,6 +12,7 @@ import IncidentQuickNote from "./components/IncidentQuickNote.vue";
 import IncidentResolveDialog from "./components/IncidentResolveDialog.vue";
 import IncidentStageBar from "./components/IncidentStageBar.vue";
 import AlertCenter from "./components/AlertCenter.vue";
+import AlertSourceManager from "./components/AlertSourceManager.vue";
 import { useIncidentCenter } from "./composables/useIncidentCenter";
 
 const navItems = [
@@ -152,9 +153,7 @@ function openIncident(incidentId) {
         </section>
       </div>
       <AlertCenter v-else-if="activeNav === 'alerts'" @open-incident="openIncident" />
-      <section v-else-if="activeNav === 'alert-sources'" data-testid="alert-source-center" class="module-placeholder">
-        <PhGear :size="30" /><h2>接入源管理</h2><p>正在接入告警源、凭据与接收记录。</p>
-      </section>
+      <AlertSourceManager v-else-if="activeNav === 'alert-sources'" />
     </main>
 
     <IncidentResolveDialog :open="resolveOpen" :disabled="isOperating" @close="resolveOpen = false" @operate="submitOperation" />
