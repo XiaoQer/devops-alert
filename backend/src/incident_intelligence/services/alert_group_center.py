@@ -65,6 +65,10 @@ class AlertGroupListItem(BaseModel):
     storm_state: StormState
     severity: Severity
     service: str | None
+    problem_type: str
+    scope_type: str
+    scope_display_name: str
+    signature_version: str
     environment: Environment
     symptom: str
     active_count: int = Field(ge=0)
@@ -375,6 +379,8 @@ def _group_filters(statement: Any, filters: AlertGroupFilters, query: str | None
             or_(
                 AlertGroupRow.title.contains(query, autoescape=True),
                 AlertGroupRow.service.contains(query, autoescape=True),
+                AlertGroupRow.problem_type.contains(query, autoescape=True),
+                AlertGroupRow.scope_display_name.contains(query, autoescape=True),
                 AlertGroupRow.symptom.contains(query, autoescape=True),
             )
         )
@@ -389,6 +395,10 @@ def _group_item(group: AlertGroupRow, incident: IncidentRow | None) -> AlertGrou
         storm_state=cast(StormState, group.storm_state),
         severity=cast(Severity, group.severity),
         service=group.service,
+        problem_type=group.problem_type,
+        scope_type=group.scope_type,
+        scope_display_name=group.scope_display_name,
+        signature_version=group.signature_version,
         environment=cast(Environment, group.environment),
         symptom=group.symptom,
         active_count=group.active_count,

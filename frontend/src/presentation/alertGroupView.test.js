@@ -9,6 +9,7 @@ const group = {
   first_observed_at: "2026-08-26T08:00:00Z", last_observed_at: "2026-08-26T08:01:00Z",
   explanation: "服务、环境和症状一致，已归入同一告警组。",
   incident: { id: "inc_1", title: "支付服务异常", state: "DETECTED", severity: "high" },
+  problem_type: "PaymentHighErrorRate", scope_type: "SERVICE", scope_display_name: "payment-api",
 };
 
 describe("告警组展示转换", () => {
@@ -18,6 +19,26 @@ describe("告警组展示转换", () => {
     expect(view.resourceText).toBe("影响 101 个资源");
     expect(view.stormText).toBe("告警风暴");
     expect(view.incidentText).toBe("已关联事故");
+  });
+
+  it("无服务告警使用问题类型和影响范围表达归集结果", () => {
+    const view = toAlertGroupListItem({
+      ...group,
+      service: null,
+      title: "payment-1 Pod 未就绪",
+      problem_type: "KubePodNotReady",
+      scope_type: "NAMESPACE",
+      scope_display_name: "prod-cluster/payments",
+      incident: null,
+      total_count: 6,
+      impacted_resource_count: 6,
+    });
+
+    expect(view.title).toBe("KubePodNotReady");
+    expect(view.service).toBe("服务未提供");
+    expect(view.scopeText).toBe("Namespace · prod-cluster/payments");
+    expect(view.resourceText).toBe("影响 6 个资源");
+    expect(view.incidentText).toBe("未创建事故（服务未提供）");
   });
 
   it("概况使用后端压缩率而不是当前成员页长度", () => {

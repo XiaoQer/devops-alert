@@ -10,6 +10,7 @@ from pydantic import SecretStr
 from incident_intelligence.api.errors import ApiError
 from incident_intelligence.services.alert_center import AlertCenterService
 from incident_intelligence.services.alert_group_center import AlertGroupCenterService
+from incident_intelligence.services.alert_regrouping import AlertRegroupingService
 from incident_intelligence.services.alert_sources import AlertSourceService
 from incident_intelligence.services.catalog import ServiceCatalogService
 from incident_intelligence.services.correlation import CorrelationReadService
@@ -86,6 +87,10 @@ def get_alert_center_service(request: Request) -> AlertCenterService:
 
 def get_alert_group_center_service(request: Request) -> AlertGroupCenterService:
     return cast(AlertGroupCenterService, request.app.state.alert_group_center_service)
+
+
+def get_alert_regrouping_service(request: Request) -> AlertRegroupingService:
+    return cast(AlertRegroupingService, request.app.state.alert_regrouping_service)
 
 
 def get_source_authentication_service(request: Request) -> SourceAuthenticationService:

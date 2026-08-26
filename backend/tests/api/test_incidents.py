@@ -183,7 +183,7 @@ def test_list_and_overview_return_real_bounded_aggregate(
     assert body["alert_total"] == 2
     assert len(body["alerts"]) == 2
     assert body["correlation"]["rule_version"] == "group-correlation.v1"
-    assert body["correlation"]["explanation"] == "告警已经属于现有事故，保持原关联。"  # noqa: RUF001
+    assert body["correlation"]["explanation"] == "窗口内只有一个同服务事故，已自动关联。"  # noqa: RUF001
     assert [event["kind"] for event in body["timeline"]][:2] == [
         "incident_created",
         "alert_linked",

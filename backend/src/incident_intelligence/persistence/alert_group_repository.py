@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import cast
 
-from sqlalchemy import and_, case, exists, func, or_, select
+from sqlalchemy import and_, case, exists, func, or_, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from incident_intelligence.ids import new_id
@@ -177,6 +178,38 @@ class AlertGroupRepository:
                 .with_for_update()
             )
         )
+
+    def legacy_regroup_candidates(self, *, limit: int) -> tuple[AlertGroupRow, ...]:
+        return tuple(
+            self._session.scalars(
+                select(AlertGroupRow)
+                .where(
+                    AlertGroupRow.state == "ACTIVE",
+                    AlertGroupRow.service.is_(None),
+                    AlertGroupRow.incident_id.is_(None),
+                    AlertGroupRow.rule_version != "alert-grouping.v2",
+                )
+                .order_by(AlertGroupRow.problem_key, AlertGroupRow.created_at, AlertGroupRow.id)
+                .limit(limit)
+                .with_for_update()
+            )
+        )
+
+    def move_members(self, *, source_group_id: str, target_group_id: str, now: datetime) -> int:
+        result = cast(
+            CursorResult[object],
+            self._session.execute(
+                update(AlertGroupMemberRow)
+                .where(AlertGroupMemberRow.alert_group_id == source_group_id)
+                .values(
+                    alert_group_id=target_group_id,
+                    reason_code="regrouped_into_problem_signature",
+                    updated_at=now,
+                )
+            ),
+        )
+        self._session.flush()
+        return int(result.rowcount or 0)
 
     def find_incident_link(self, alert_id: str) -> IncidentAlertLinkRow | None:
         return self._session.scalar(

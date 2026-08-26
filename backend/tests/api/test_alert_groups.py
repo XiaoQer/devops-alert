@@ -64,6 +64,12 @@ def test_alert_group_endpoints_require_control_plane_token(context: Context) -> 
         response = context.client.get(path)
         assert response.status_code == 401
         assert response.json()["code"] == "authentication_required"
+    unauthorized_regroup = context.client.post(
+        "/api/v1/alert-groups/regroup",
+        headers={"X-Request-ID": "req-unauthorized-regroup"},
+        json={"limit": 100},
+    )
+    assert unauthorized_regroup.status_code == 401
 
 
 def test_empty_group_reads_are_bounded_and_invalid_ids_are_hidden(context: Context) -> None:
@@ -101,6 +107,17 @@ def test_empty_group_reads_are_bounded_and_invalid_ids_are_hidden(context: Conte
         context.client.get("/api/v1/alert-groups?offset=10001", headers=context.headers).status_code
         == 422
     )
+    regroup = context.client.post(
+        "/api/v1/alert-groups/regroup",
+        headers={**context.headers, "X-Request-ID": "req-empty-regroup"},
+        json={"limit": 100},
+    )
+    assert regroup.status_code == 200
+    assert regroup.json() == {
+        "examined_groups": 0,
+        "merged_groups": 0,
+        "moved_members": 0,
+    }
 
 
 def test_real_storm_is_available_through_group_and_incident_pages(
@@ -170,6 +187,9 @@ def test_real_storm_is_available_through_group_and_incident_pages(
     assert group_page.status_code == 200
     assert group_page.json()["total"] == 1
     assert group_page.json()["items"][0]["total_count"] == 101
+    assert group_page.json()["items"][0]["problem_type"] == "支付接口错误率升高"
+    assert group_page.json()["items"][0]["scope_type"] == "SERVICE"
+    assert group_page.json()["items"][0]["scope_display_name"] == "payment-api"
     assert second_member_page.status_code == 200
     assert second_member_page.json()["total"] == 101
     assert len(second_member_page.json()["items"]) == 1

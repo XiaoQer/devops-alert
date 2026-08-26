@@ -4,11 +4,12 @@ from datetime import UTC, datetime
 from re import compile as compile_pattern
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from pydantic import ValidationError
 
 from incident_intelligence.api.dependencies import (
     get_alert_group_center_service,
+    get_alert_regrouping_service,
     require_manual_actor,
 )
 from incident_intelligence.api.errors import ApiError
@@ -17,6 +18,8 @@ from incident_intelligence.api.schemas.alert_groups import (
     AlertGroupOverviewResponse,
     AlertGroupPageResponse,
     AlertGroupSummaryResponse,
+    AlertRegroupRequest,
+    AlertRegroupResponse,
 )
 from incident_intelligence.domain.models import Environment, Severity
 from incident_intelligence.services.alert_group_center import (
@@ -27,10 +30,12 @@ from incident_intelligence.services.alert_group_center import (
     StormState,
     SummaryWindow,
 )
+from incident_intelligence.services.alert_regrouping import AlertRegroupingService
 
 router = APIRouter(prefix="/api/v1/alert-groups", tags=["alert-groups"])
 ManualActor = Annotated[str, Depends(require_manual_actor)]
 GroupService = Annotated[AlertGroupCenterService, Depends(get_alert_group_center_service)]
+RegroupService = Annotated[AlertRegroupingService, Depends(get_alert_regrouping_service)]
 GROUP_ID = compile_pattern(r"^agr_[0-9a-f]{32}$")
 
 
@@ -80,6 +85,21 @@ def summarize_groups(
     return AlertGroupSummaryResponse.model_validate(
         center.summarize(window, now=datetime.now(UTC)).model_dump()
     )
+
+
+@router.post("/regroup", response_model=AlertRegroupResponse)
+def regroup_legacy_groups(
+    command: AlertRegroupRequest,
+    actor: ManualActor,
+    service: RegroupService,
+    request_id: Annotated[str, Header(alias="X-Request-ID", min_length=1, max_length=64)],
+) -> AlertRegroupResponse:
+    result = service.regroup_active_unlinked_groups(
+        limit=command.limit,
+        actor=actor,
+        request_id=request_id,
+    )
+    return AlertRegroupResponse.model_validate(result.model_dump())
 
 
 @router.get("/{group_id}/overview", response_model=AlertGroupOverviewResponse)

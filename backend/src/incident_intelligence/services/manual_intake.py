@@ -11,8 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from sqlalchemy.exc import IntegrityError
 
 from incident_intelligence.domain.alert_sources import MANUAL_SYSTEM_SOURCE_ID
-from incident_intelligence.domain.enums import AlertState, DiagnosisState, IncidentState
 from incident_intelligence.domain.entities import derive_entity_identity
+from incident_intelligence.domain.enums import AlertState, DiagnosisState, IncidentState
 from incident_intelligence.domain.forbidden_identity import reject_forbidden_identity
 from incident_intelligence.domain.models import (
     Alert,

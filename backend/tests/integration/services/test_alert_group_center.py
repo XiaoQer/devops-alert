@@ -72,6 +72,10 @@ def test_group_center_exposes_real_counts_second_member_page_and_incident_groups
     assert page.total == 1
     assert page.items[0].total_count == 101
     assert page.items[0].impacted_resource_count == 101
+    assert page.items[0].problem_type == "支付接口错误率升高"
+    assert page.items[0].scope_type == "SERVICE"
+    assert page.items[0].scope_display_name == "payment-api"
+    assert page.items[0].signature_version == "problem-signature.v1"
     assert page.items[0].incident is None
 
     summary = center.summarize("24h", now=NOW)

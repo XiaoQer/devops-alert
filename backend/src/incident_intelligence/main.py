@@ -20,6 +20,7 @@ from incident_intelligence.services.alert_group_correlation_jobs import (
 from incident_intelligence.services.alert_grouping import AlertGroupingService
 from incident_intelligence.services.alert_grouping_jobs import AlertGroupingJobService
 from incident_intelligence.services.alert_grouping_runner import AlertGroupingRunner
+from incident_intelligence.services.alert_regrouping import AlertRegroupingService
 from incident_intelligence.services.alert_sources import AlertSourceService
 from incident_intelligence.services.catalog import ServiceCatalogService
 from incident_intelligence.services.correlation import CorrelationReadService, CorrelationService
@@ -116,6 +117,9 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
     app.state.alert_group_backfill_service = AlertGroupBackfillService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
+    )
+    app.state.alert_regrouping_service = AlertRegroupingService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
     app.state.alert_group_correlation_job_service = AlertGroupCorrelationJobService(

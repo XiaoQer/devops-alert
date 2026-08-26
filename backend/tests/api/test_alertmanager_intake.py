@@ -311,7 +311,7 @@ def test_invalid_item_rejects_the_whole_batch_without_writes(
     payload = deepcopy(firing_payload)
     invalid = deepcopy(firing_payload["alerts"][0])  # type: ignore[index]
     invalid["fingerprint"] = "fingerprint-invalid"
-    del invalid["labels"]["service"]  # type: ignore[index]
+    invalid["status"] = "invalid"
     payload["alerts"] = [payload["alerts"][0], invalid]  # type: ignore[index]
 
     response = _post(client, tokens, payload)

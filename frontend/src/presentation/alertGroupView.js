@@ -9,6 +9,10 @@ const symptomMap = {
   saturation: "资源饱和", "pod-restarts": "Pod 重启", cpu: "CPU 过载",
   memory: "内存异常", unknown: "异常信号",
 };
+const scopeMap = {
+  SERVICE: "服务", WORKLOAD: "工作负载", NAMESPACE: "Namespace",
+  CLUSTER: "集群", JOB: "任务", SOURCE: "告警来源",
+};
 
 function formatDateTime(value) {
   const date = new Date(value);
@@ -30,9 +34,14 @@ function formatDuration(start, end) {
 function baseGroup(group) {
   const [severity, severityTone] = severityMap[group.severity] ?? ["未知", "medium"];
   const [state, stateTone] = stateMap[group.state] ?? ["未知状态", "muted"];
+  const serviceMissing = !group.service;
+  const scopeName = scopeMap[group.scope_type] ?? "影响范围";
+  const scopeDisplayName = group.scope_display_name || "未识别";
   return {
-    id: group.id, title: group.title, severity, severityTone, state, stateTone,
-    service: group.service || "未知服务",
+    id: group.id, title: group.problem_type || group.title, rawTitle: group.title,
+    problemType: group.problem_type || group.title, severity, severityTone, state, stateTone,
+    service: group.service || "服务未提供", serviceMissing,
+    scopeText: `${scopeName} · ${scopeDisplayName}`,
     environment: environmentMap[group.environment] ?? "未知环境",
     symptom: symptomMap[group.symptom] ?? group.symptom ?? "异常信号",
     activeCount: group.active_count ?? 0, totalCount: group.total_count ?? 0,
@@ -43,7 +52,9 @@ function baseGroup(group) {
     storm: group.storm_state === "STORM",
     stormText: group.storm_state === "STORM" ? "告警风暴" : "正常流量",
     incident: group.incident ?? null,
-    incidentText: group.incident ? "已关联事故" : "待关联事故",
+    incidentText: group.incident
+      ? "已关联事故"
+      : serviceMissing ? "未创建事故（服务未提供）" : "待关联事故",
     firstObservedAt: formatDateTime(group.first_observed_at),
     lastObservedAt: formatDateTime(group.last_observed_at),
     duration: formatDuration(group.first_observed_at, group.last_observed_at),
@@ -83,7 +94,7 @@ export function toAlertGroupMember(alert) {
   const [state, stateTone] = stateMap[alert.state] ?? ["未知状态", "muted"];
   return {
     id: alert.id, title: alert.title, severity, severityTone, state, stateTone,
-    sourceName: alert.source_name ?? "未知来源", service: alert.service ?? "未知服务",
+    sourceName: alert.source_name ?? "未知来源", service: alert.service ?? "服务未提供",
     environment: environmentMap[alert.environment] ?? "未知环境",
     firstObservedAt: formatDateTime(alert.first_observed_at),
     lastObservedAt: formatDateTime(alert.last_observed_at),
