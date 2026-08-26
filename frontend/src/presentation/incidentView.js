@@ -42,6 +42,11 @@ const activityMap = {
   INCIDENT_CLOSED: ["事故已关闭", "resolved"],
 };
 
+const activityDefaultMessageMap = {
+  INCIDENT_CLAIMED: "事故由操作员认领",
+  INCIDENT_RELEASED: "事故已解除认领",
+};
+
 const noteCategoryMap = {
   CURRENT_FINDING: "当前发现",
   ACTION_TAKEN: "已执行操作",
@@ -60,12 +65,13 @@ const resolutionCategoryMap = {
 
 function actorLabel(actor) {
   if (!actor) return "操作员";
-  return actor === "manual-api-client" ? "当前操作员" : "操作员";
+  return "操作员";
 }
 
 function safeTimelineDetail(event) {
-  if (event.kind === "incident_claimed") return "由当前操作员认领";
-  return String(event.detail ?? "").replaceAll("manual-api-client", "当前操作员");
+  if (event.kind === "incident_claimed") return "操作员已认领事故";
+  if (event.kind === "incident_released") return "操作员已解除认领";
+  return String(event.detail ?? "");
 }
 
 function toPrimaryAction(action) {
@@ -93,7 +99,7 @@ function toActivity(activity) {
     resolutionCategory: activity.resolution_category
       ? (resolutionCategoryMap[activity.resolution_category] ?? "未知分类")
       : null,
-    message: activity.message ?? "未填写说明",
+    message: activity.message ?? activityDefaultMessageMap[activity.kind] ?? "未填写说明",
     actions: activity.resolution_actions ?? null,
     rootCause: activity.root_cause ?? "尚未确认",
     fromState: activity.from_state ? (stateMap[activity.from_state]?.[0] ?? "未知状态") : null,
@@ -169,10 +175,13 @@ export function toIncidentDetail(overview, now = new Date()) {
     now,
   );
   const [state] = stateMap[overview.state] ?? ["未知状态"];
+  const isCurrentAssignee = Boolean(
+    overview.assignee && overview.allowed_actions?.includes("RELEASE"),
+  );
   return {
     ...base,
     stateCode: overview.state,
-    owner: overview.assignee ? actorLabel(overview.assignee) : "未认领",
+    owner: overview.assignee ? (isCurrentAssignee ? "当前操作员" : "操作员") : "未认领",
     claimedAt: overview.claimed_at ? formatDateTime(overview.claimed_at) : null,
     stateChangedAt: formatDateTime(overview.state_changed_at),
     resolvedAt: overview.resolved_at ? formatDateTime(overview.resolved_at) : null,

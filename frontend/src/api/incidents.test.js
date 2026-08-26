@@ -94,4 +94,21 @@ describe("事故中心 API 客户端", () => {
       userMessage: "事故数据暂时不可用，请稍后重试",
     });
   });
+
+  it("代理无正文 5xx 视为结果未知并允许安全重试", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(null, { status: 500 })),
+    );
+
+    await expect(executeIncidentAction(
+      "inc_1",
+      "notes",
+      { expected_version: 1, category: "GENERAL", message: "待保存记录" },
+      "stable-operation-key",
+    )).rejects.toMatchObject({
+      code: "incident_api_unavailable",
+      userMessage: "事故服务暂时不可用，本次操作结果未知",
+    });
+  });
 });

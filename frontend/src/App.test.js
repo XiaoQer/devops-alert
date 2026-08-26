@@ -84,7 +84,7 @@ describe("事故中心真实联调", () => {
 
   it("认领通过后端保存并刷新真实数据", async () => {
     fetchIncidents.mockResolvedValueOnce({ items: [listItem()], total: 1, limit: 100, offset: 0 }).mockResolvedValueOnce({ items: [listItem({ assignee: "manual-api-client", version: 2 })], total: 1, limit: 100, offset: 0 });
-    fetchIncidentOverview.mockResolvedValueOnce(overview()).mockResolvedValueOnce(overview({ assignee: "manual-api-client", claimed_at: "2026-08-25T02:12:00Z", version: 2 }));
+    fetchIncidentOverview.mockResolvedValueOnce(overview()).mockResolvedValueOnce(overview({ assignee: "manual-api-client", claimed_at: "2026-08-25T02:12:00Z", version: 2, allowed_actions: ["RELEASE", "TRANSITION", "ADD_NOTE", "RESOLVE"] }));
     const wrapper = mount(App); await flushPromises();
     await wrapper.get('[data-testid="claim-incident"]').trigger("click"); await flushPromises();
     expect(executeIncidentAction).toHaveBeenCalledWith(
@@ -218,7 +218,7 @@ describe("事故中心真实联调", () => {
 
     expect(timeline.text()).toContain("添加处置记录");
     expect(timeline.text()).toContain("当前发现");
-    expect(timeline.text()).toContain("当前操作员");
+    expect(timeline.text()).toContain("操作员");
     expect(timeline.text()).not.toContain("NOTE_ADDED");
     expect(timeline.text()).not.toContain("manual-api-client");
   });

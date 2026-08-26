@@ -17,9 +17,15 @@ async function requestJson(path, options = {}) {
     const isJson = response.headers.get("Content-Type")?.includes("application/json");
     const body = isJson ? await response.json() : null;
     if (!response.ok) {
+      const hasSafeError = typeof body?.code === "string";
+      const upstreamUnavailable = response.status >= 500 && !hasSafeError;
       throw new IncidentApiError(
-        typeof body?.code === "string" ? body.code : "incident_api_error",
-        typeof body?.message === "string"
+        upstreamUnavailable
+          ? "incident_api_unavailable"
+          : (hasSafeError ? body.code : "incident_api_error"),
+        upstreamUnavailable
+          ? "事故服务暂时不可用，本次操作结果未知"
+          : typeof body?.message === "string"
           ? body.message
           : "事故数据暂时不可用，请稍后重试",
         response.status,

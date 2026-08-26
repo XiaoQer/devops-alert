@@ -105,7 +105,7 @@ it("详情只转换后端已经持久化的告警、原因和时间线", () => {
   expect(view.alerts[0]).toMatchObject({ state: "触发中", source: "Alertmanager" });
   expect(view.timeline).toHaveLength(2);
   expect(view.timeline[0].title).toBe("创建事故");
-  expect(view.timeline[1].detail).toBe("由当前操作员认领");
+  expect(view.timeline[1].detail).toBe("操作员已认领事故");
   expect(view.timeline[1].detail).not.toContain("manual-api-client");
   expect(view.allowedActions).toEqual(["添加处置记录", "推进状态", "解决事故"]);
   expect(view.allowedActionCodes).toEqual(["ADD_NOTE", "TRANSITION", "RESOLVE"]);
@@ -116,10 +116,41 @@ it("详情只转换后端已经持久化的告警、原因和时间线", () => {
   expect(view.activities[0]).toMatchObject({
     title: "添加处置记录",
     category: "当前发现",
-    actor: "当前操作员",
+    actor: "操作员",
     rootCause: "尚未确认",
   });
   expect(JSON.stringify(view)).not.toContain("manual-api-client");
+});
+
+it("无正文的认领活动使用固定中文摘要", () => {
+  const overview = {
+    ...listItem,
+    assignee: "local-actor",
+    claimed_at: listItem.detected_at,
+    created_at: listItem.detected_at,
+    state_changed_at: listItem.detected_at,
+    resolved_at: null,
+    closed_at: null,
+    alerts: [],
+    alerts_truncated: false,
+    correlation: null,
+    timeline: [],
+    activities: [{
+      id: "iact_claim", kind: "INCIDENT_CLAIMED", actor: "local-actor",
+      from_state: null, to_state: null, note_category: null, message: null,
+      resolution_category: null, resolution_actions: null, root_cause: null,
+      incident_version: 2, created_at: listItem.detected_at,
+    }],
+    activities_truncated: false,
+    allowed_actions: ["RELEASE"],
+    allowed_transitions: [],
+    primary_action: null,
+  };
+
+  const view = toIncidentDetail(overview);
+
+  expect(view.activities[0].message).toBe("事故由操作员认领");
+  expect(view.owner).toBe("当前操作员");
 });
 
 it("未知活动和操作使用安全中文兜底", () => {
