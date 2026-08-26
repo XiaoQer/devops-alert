@@ -37,6 +37,10 @@ class CorrelationProcessor(Protocol):
     def process(self, lease: CorrelationJobLease) -> object: ...
 
 
+class AlertGroupBackfill(Protocol):
+    def enqueue_batch(self, *, limit: int, now: datetime) -> int: ...
+
+
 class AlertGroupJobService(Protocol):
     def claim_batch(
         self,
@@ -63,12 +67,14 @@ class CorrelationRunner:
         settings: Settings,
         clock: Callable[[], datetime] | None = None,
         sleeper: Callable[[float], Awaitable[None]] | None = None,
+        backfill_service: AlertGroupBackfill | None = None,
     ) -> None:
         self._job_service = job_service
         self._processor = processor
         self._settings = settings
         self._clock = clock or (lambda: datetime.now(UTC))
         self._sleeper = sleeper
+        self._backfill_service = backfill_service
         self._stop_event = asyncio.Event()
         self._lease_owner = f"correlation-runner-{uuid4().hex}"
         self.last_cycle_error_code: str | None = None
@@ -97,6 +103,15 @@ class CorrelationRunner:
                     )
                 except Exception:
                     self.last_cycle_error_code = "correlation_cycle_failed"
+        if self._backfill_service is not None:
+            try:
+                await asyncio.to_thread(
+                    self._backfill_service.enqueue_batch,
+                    limit=self._settings.alert_group_backfill_batch_size,
+                    now=now,
+                )
+            except Exception:
+                self.last_cycle_error_code = "alert_group_backfill_failed"
         return len(leases)
 
     async def run_forever(self) -> None:

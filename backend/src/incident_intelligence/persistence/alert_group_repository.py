@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.orm import Session
 
 from incident_intelligence.ids import new_id
@@ -13,6 +13,7 @@ from incident_intelligence.persistence.models import (
     AlertGroupMemberRow,
     AlertGroupRow,
     AlertRow,
+    CorrelationJobRow,
     IncidentAlertLinkRow,
     IncidentRow,
     SignalEventRow,
@@ -48,6 +49,39 @@ class AlertGroupRepository:
         self._session.add(row)
         self._session.flush()
         return row
+
+    def backfill_candidates(self, *, limit: int) -> tuple[AlertRow, ...]:
+        has_current_member = exists(
+            select(AlertGroupMemberRow.alert_id).where(
+                AlertGroupMemberRow.alert_id == AlertRow.id,
+                AlertGroupMemberRow.alert_cycle == AlertRow.cycle,
+            )
+        )
+        has_active_legacy_job = exists(
+            select(CorrelationJobRow.id).where(
+                CorrelationJobRow.alert_id == AlertRow.id,
+                CorrelationJobRow.state.in_(("PENDING", "LEASED")),
+            )
+        )
+        has_current_grouping_job = exists(
+            select(AlertGroupingJobRow.id).where(
+                AlertGroupingJobRow.alert_id == AlertRow.id,
+                AlertGroupingJobRow.alert_version == AlertRow.version,
+            )
+        )
+        return tuple(
+            self._session.scalars(
+                select(AlertRow)
+                .where(
+                    ~has_current_member,
+                    ~has_active_legacy_job,
+                    ~has_current_grouping_job,
+                )
+                .order_by(AlertRow.id)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+        )
 
     def claimable_grouping_jobs(
         self, *, now: datetime, limit: int

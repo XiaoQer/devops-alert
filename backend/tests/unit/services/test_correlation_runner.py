@@ -71,6 +71,15 @@ class FailsFirstProcessor:
         return object()
 
 
+class FakeBackfill:
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, datetime]] = []
+
+    def enqueue_batch(self, *, limit: int, now: datetime) -> int:
+        self.calls.append((limit, now))
+        return 1
+
+
 def settings() -> Settings:
     return Settings(
         database_url="mysql+pymysql://test-client@127.0.0.1/unused",
@@ -85,11 +94,13 @@ def settings() -> Settings:
 def test_runner_isolates_single_job_failure_and_uses_fixed_error_code() -> None:
     jobs = FakeJobs()
     processor = FailsFirstProcessor()
+    backfill = FakeBackfill()
     runner = CorrelationRunner(
         job_service=jobs,
         processor=processor,
         settings=settings(),
         clock=lambda: NOW,
+        backfill_service=backfill,
     )
 
     processed = asyncio.run(runner.run_once())
@@ -97,6 +108,7 @@ def test_runner_isolates_single_job_failure_and_uses_fixed_error_code() -> None:
     assert processed == 2
     assert len(processor.processed) == 2
     assert jobs.failed == [(f"cjob_{1:032x}", "correlation_processing_failed")]
+    assert backfill.calls == [(100, NOW)]
     assert runner.last_cycle_error_code is None
 
 

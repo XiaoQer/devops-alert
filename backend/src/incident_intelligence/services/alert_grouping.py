@@ -140,6 +140,7 @@ class AlertGroupingService:
                     symptom=symptom,
                     reason_code=decision.reason_codes[0],
                     explanation=decision.explanation,
+                    incident_id=(None if existing_link is None else existing_link.incident_id),
                     now=now,
                 )
                 repository.add_group(group)
@@ -152,6 +153,8 @@ class AlertGroupingService:
                 if selected_group is None:
                     raise RuntimeError("alert_grouping_candidate_not_found")
                 group = selected_group
+                if existing_link is not None and group.incident_id is None:
+                    group.incident_id = existing_link.incident_id
                 if existing_member is None:
                     member = _new_member(group.id, alert, identity, decision.reason_codes[0], now)
                     repository.add_member(member)
@@ -209,6 +212,7 @@ def _new_group(
     symptom: str,
     reason_code: str,
     explanation: str,
+    incident_id: str | None,
     now: datetime,
 ) -> AlertGroupRow:
     active_count = 1 if alert.state == "ACTIVE" else 0
@@ -223,7 +227,7 @@ def _new_group(
         title=alert.title,
         severity=alert.severity,
         representative_alert_id=alert.id,
-        incident_id=None,
+        incident_id=incident_id,
         first_observed_at=alert.first_observed_at,
         last_observed_at=alert.last_observed_at,
         state_changed_at=now,

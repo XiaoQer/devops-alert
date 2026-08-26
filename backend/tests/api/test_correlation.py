@@ -271,3 +271,40 @@ def test_enabled_runner_lifespan_starts_and_stops_cleanly(
         assert runner.started is True
 
     assert runner.stopped is True
+
+
+def test_correlation_master_switch_disables_all_three_processing_loops(
+    migrated_engine: Engine,
+) -> None:
+    class TrackingRunner:
+        def __init__(self) -> None:
+            self.started = False
+
+        async def run_forever(self) -> None:
+            self.started = True
+
+        async def stop(self) -> None:
+            return None
+
+    settings = Settings(
+        database_url="mysql+pymysql://test-client@127.0.0.1/unused",
+        api_token=SecretStr("manual-token-value"),
+        alertmanager_token=SecretStr("alertmanager-token-value"),
+        cloudevents_token=SecretStr("cloudevents-token-value"),
+        correlation_runner_enabled=False,
+        alert_grouping_runner_enabled=True,
+    )
+    app = create_app(settings, engine=migrated_engine)
+    old_correlation = TrackingRunner()
+    grouping = TrackingRunner()
+    group_correlation = TrackingRunner()
+    app.state.correlation_runner = old_correlation
+    app.state.alert_grouping_runner = grouping
+    app.state.alert_group_correlation_runner = group_correlation
+
+    with TestClient(app) as client:
+        assert client.get("/health/live").status_code == 200
+
+    assert old_correlation.started is False
+    assert grouping.started is False
+    assert group_correlation.started is False

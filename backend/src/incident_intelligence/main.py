@@ -11,6 +11,7 @@ from incident_intelligence.api.router import create_router
 from incident_intelligence.persistence.session import get_engine, make_session_factory
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.alert_center import AlertCenterService
+from incident_intelligence.services.alert_group_backfill import AlertGroupBackfillService
 from incident_intelligence.services.alert_group_correlation import AlertGroupCorrelationService
 from incident_intelligence.services.alert_group_correlation_jobs import (
     AlertGroupCorrelationJobService,
@@ -42,7 +43,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     group_correlation_task: asyncio.Task[None] | None = None
     if app.state.settings.correlation_runner_enabled:
         runner_task = asyncio.create_task(app.state.correlation_runner.run_forever())
-    if app.state.settings.alert_grouping_runner_enabled:
+    if (
+        app.state.settings.correlation_runner_enabled
+        and app.state.settings.alert_grouping_runner_enabled
+    ):
         grouping_runner_task = asyncio.create_task(app.state.alert_grouping_runner.run_forever())
     if app.state.settings.correlation_runner_enabled:
         group_correlation_task = asyncio.create_task(
@@ -109,6 +113,9 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
     app.state.alert_grouping_service = AlertGroupingService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
+    app.state.alert_group_backfill_service = AlertGroupBackfillService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
+    )
     app.state.alert_group_correlation_job_service = AlertGroupCorrelationJobService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
@@ -121,6 +128,7 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
         job_service=app.state.correlation_job_service,
         processor=app.state.correlation_service,
         settings=resolved_settings,
+        backfill_service=app.state.alert_group_backfill_service,
     )
     app.state.alert_grouping_runner = AlertGroupingRunner(
         job_service=app.state.alert_grouping_job_service,
