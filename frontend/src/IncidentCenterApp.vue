@@ -11,6 +11,7 @@ import IncidentOperationDialog from "./components/IncidentOperationDialog.vue";
 import IncidentQuickNote from "./components/IncidentQuickNote.vue";
 import IncidentResolveDialog from "./components/IncidentResolveDialog.vue";
 import IncidentStageBar from "./components/IncidentStageBar.vue";
+import AlertCenter from "./components/AlertCenter.vue";
 import { useIncidentCenter } from "./composables/useIncidentCenter";
 
 const navItems = [
@@ -86,6 +87,10 @@ function chooseNav(item) {
   }
   showNotice(`${item.label}将在后续页面中完善`);
 }
+function openIncident(incidentId) {
+  activeNav.value = "incidents";
+  selectIncident(incidentId);
+}
 </script>
 
 <template>
@@ -146,9 +151,7 @@ function chooseNav(item) {
           </template>
         </section>
       </div>
-      <section v-else-if="activeNav === 'alerts'" data-testid="alert-center" class="module-placeholder">
-        <PhBell :size="30" /><h2>告警中心</h2><p>正在接入后端真实告警数据。</p>
-      </section>
+      <AlertCenter v-else-if="activeNav === 'alerts'" @open-incident="openIncident" />
       <section v-else-if="activeNav === 'alert-sources'" data-testid="alert-source-center" class="module-placeholder">
         <PhGear :size="30" /><h2>接入源管理</h2><p>正在接入告警源、凭据与接收记录。</p>
       </section>
