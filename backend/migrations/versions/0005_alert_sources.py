@@ -129,7 +129,8 @@ def upgrade() -> None:
             name=op.f("ck_alert_source_credentials_token_digest"),
         ),
         sa.ForeignKeyConstraint(
-            ["alert_source_id"], ["alert_sources.id"],
+            ["alert_source_id"],
+            ["alert_sources.id"],
             name=op.f("fk_alert_source_credentials_alert_source_id_alert_sources"),
             ondelete="RESTRICT",
         ),
@@ -173,7 +174,8 @@ def upgrade() -> None:
             name=op.f("ck_alert_source_receipts_non_negative_counts"),
         ),
         sa.ForeignKeyConstraint(
-            ["alert_source_id"], ["alert_sources.id"],
+            ["alert_source_id"],
+            ["alert_sources.id"],
             name=op.f("fk_alert_source_receipts_alert_source_id_alert_sources"),
             ondelete="RESTRICT",
         ),
@@ -202,8 +204,7 @@ def upgrade() -> None:
             name=op.f("ck_alert_source_operations_action"),
         ),
         sa.CheckConstraint(
-            "char_length(idempotency_key_hash) = 64 "
-            "AND char_length(command_fingerprint) = 64",
+            "char_length(idempotency_key_hash) = 64 AND char_length(command_fingerprint) = 64",
             name=op.f("ck_alert_source_operations_hashes"),
         ),
         sa.CheckConstraint(
@@ -211,12 +212,14 @@ def upgrade() -> None:
             name=op.f("ck_alert_source_operations_result_version"),
         ),
         sa.ForeignKeyConstraint(
-            ["alert_source_id"], ["alert_sources.id"],
+            ["alert_source_id"],
+            ["alert_sources.id"],
             name=op.f("fk_alert_source_operations_alert_source_id_alert_sources"),
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["credential_id"], ["alert_source_credentials.id"],
+            ["credential_id"],
+            ["alert_source_credentials.id"],
             name=op.f("fk_alert_source_operations_credential_id_alert_source_credentials"),
             ondelete="RESTRICT",
         ),

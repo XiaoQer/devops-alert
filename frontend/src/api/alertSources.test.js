@@ -6,6 +6,15 @@ afterEach(() => vi.unstubAllGlobals());
 const ok = () => Promise.resolve(new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }));
 
 describe("告警源管理 API", () => {
+  it("区分读取不可用与写操作结果未知", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("connection refused")));
+    await expect(fetchAlertSources()).rejects.toMatchObject({
+      userMessage: "告警源数据暂时不可用，请稍后重试",
+    });
+    await expect(createAlertSource({ name: "生产来源", source_type: "ALERTMANAGER" }, "key"))
+      .rejects.toMatchObject({ userMessage: "告警源服务暂时不可用，本次操作结果未知" });
+  });
+
   it("读接口使用有界参数", async () => {
     const request = vi.fn().mockImplementation(ok); vi.stubGlobal("fetch", request);
     await fetchAlertSources({ source_type: "ALERTMANAGER", limit: 200 });

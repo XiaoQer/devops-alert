@@ -690,7 +690,7 @@ npm run test:sites
 
 预期：全部通过，现有事故中心、告警中心和告警源管理互不破坏。
 
-- [ ] **步骤 8：提交任务 7**
+- [x] **步骤 8：提交任务 7**
 
 ```bash
 git add frontend/src
@@ -713,7 +713,7 @@ git commit -m "feat: 实现告警源管理页面"
 - 统一验证脚本继续是 `scripts/verify-backend.sh`、`npm test`、`npm run build` 和 `npm run test:sites`。
 - 活跃规格只有在全部验收条件均有证据时移动到 `specs/completed/alert-center-source-management.md`。
 
-- [ ] **步骤 1：运行后端统一验证**
+- [x] **步骤 1：运行后端统一验证**
 
 运行：
 
@@ -723,7 +723,7 @@ git commit -m "feat: 实现告警源管理页面"
 
 预期：Ruff、格式、Mypy、MySQL 测试和覆盖率门槛全部通过。
 
-- [ ] **步骤 2：运行前端统一验证**
+- [x] **步骤 2：运行前端统一验证**
 
 运行：
 
@@ -736,7 +736,7 @@ npm run test:sites
 
 预期：Vitest、生产构建和 Sites Worker 测试全部通过。
 
-- [ ] **步骤 3：执行真实 MySQL 接入链路**
+- [x] **步骤 3：执行真实 MySQL 接入链路**
 
 通过管理 API 创建两个同类型来源，分别使用各自一次性 Token 发送相同外部事件身份，断言：
 
@@ -750,19 +750,19 @@ npm run test:sites
 
 不得把真实 Token 写入命令记录、验证文档或 shell 历史；使用当前终端环境变量并在验证完成后清除。
 
-- [ ] **步骤 4：执行真实浏览器验收**
+- [x] **步骤 4：执行真实浏览器验收**
 
 启动当前后端和 Vite 前端，验证：告警导航、筛选、详情、中文处理过程、事故跳转、来源创建、一次性 Token 确认、轮换、撤销、停用、等待首次数据、最近失败和服务不可用状态。检查浏览器控制台无错误或警告，页面无演示数据。
 
-- [ ] **步骤 5：记录可复核验收证据**
+- [x] **步骤 5：记录可复核验收证据**
 
 验证文档记录命令、测试数量、覆盖率、迁移版本、浏览器旅程和安全扫描结论，只记录来源/告警/事故的非敏感 ID 和固定结果，不记录 Token、请求正文或外部 URL。
 
-- [ ] **步骤 6：更新项目事实并完成规格**
+- [x] **步骤 6：更新项目事实并完成规格**
 
 只有步骤 1–5 全部通过后，通过 `apply_patch` 将 `specs/active/alert-center-source-management.md` 移动为 `specs/completed/alert-center-source-management.md`，并把状态改为“已验收”。同时在 `docs/current-state.md` 写明已实现能力、验证结果和仍未实现的自动取证、AI、生产身份与部署能力。
 
-- [ ] **步骤 7：提交阶段验收**
+- [x] **步骤 7：提交阶段验收**
 
 ```bash
 git add docs/current-state.md docs/verification/2026-08-26-alert-center-source-management.md specs frontend/design-qa.md

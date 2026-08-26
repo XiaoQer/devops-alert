@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from incident_intelligence.domain.alert_sources import ALERTMANAGER_COMPAT_SOURCE_ID
 from incident_intelligence.domain.signal_intake import SignalCommand
 from incident_intelligence.persistence.correlation_repository import CorrelationRepository
 from incident_intelligence.persistence.models import (
@@ -63,6 +64,7 @@ def command(
 ) -> SignalCommand:
     return SignalCommand.model_validate(
         {
+            "alert_source_id": ALERTMANAGER_COMPAT_SOURCE_ID,
             "source": "alertmanager",
             "source_instance": SOURCE_INSTANCE,
             "source_event_id": f"{event_number:064x}",

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from secrets import compare_digest
-from typing import cast
 
 from incident_intelligence.domain.alert_sources import AlertSourceType
 from incident_intelligence.persistence.alert_source_repository import AlertSourceRepository
@@ -83,7 +82,7 @@ class SourceAuthenticationService:
             uow.commit()
             return AuthenticatedAlertSource(
                 alert_source_id=source.id,
-                source_type=cast(AlertSourceType, source.source_type),
+                source_type=source.source_type,
                 credential_id=credential.id,
                 actor=f"alert-source:{source.id}",
             )
