@@ -24,6 +24,7 @@ def candidate(**overrides: object) -> AlertGroupCandidate:
     values: dict[str, object] = {
         "id": GROUP_1,
         "service": "payment-api",
+        "entity_key": "a" * 64,
         "environment": "production",
         "symptom": "errors",
         "last_observed_at": NOW - timedelta(seconds=30),
@@ -37,6 +38,7 @@ def context(**overrides: object) -> GroupingContext:
     values: dict[str, object] = {
         "alert_id": ALERT_ID,
         "service": "payment-api",
+        "entity_key": "a" * 64,
         "environment": "production",
         "symptom": "errors",
         "observed_at": NOW,
@@ -103,7 +105,10 @@ def test_existing_membership_is_kept_before_reconsidering_candidates() -> None:
             "candidate_incident_conflict",
         ),
         ({"candidates": (candidate(environment="staging"),)}, "no_eligible_group"),
-        ({"candidates": (candidate(service="order-api"),)}, "no_eligible_group"),
+        (
+            {"candidates": (candidate(service="order-api", entity_key="b" * 64),)},
+            "no_eligible_group",
+        ),
         ({"candidates": (candidate(symptom="latency"),)}, "no_eligible_group"),
     ],
 )
@@ -133,6 +138,37 @@ def test_source_is_not_a_grouping_key() -> None:
 
     assert decision.action == "JOIN_GROUP"
     assert not hasattr(context(), "source")
+
+
+def test_service_missing_alert_joins_matching_entity_candidate() -> None:
+    decision = decide_alert_group(
+        GroupingContext.model_validate(
+            {
+                "alert_id": ALERT_ID,
+                "service": None,
+                "entity_key": "e" * 64,
+                "environment": "unknown",
+                "symptom": "pod_not_ready",
+                "observed_at": NOW,
+                "catalog_state": None,
+                "candidates": (
+                    {
+                        "id": GROUP_1,
+                        "service": None,
+                        "entity_key": "e" * 64,
+                        "environment": "unknown",
+                        "symptom": "pod_not_ready",
+                        "last_observed_at": NOW - timedelta(seconds=30),
+                        "incident_id": None,
+                    },
+                ),
+            }
+        )
+    )
+
+    assert decision.action == "JOIN_GROUP"
+    assert decision.selected_group_id == GROUP_1
+    assert decision.reason_codes == ("same_entity_environment_symptom_window",)
 
 
 @pytest.mark.parametrize(

@@ -16,6 +16,7 @@ GroupingAction = Literal["CREATE_GROUP", "JOIN_GROUP", "KEEP_GROUP"]
 GroupingReasonCode = Literal[
     "alert_already_grouped",
     "same_service_environment_symptom_window",
+    "same_entity_environment_symptom_window",
     "no_eligible_group",
     "multiple_eligible_groups",
     "service_not_registered",
@@ -45,6 +46,9 @@ EXPLANATIONS: dict[GroupingReasonCode, str] = {
     "same_service_environment_symptom_window": (
         "服务、环境和症状一致，且位于 120 秒活动窗口内，已归入现有告警组。"
     ),
+    "same_entity_environment_symptom_window": (
+        "对象、环境和症状一致，且位于 120 秒活动窗口内，已归入现有告警组。"
+    ),
     "no_eligible_group": "没有唯一且满足安全条件的现有告警组，已建立独立告警组。",
     "multiple_eligible_groups": "同时存在多个符合条件的告警组，为避免误合并已建立独立告警组。",
     "service_not_registered": "服务尚未登记，无法安全自动归组，已建立独立告警组。",
@@ -59,7 +63,8 @@ class AlertGroupCandidate(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: AlertGroupId
-    service: ServiceName
+    service: ServiceName | None
+    entity_key: str = Field(pattern=r"^[0-9a-f]{64}$")
     environment: Environment
     symptom: Symptom
     last_observed_at: UtcAwareDatetime
@@ -70,7 +75,8 @@ class GroupingContext(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     alert_id: AlertId
-    service: ServiceName
+    service: ServiceName | None
+    entity_key: str = Field(pattern=r"^[0-9a-f]{64}$")
     environment: Environment
     symptom: Symptom
     observed_at: UtcAwareDatetime
@@ -101,9 +107,9 @@ class ResourceIdentity(BaseModel):
 def decide_alert_group(context: GroupingContext) -> GroupingDecision:
     if context.existing_group_id is not None:
         return _decision("KEEP_GROUP", "alert_already_grouped", context.existing_group_id)
-    if context.catalog_state is None:
+    if context.service is not None and context.catalog_state is None:
         return _decision("CREATE_GROUP", "service_not_registered")
-    if context.catalog_state is CatalogState.INACTIVE:
+    if context.service is not None and context.catalog_state is CatalogState.INACTIVE:
         return _decision("CREATE_GROUP", "service_inactive")
     if context.symptom.casefold() == "unknown":
         return _decision("CREATE_GROUP", "symptom_unknown")
@@ -111,7 +117,7 @@ def decide_alert_group(context: GroupingContext) -> GroupingDecision:
     exact_candidates = tuple(
         item
         for item in context.candidates
-        if item.service == context.service
+        if item.entity_key == context.entity_key
         and item.environment == context.environment
         and item.symptom == context.symptom
     )
@@ -124,9 +130,14 @@ def decide_alert_group(context: GroupingContext) -> GroupingDecision:
 
     if len(eligible_candidates) == 1:
         item = eligible_candidates[0]
+        reason: GroupingReasonCode = (
+            "same_entity_environment_symptom_window"
+            if context.service is None
+            else "same_service_environment_symptom_window"
+        )
         return _decision(
             "JOIN_GROUP",
-            "same_service_environment_symptom_window",
+            reason,
             item.id,
             (item.id,),
         )

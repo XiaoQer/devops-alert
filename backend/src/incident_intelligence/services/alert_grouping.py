@@ -106,21 +106,18 @@ class AlertGroupingService:
             )
             existing_member = repository.find_member(alert.id, alert.cycle, for_update=True)
             existing_link = repository.find_incident_link(alert.id)
-            candidates = (
-                ()
-                if service is None
-                else repository.active_candidates(
-                    service=service,
-                    environment=alert.environment,
-                    symptom=symptom,
-                    limit=GROUPING_CANDIDATE_LIMIT,
-                )
+            candidates = repository.active_candidates(
+                entity_key=alert.entity_key,
+                environment=alert.environment,
+                symptom=symptom,
+                limit=GROUPING_CANDIDATE_LIMIT,
             )
             decision = decide_alert_group(
                 GroupingContext.model_validate(
                     {
                         "alert_id": alert.id,
                         "service": alert.service,
+                        "entity_key": alert.entity_key,
                         "environment": alert.environment,
                         "symptom": symptom,
                         "observed_at": alert.last_observed_at,
@@ -228,6 +225,9 @@ def _new_group(
         storm_state="NORMAL",
         rule_version=GROUPING_RULE_VERSION,
         service=alert.service,
+        entity_type=alert.entity_type,
+        entity_key=alert.entity_key,
+        entity_display_name=alert.entity_display_name,
         environment=alert.environment,
         symptom=symptom,
         title=alert.title,
@@ -320,6 +320,7 @@ def _candidate(row: AlertGroupRow) -> AlertGroupCandidate:
         {
             "id": row.id,
             "service": row.service,
+            "entity_key": row.entity_key,
             "environment": row.environment,
             "symptom": row.symptom,
             "last_observed_at": row.last_observed_at,

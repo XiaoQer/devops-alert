@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from functools import partial
 from threading import Barrier
 
-from sqlalchemy import event, func, select
+from sqlalchemy import event, func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -15,9 +15,11 @@ from incident_intelligence.persistence.models import (
     AlertGroupingJobRow,
     AlertGroupMemberRow,
     AlertGroupRow,
+    AlertRow,
     AuditEventRow,
     CorrelationJobRow,
     ServiceCatalogEntryRow,
+    SignalEventRow,
 )
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.alert_grouping import AlertGroupingService
@@ -109,6 +111,60 @@ def test_two_similar_alerts_converge_to_one_explainable_group(
             )
             == 2
         )
+
+
+def test_alerts_without_service_converge_by_entity_identity(
+    migrated_engine: Engine,
+) -> None:
+    session_factory = sessionmaker(bind=migrated_engine, expire_on_commit=False)
+    clock = [NOW + timedelta(minutes=1)]
+    intake, jobs, grouping = services(session_factory, clock)
+    shared_facts = {
+        "symptom": "errors",
+        "namespace": "payments",
+        "pod": "payment-worker-0",
+    }
+    intake.submit_batch(
+        [
+            command(30, service=None, facts=shared_facts),
+            command(31, service=None, facts=shared_facts),
+        ],
+        "alertmanager-adapter",
+        "req-no-service",
+    )
+
+    try:
+        leases = jobs.claim_batch("grouping-runner", clock[0], limit=10, lease_seconds=30)
+        results = [grouping.process(lease) for lease in leases]
+
+        assert {result.action for result in results} == {"CREATE_GROUP", "JOIN_GROUP"}
+        with session_factory() as session:
+            group = session.scalar(select(AlertGroupRow))
+            assert group is not None
+            assert group.service is None
+            assert group.entity_type == "POD"
+            assert group.entity_display_name == "payments/payment-worker-0"
+            assert group.total_count == 2
+            assert group.active_count == 2
+            assert session.scalar(select(func.count()).select_from(AlertGroupMemberRow)) == 2
+            assert session.scalar(select(func.count()).select_from(CorrelationJobRow)) == 0
+    finally:
+        # 0007 的降级保护会拒绝仍含空 service 的测试数据。
+        with session_factory() as session:
+            session.execute(
+                update(SignalEventRow)
+                .where(SignalEventRow.service.is_(None))
+                .values(service="test-cleanup")
+            )
+            session.execute(
+                update(AlertRow).where(AlertRow.service.is_(None)).values(service="test-cleanup")
+            )
+            session.execute(
+                update(AlertGroupRow)
+                .where(AlertGroupRow.service.is_(None))
+                .values(service="test-cleanup")
+            )
+            session.commit()
 
 
 def test_superseded_job_is_safe_and_resolution_updates_group_without_closing_incident(

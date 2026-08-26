@@ -60,4 +60,7 @@
 
 ## 验证证据
 
-待实施后补充。
+- AlertmanagerConfig 已取消 service 路由过滤，真实接收 6 条无 service 的 `KubePodNotReady` 告警；
+- 无 service 归组领域测试和真实 MySQL 集成测试已通过；
+- 本地历史失败归组任务重试后 6/6 成功，页面告警组总数从 2 增加到 8；
+- 前端实体中文展示与无 service 事故关联跳过决策尚未完成，因此规格继续保持活跃。

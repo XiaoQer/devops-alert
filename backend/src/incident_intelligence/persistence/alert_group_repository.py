@@ -162,7 +162,7 @@ class AlertGroupRepository:
     def active_candidates(
         self,
         *,
-        service: str,
+        entity_key: str,
         environment: str,
         symptom: str,
         limit: int,
@@ -172,7 +172,7 @@ class AlertGroupRepository:
                 select(AlertGroupRow)
                 .where(
                     AlertGroupRow.state == "ACTIVE",
-                    AlertGroupRow.service == service,
+                    AlertGroupRow.entity_key == entity_key,
                     AlertGroupRow.environment == environment,
                     AlertGroupRow.symptom == symptom,
                 )
