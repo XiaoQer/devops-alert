@@ -67,6 +67,7 @@ function mountCenter() {
 }
 
 beforeEach(() => {
+  vi.resetAllMocks();
   fetchIncidents.mockResolvedValue({ items: [listItem], total: 1, limit: 100, offset: 0 });
   fetchIncidentOverview.mockResolvedValue(overview);
   fetchIncidentAlertGroups.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
@@ -78,6 +79,17 @@ afterEach(() => {
 });
 
 describe("事故处置前端状态", () => {
+  it("重新进入同一事故时刷新告警组事实而不是保留回填中的旧快照", async () => {
+    const staleGroup = { id: "agr_1", title: "支付异常", state: "ACTIVE", storm_state: "STORM", severity: "high", service: "payment-api", environment: "production", symptom: "errors", active_count: 55, total_count: 55, impacted_resource_count: 55, first_observed_at: "2026-08-26T08:00:00Z", last_observed_at: "2026-08-26T08:01:00Z", explanation: "归组原因", incident: null };
+    fetchIncidentAlertGroups.mockResolvedValueOnce({ items: [staleGroup], total: 1, limit: 50, offset: 0 }).mockResolvedValueOnce({ items: [{ ...staleGroup, active_count: 101, total_count: 101, impacted_resource_count: 101 }], total: 1, limit: 50, offset: 0 });
+    const mounted = mountCenter(); await flushPromises();
+    await mounted.center.selectIncident("inc_1"); await flushPromises();
+    expect(fetchIncidentOverview).toHaveBeenCalledTimes(2);
+    expect(fetchIncidentAlertGroups).toHaveBeenCalledTimes(2);
+    expect(mounted.center.incidentGroups.value[0].memberText).toBe("101 条原始告警");
+    mounted.wrapper.unmount();
+  });
+
   it("详情优先读取关联告警组，告警组失败不阻断人工处置", async () => {
     fetchIncidentAlertGroups.mockRejectedValueOnce({ userMessage: "告警组暂时不可用" });
     const mounted = mountCenter(); await flushPromises();

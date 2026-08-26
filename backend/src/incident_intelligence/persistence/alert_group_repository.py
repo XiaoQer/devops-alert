@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
+from typing import cast
 
-from sqlalchemy import and_, exists, or_, select
+from sqlalchemy import and_, case, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from incident_intelligence.ids import new_id
@@ -18,6 +20,20 @@ from incident_intelligence.persistence.models import (
     IncidentRow,
     SignalEventRow,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class AlertGroupAggregate:
+    total_count: int
+    active_count: int
+    impacted_resource_count: int
+    first_observed_at: datetime
+    last_observed_at: datetime
+    last_member_at: datetime
+    recent_member_count: int
+    representative_alert_id: str
+    representative_title: str
+    representative_severity: str
 
 
 class AlertGroupRepository:
@@ -184,6 +200,57 @@ class AlertGroupRepository:
             self._session.scalars(
                 select(AlertGroupMemberRow).where(AlertGroupMemberRow.alert_group_id == group_id)
             )
+        )
+
+    def aggregate_group(
+        self, group_id: str, *, recent_since: datetime
+    ) -> AlertGroupAggregate | None:
+        row = self._session.execute(
+            select(
+                func.count(AlertGroupMemberRow.alert_id),
+                func.sum(case((AlertGroupMemberRow.current_state == "ACTIVE", 1), else_=0)),
+                func.count(func.distinct(AlertGroupMemberRow.resource_key)),
+                func.min(AlertRow.first_observed_at),
+                func.max(AlertRow.last_observed_at),
+                func.max(AlertGroupMemberRow.joined_at),
+                func.sum(case((AlertGroupMemberRow.joined_at >= recent_since, 1), else_=0)),
+            )
+            .join(AlertRow, AlertRow.id == AlertGroupMemberRow.alert_id)
+            .where(AlertGroupMemberRow.alert_group_id == group_id)
+        ).one()
+        if not row[0]:
+            return None
+        representative = self._session.execute(
+            select(
+                AlertGroupMemberRow.alert_id,
+                AlertRow.title,
+                AlertGroupMemberRow.current_severity,
+            )
+            .join(AlertRow, AlertRow.id == AlertGroupMemberRow.alert_id)
+            .where(AlertGroupMemberRow.alert_group_id == group_id)
+            .order_by(
+                case(
+                    (AlertGroupMemberRow.current_severity == "critical", 3),
+                    (AlertGroupMemberRow.current_severity == "high", 2),
+                    (AlertGroupMemberRow.current_severity == "medium", 1),
+                    else_=0,
+                ).desc(),
+                AlertRow.last_observed_at.desc(),
+                AlertGroupMemberRow.alert_id.desc(),
+            )
+            .limit(1)
+        ).one()
+        return AlertGroupAggregate(
+            total_count=int(row[0]),
+            active_count=int(row[1] or 0),
+            impacted_resource_count=int(row[2]),
+            first_observed_at=cast(datetime, row[3]),
+            last_observed_at=cast(datetime, row[4]),
+            last_member_at=cast(datetime, row[5]),
+            recent_member_count=int(row[6] or 0),
+            representative_alert_id=cast(str, representative[0]),
+            representative_title=cast(str, representative[1]),
+            representative_severity=cast(str, representative[2]),
         )
 
     def find_alert(self, alert_id: str) -> AlertRow | None:

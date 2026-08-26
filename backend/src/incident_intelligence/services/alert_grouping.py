@@ -36,7 +36,6 @@ GROUPING_CANDIDATE_LIMIT = 21
 STORM_MEMBER_THRESHOLD = 20
 STORM_WINDOW_SECONDS = 60
 STORM_CLEAR_SECONDS = 300
-SEVERITY_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 GroupingResultAction = Literal["CREATE_GROUP", "JOIN_GROUP", "KEEP_GROUP", "SUPERSEDED"]
 
 
@@ -276,39 +275,27 @@ def _refresh_group(
     explanation: str,
     now: datetime,
 ) -> None:
-    members = repository.list_members(group.id)
-    alerts = tuple(
-        alert for member in members if (alert := repository.find_alert(member.alert_id)) is not None
+    aggregate = repository.aggregate_group(
+        group.id,
+        recent_since=now - timedelta(seconds=STORM_WINDOW_SECONDS),
     )
-    if not members or not alerts:
+    if aggregate is None:
         raise RuntimeError("alert_grouping_group_has_no_members")
 
-    active_count = sum(member.current_state == "ACTIVE" for member in members)
     previous_state = group.state
-    group.state = "ACTIVE" if active_count else "RESOLVED"
+    group.state = "ACTIVE" if aggregate.active_count else "RESOLVED"
     if group.state != previous_state:
         group.state_changed_at = now
-    group.active_count = active_count
-    group.total_count = len(members)
-    group.impacted_resource_count = len({member.resource_key for member in members})
-    group.first_observed_at = min(alert.first_observed_at for alert in alerts)
-    group.last_observed_at = max(alert.last_observed_at for alert in alerts)
-    group.last_member_at = max(member.joined_at for member in members)
-    representative = max(
-        zip(members, alerts, strict=True),
-        key=lambda pair: (
-            SEVERITY_RANK[pair[0].current_severity],
-            pair[1].last_observed_at,
-            pair[0].alert_id,
-        ),
-    )
-    group.severity = representative[0].current_severity
-    group.representative_alert_id = representative[0].alert_id
-    group.title = representative[1].title
-    recent_members = sum(
-        member.joined_at >= now - timedelta(seconds=STORM_WINDOW_SECONDS) for member in members
-    )
-    if recent_members >= STORM_MEMBER_THRESHOLD:
+    group.active_count = aggregate.active_count
+    group.total_count = aggregate.total_count
+    group.impacted_resource_count = aggregate.impacted_resource_count
+    group.first_observed_at = aggregate.first_observed_at
+    group.last_observed_at = aggregate.last_observed_at
+    group.last_member_at = aggregate.last_member_at
+    group.severity = aggregate.representative_severity
+    group.representative_alert_id = aggregate.representative_alert_id
+    group.title = aggregate.representative_title
+    if aggregate.recent_member_count >= STORM_MEMBER_THRESHOLD:
         group.storm_state = "STORM"
     elif group.storm_state == "STORM" and group.last_member_at <= now - timedelta(
         seconds=STORM_CLEAR_SECONDS

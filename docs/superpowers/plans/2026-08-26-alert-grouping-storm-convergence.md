@@ -8,7 +8,7 @@
 
 **技术栈：** Python 3.13、FastAPI、Pydantic 2、SQLAlchemy 2、Alembic、MySQL 8.4、Vue 3、Vite、Vitest、Pytest、Playwright。
 
-**规格：** `specs/active/alert-grouping-storm-convergence.md`
+**规格：** `specs/completed/alert-grouping-storm-convergence.md`
 
 ## 全局约束
 
@@ -498,11 +498,11 @@ git commit -m "feat: 实现组优先告警中心"
 - 1,000 条并发相似告警：无重复成员、组或活动任务。
 - 告警中心可以访问第 101 条成员；事故列表与详情都显示 101。
 
-- [ ] **步骤 1：写完整真实 MySQL 风暴测试**
+- [x] **步骤 1：写完整真实 MySQL 风暴测试**
 
 测试必须发送不同 fingerprint、Pod 和标题的同服务同症状告警，验证分批 100+1、精确重放、跨来源归组、跨环境隔离、三症状分组、恢复不关闭事故和失败重试。
 
-- [ ] **步骤 2：运行统一后端验收**
+- [x] **步骤 2：运行统一后端验收**
 
 ```bash
 ./scripts/verify-backend.sh
@@ -510,7 +510,7 @@ git commit -m "feat: 实现组优先告警中心"
 
 要求 Ruff、格式、Mypy、全部 Pytest 和覆盖率门槛通过。
 
-- [ ] **步骤 3：运行统一前端验收**
+- [x] **步骤 3：运行统一前端验收**
 
 ```bash
 cd frontend
@@ -519,11 +519,11 @@ npm run build
 npm run test:sites
 ```
 
-- [ ] **步骤 4：执行真实浏览器旅程**
+- [x] **步骤 4：执行真实浏览器旅程**
 
 在真实 MySQL、真实后端和 Vite 页面中验证：默认只出现一个风暴告警组；展开后可以翻页到第 101 条；组卡和事故页面均显示 101；页面没有控制台错误、UUID、Token、来源 URI或实验身份。
 
-- [ ] **步骤 5：封存证据、完成规格并提交**
+- [x] **步骤 5：封存证据、完成规格并提交**
 
 把命令、通过数量、覆盖率、数据库计数、浏览器截图结论和已知缺口写入验证文档；更新 `docs/current-state.md`；逐条填写规格验证证据并移入 completed。
 

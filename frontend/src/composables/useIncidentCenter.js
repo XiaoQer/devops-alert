@@ -128,9 +128,8 @@ export function useIncidentCenter() {
   }
 
   function selectIncident(id) {
-    if (id === selectedId.value && detailState.value === "ready") return;
     selectedId.value = id;
-    loadDetail(id);
+    return loadDetail(id);
   }
 
   async function performOperation(operation) {

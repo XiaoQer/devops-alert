@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from functools import partial
 from threading import Barrier
 
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -196,3 +196,40 @@ def test_concurrent_similar_jobs_converge_via_catalog_lock(
     with session_factory() as session:
         assert session.scalar(select(func.count()).select_from(AlertGroupRow)) == 1
         assert session.scalar(select(func.count()).select_from(AlertGroupMemberRow)) == 2
+
+
+def test_group_refresh_uses_bounded_queries_instead_of_querying_every_member(
+    migrated_engine: Engine,
+) -> None:
+    session_factory = sessionmaker(bind=migrated_engine, expire_on_commit=False)
+    seed_catalog(session_factory)
+    clock = [NOW + timedelta(minutes=1)]
+    intake, jobs, grouping = services(session_factory, clock)
+    intake.submit_batch(
+        [command(index) for index in range(1, 22)], "alertmanager-adapter", "req-bounded"
+    )
+    leases = jobs.claim_batch("grouping-runner", clock[0], limit=50, lease_seconds=30)
+    for lease in leases[:-1]:
+        grouping.process(lease)
+
+    selects = 0
+
+    def count_selects(
+        _connection: object,
+        _cursor: object,
+        statement: str,
+        _parameters: object,
+        _context: object,
+        _executemany: object,
+    ) -> None:
+        nonlocal selects
+        if statement.lstrip().upper().startswith("SELECT"):
+            selects += 1
+
+    event.listen(migrated_engine, "before_cursor_execute", count_selects)
+    try:
+        grouping.process(leases[-1])
+    finally:
+        event.remove(migrated_engine, "before_cursor_execute", count_selects)
+
+    assert selects <= 18
