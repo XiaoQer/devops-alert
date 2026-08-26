@@ -2,6 +2,12 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from incident_intelligence.domain.enums import IncidentState
+from incident_intelligence.domain.incident_operations import (
+    IncidentNoteCategory,
+    IncidentResolutionCategory,
+)
+
 
 class IncidentListItemResponse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", from_attributes=True)
@@ -83,10 +89,52 @@ class IncidentOverviewResponse(BaseModel):
     timeline: tuple[IncidentTimelineResponse, ...]
 
 
-class IncidentClaimResponse(BaseModel):
+class IncidentOperationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+
+
+class IncidentClaimRequest(IncidentOperationRequest):
+    pass
+
+
+class IncidentReleaseRequest(IncidentOperationRequest):
+    pass
+
+
+class IncidentTransitionRequest(IncidentOperationRequest):
+    target_state: IncidentState
+    message: str = Field(min_length=1, max_length=1_000)
+
+
+class IncidentNoteRequest(IncidentOperationRequest):
+    category: IncidentNoteCategory
+    message: str = Field(min_length=1, max_length=2_000)
+
+
+class IncidentResolveRequest(IncidentOperationRequest):
+    category: IncidentResolutionCategory
+    message: str = Field(min_length=1, max_length=2_000)
+    resolution_actions: str = Field(min_length=1, max_length=4_000)
+    root_cause: str | None = Field(default=None, max_length=4_000)
+
+
+class IncidentReopenRequest(IncidentOperationRequest):
+    reason: str = Field(min_length=1, max_length=2_000)
+
+
+class IncidentCloseRequest(IncidentOperationRequest):
+    message: str = Field(min_length=1, max_length=2_000)
+
+
+class IncidentOperationResponse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", from_attributes=True)
 
     id: str
-    assignee: str
-    claimed_at: datetime
+    action: str
+    state: str
+    assignee: str | None
     version: int
+    activity_id: str
+    occurred_at: datetime

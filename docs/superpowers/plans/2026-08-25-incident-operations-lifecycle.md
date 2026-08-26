@@ -390,7 +390,7 @@ git commit -m "feat: 实现事故处置事务服务"
 - Produces: `IncidentOperationResponse`。
 - Consumes: `require_manual_actor`、`require_idempotency_key` 和 Task 3 `IncidentOperationService`。
 
-- [ ] **Step 1: 编写完整 HTTP 旅程失败测试**
+- [x] **Step 1: 编写完整 HTTP 旅程失败测试**
 
 ```python
 def post_operation(context, incident_id, suffix, version, body=None, key=None):
@@ -415,7 +415,7 @@ def test_incident_operation_http_journey(context):
 
 旅程继续覆盖缓解、恢复观察、解决、重新打开、再次解决和关闭，逐步使用上一步响应版本。
 
-- [ ] **Step 2: 编写认证、容量和稳定错误失败测试**
+- [x] **Step 2: 编写认证、容量和稳定错误失败测试**
 
 ```python
 @pytest.mark.parametrize("suffix", ["claim", "release", "transitions", "notes", "resolve", "reopen", "close"])
@@ -434,13 +434,13 @@ def test_stale_version_returns_safe_conflict(context):
 
 参数测试覆盖 1001 字符状态说明、2001 字符记录/说明、4001 字符措施/根因、非法枚举、浏览器自报 `actor` 或 `assignee` 产生 422。
 
-- [ ] **Step 3: 运行 API 测试确认路由契约失败**
+- [x] **Step 3: 运行 API 测试确认路由契约失败**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/api/test_incidents.py -q`
 
 Expected: FAIL，明确指向请求模型、幂等头或路由缺失。
 
-- [ ] **Step 4: 实现 Pydantic 请求、统一响应和异常映射**
+- [x] **Step 4: 实现 Pydantic 请求、统一响应和异常映射**
 
 ```python
 class IncidentOperationRequest(BaseModel):
@@ -460,13 +460,13 @@ class IncidentOperationResponse(BaseModel):
 
 各操作使用独立请求模型，禁止宽泛 `dict`。路由统一调用 `_execute_operation` 映射 Task 3 稳定异常；格式错误 Incident ID 继续返回统一 404。
 
-- [ ] **Step 5: 运行 API 测试及现有认证回归**
+- [x] **Step 5: 运行 API 测试及现有认证回归**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/api/test_incidents.py tests/api/test_resources.py tests/api/test_correlation.py -q`
 
 Expected: 全部通过。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add backend/src/incident_intelligence/api/schemas/incidents.py backend/src/incident_intelligence/api/routes/incidents.py backend/tests/api/test_incidents.py

@@ -15,7 +15,12 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from incident_intelligence.domain.signal_intake import SignalCommand
 from incident_intelligence.main import create_app
-from incident_intelligence.persistence.models import AuditEventRow, IncidentRow
+from incident_intelligence.persistence.models import (
+    AuditEventRow,
+    IncidentActivityRow,
+    IncidentOperationRow,
+    IncidentRow,
+)
 from incident_intelligence.persistence.session import make_session_factory
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.catalog import CreateServiceCommand, ServiceCatalogService
@@ -108,6 +113,27 @@ def seed_linked_incident(context: IncidentApiContext) -> str:
     return incident_id
 
 
+def post_operation(
+    context: IncidentApiContext,
+    incident_id: str,
+    suffix: str,
+    version: int,
+    body: dict[str, object] | None = None,
+    *,
+    key: str | None = None,
+    headers: dict[str, str] | None = None,
+) -> object:
+    request_headers = {
+        **(context.manual_headers if headers is None else headers),
+        "Idempotency-Key": key or f"{suffix}-{version}",
+    }
+    return context.client.post(
+        f"/api/v1/incidents/{incident_id}/{suffix}",
+        headers=request_headers,
+        json={"expected_version": version, **(body or {})},
+    )
+
+
 def test_list_and_overview_return_real_bounded_aggregate(
     context: IncidentApiContext,
 ) -> None:
@@ -146,17 +172,19 @@ def test_claim_is_persisted_idempotent_and_audited_once(
     context: IncidentApiContext,
 ) -> None:
     incident_id = seed_linked_incident(context)
+    with context.session_factory() as session:
+        incident = session.get(IncidentRow, incident_id)
+        assert incident is not None
+        version = incident.version
 
-    first = context.client.post(
-        f"/api/v1/incidents/{incident_id}/claim", headers=context.manual_headers
-    )
-    replay = context.client.post(
-        f"/api/v1/incidents/{incident_id}/claim", headers=context.manual_headers
-    )
+    first = post_operation(context, incident_id, "claim", version, key="claim-replay")
+    replay = post_operation(context, incident_id, "claim", version, key="claim-replay")
 
     assert first.status_code == replay.status_code == 200
     assert first.json() == replay.json()
     assert first.json()["assignee"] == "manual-api-client"
+    assert first.json()["action"] == "CLAIM"
+    assert first.json()["version"] == version + 1
     with context.session_factory() as session:
         incident = session.get(IncidentRow, incident_id)
         assert incident is not None
@@ -170,7 +198,208 @@ def test_claim_is_persisted_idempotent_and_audited_once(
             )
         )
         assert len(audits) == 1
-        assert audits[0].details == {"reason_code": "manual_claim_requested"}
+        assert set(audits[0].details) == {"reason_code", "activity_id"}
+        assert (
+            session.scalar(
+                select(IncidentActivityRow).where(IncidentActivityRow.incident_id == incident_id)
+            )
+            is not None
+        )
+        assert (
+            session.scalar(
+                select(IncidentOperationRow).where(IncidentOperationRow.incident_id == incident_id)
+            )
+            is not None
+        )
+
+
+def test_incident_operation_http_journey(context: IncidentApiContext) -> None:
+    incident_id = seed_linked_incident(context)
+    with context.session_factory() as session:
+        incident = session.get(IncidentRow, incident_id)
+        assert incident is not None
+        version = incident.version
+
+    steps = (
+        ("claim", {}, "CLAIM", "DETECTED"),
+        (
+            "transitions",
+            {"target_state": "INVESTIGATING", "message": "开始调查"},
+            "TRANSITION",
+            "INVESTIGATING",
+        ),
+        (
+            "notes",
+            {"category": "CURRENT_FINDING", "message": "错误集中在两个实例"},
+            "ADD_NOTE",
+            "INVESTIGATING",
+        ),
+        (
+            "transitions",
+            {"target_state": "MITIGATING", "message": "隔离异常实例"},
+            "TRANSITION",
+            "MITIGATING",
+        ),
+        (
+            "transitions",
+            {"target_state": "MONITORING_RECOVERY", "message": "观察恢复指标"},
+            "TRANSITION",
+            "MONITORING_RECOVERY",
+        ),
+        (
+            "resolve",
+            {
+                "category": "RECOVERED",
+                "message": "错误率恢复正常",
+                "resolution_actions": "隔离异常实例并扩容",
+                "root_cause": None,
+            },
+            "RESOLVE",
+            "RESOLVED",
+        ),
+        ("reopen", {"reason": "错误率再次升高"}, "REOPEN", "INVESTIGATING"),
+        (
+            "resolve",
+            {
+                "category": "RECOVERED",
+                "message": "服务再次恢复",
+                "resolution_actions": "完成配置修正",
+                "root_cause": "实例配置不一致",
+            },
+            "RESOLVE",
+            "RESOLVED",
+        ),
+        ("close", {"message": "复盘完成并关闭事故"}, "CLOSE", "CLOSED"),
+    )
+    for index, (suffix, body, action, state) in enumerate(steps, start=1):
+        response = post_operation(
+            context,
+            incident_id,
+            suffix,
+            version,
+            body,
+            key=f"journey-{index}",
+        )
+        assert response.status_code == 200, response.text
+        result = response.json()
+        version += 1
+        assert result["action"] == action
+        assert result["state"] == state
+        assert result["version"] == version
+        assert result["activity_id"].startswith("iact_")
+
+    with context.session_factory() as session:
+        incident = session.get(IncidentRow, incident_id)
+        assert incident is not None
+        assert incident.state == "CLOSED"
+        assert incident.resolved_at is not None
+        assert incident.closed_at is not None
+        activities = tuple(
+            session.scalars(
+                select(IncidentActivityRow).where(IncidentActivityRow.incident_id == incident_id)
+            )
+        )
+        assert len(activities) == len(steps)
+        assert sum(item.kind == "INCIDENT_RESOLVED" for item in activities) == 2
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    ["claim", "release", "transitions", "notes", "resolve", "reopen", "close"],
+)
+def test_all_operation_routes_require_manual_token_and_idempotency_key(
+    context: IncidentApiContext,
+    suffix: str,
+) -> None:
+    incident_id = "inc_" + "0" * 32
+    without_token = post_operation(
+        context,
+        incident_id,
+        suffix,
+        1,
+        headers={},
+    )
+    without_key = context.client.post(
+        f"/api/v1/incidents/{incident_id}/{suffix}",
+        headers=context.manual_headers,
+        json={"expected_version": 1},
+    )
+    assert without_token.status_code == 401
+    assert without_token.json()["code"] == "authentication_required"
+    assert without_key.status_code == 400
+    assert without_key.json()["code"] == "invalid_idempotency_key"
+
+
+def test_operation_conflicts_return_stable_safe_errors(
+    context: IncidentApiContext,
+) -> None:
+    incident_id = seed_linked_incident(context)
+    stale = post_operation(context, incident_id, "claim", 99, key="stale")
+    assert stale.status_code == 409
+    assert stale.json() == {
+        "code": "incident_version_conflict",
+        "message": "事故已被其他操作更新，请刷新后重试",  # noqa: RUF001
+    }
+
+    with context.session_factory() as session:
+        incident = session.get(IncidentRow, incident_id)
+        assert incident is not None
+        version = incident.version
+    first = post_operation(
+        context,
+        incident_id,
+        "notes",
+        version,
+        {"category": "GENERAL", "message": "第一条记录"},
+        key="conflict-key",
+    )
+    conflict = post_operation(
+        context,
+        incident_id,
+        "notes",
+        version,
+        {"category": "GENERAL", "message": "另一条记录"},
+        key="conflict-key",
+    )
+    assert first.status_code == 200
+    assert conflict.status_code == 409
+    assert conflict.json()["code"] == "incident_operation_conflict"
+
+
+@pytest.mark.parametrize(
+    ("suffix", "body"),
+    [
+        ("transitions", {"target_state": "INVESTIGATING", "message": "x" * 1_001}),
+        ("notes", {"category": "GENERAL", "message": "x" * 2_001}),
+        (
+            "resolve",
+            {
+                "category": "RECOVERED",
+                "message": "已恢复",
+                "resolution_actions": "x" * 4_001,
+                "root_cause": None,
+            },
+        ),
+        ("notes", {"category": "ARBITRARY", "message": "非法分类"}),
+        ("claim", {"actor": "browser-user"}),
+        ("claim", {"assignee": "browser-user"}),
+    ],
+)
+def test_operation_request_fields_are_bounded_and_cannot_report_actor(
+    context: IncidentApiContext,
+    suffix: str,
+    body: dict[str, object],
+) -> None:
+    response = post_operation(
+        context,
+        "inc_" + "0" * 32,
+        suffix,
+        1,
+        body,
+        key=f"invalid-{suffix}-{len(str(body))}",
+    )
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_error"
 
 
 @pytest.mark.parametrize(
