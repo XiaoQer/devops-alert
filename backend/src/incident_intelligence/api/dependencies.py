@@ -16,6 +16,8 @@ from incident_intelligence.services.incident_center import IncidentCenterService
 from incident_intelligence.services.incident_operations import IncidentOperationService
 from incident_intelligence.services.manual_intake import ManualIntakeService
 from incident_intelligence.services.signal_intake import SignalIntakeService
+from incident_intelligence.services.source_authentication import SourceAuthenticationService
+from incident_intelligence.services.source_receipts import SourceReceiptService
 from incident_intelligence.settings import Settings
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -74,6 +76,14 @@ def get_manual_intake_service(request: Request) -> ManualIntakeService:
 
 def get_alert_source_service(request: Request) -> AlertSourceService:
     return cast(AlertSourceService, request.app.state.alert_source_service)
+
+
+def get_source_authentication_service(request: Request) -> SourceAuthenticationService:
+    return cast(SourceAuthenticationService, request.app.state.source_authentication_service)
+
+
+def get_source_receipt_service(request: Request) -> SourceReceiptService:
+    return cast(SourceReceiptService, request.app.state.source_receipt_service)
 
 
 def get_signal_intake_service(request: Request) -> SignalIntakeService:

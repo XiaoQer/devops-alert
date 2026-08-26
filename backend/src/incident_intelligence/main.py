@@ -19,6 +19,8 @@ from incident_intelligence.services.incident_center import IncidentCenterService
 from incident_intelligence.services.incident_operations import IncidentOperationService
 from incident_intelligence.services.manual_intake import ManualIntakeService
 from incident_intelligence.services.signal_intake import SignalIntakeService
+from incident_intelligence.services.source_authentication import SourceAuthenticationService
+from incident_intelligence.services.source_receipts import SourceReceiptService
 from incident_intelligence.settings import Settings
 
 
@@ -54,6 +56,12 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
     app.state.alert_source_service = AlertSourceService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
+    app.state.source_authentication_service = SourceAuthenticationService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
+    )
+    app.state.source_receipt_service = SourceReceiptService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
+    )
     app.state.signal_intake_service = SignalIntakeService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
@@ -81,7 +89,9 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
         default_max_bytes=resolved_settings.request_body_limit_bytes,
         path_limits={
             "/api/v1/intake/alertmanager": resolved_settings.alertmanager_body_limit_bytes,
+            "/api/v1/intake/alertmanager/": resolved_settings.alertmanager_body_limit_bytes,
             "/api/v1/intake/cloudevents": resolved_settings.cloudevents_body_limit_bytes,
+            "/api/v1/intake/cloudevents/": resolved_settings.cloudevents_body_limit_bytes,
         },
     )
     install_error_handlers(app)

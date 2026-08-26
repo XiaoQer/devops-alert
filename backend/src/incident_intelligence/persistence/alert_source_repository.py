@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from incident_intelligence.persistence.models import (
@@ -73,6 +73,19 @@ class AlertSourceRepository:
         statement = select(AlertSourceCredentialRow).where(
             AlertSourceCredentialRow.id == credential_id,
             AlertSourceCredentialRow.alert_source_id == source_id,
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return self._session.scalar(statement)
+
+    def find_credential_by_id(
+        self,
+        credential_id: str,
+        *,
+        for_update: bool = False,
+    ) -> AlertSourceCredentialRow | None:
+        statement = select(AlertSourceCredentialRow).where(
+            AlertSourceCredentialRow.id == credential_id
         )
         if for_update:
             statement = statement.with_for_update()
@@ -156,6 +169,40 @@ class AlertSourceRepository:
             )
             or 0
         )
+
+    def add_receipt(self, row: AlertSourceReceiptRow) -> None:
+        self._session.add(row)
+        self._session.flush()
+
+    def prune_receipts(
+        self,
+        source_id: str,
+        *,
+        cutoff: datetime,
+        keep: int,
+    ) -> None:
+        self._session.execute(
+            delete(AlertSourceReceiptRow).where(
+                AlertSourceReceiptRow.alert_source_id == source_id,
+                AlertSourceReceiptRow.received_at < cutoff,
+            )
+        )
+        excess_ids = tuple(
+            self._session.scalars(
+                select(AlertSourceReceiptRow.id)
+                .where(AlertSourceReceiptRow.alert_source_id == source_id)
+                .order_by(
+                    AlertSourceReceiptRow.received_at.desc(),
+                    AlertSourceReceiptRow.id.desc(),
+                )
+                .offset(keep)
+            )
+        )
+        if excess_ids:
+            self._session.execute(
+                delete(AlertSourceReceiptRow).where(AlertSourceReceiptRow.id.in_(excess_ids))
+            )
+        self._session.flush()
 
     def flush(self) -> None:
         self._session.flush()

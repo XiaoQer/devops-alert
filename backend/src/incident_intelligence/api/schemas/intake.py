@@ -36,3 +36,10 @@ class IntakeBatchResponse(BaseModel):
     @classmethod
     def from_result(cls, result: SignalIntakeBatchResult) -> IntakeBatchResponse:
         return cls.model_validate(result.model_dump())
+
+
+class IntakeValidationResponse(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    valid: bool
+    input_count: int

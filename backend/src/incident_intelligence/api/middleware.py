@@ -20,7 +20,7 @@ class RequestBodyLimitMiddleware:
             await self._app(scope, receive, send)
             return
 
-        max_bytes = self._path_limits.get(scope["path"], self._default_max_bytes)
+        max_bytes = self._max_bytes(scope["path"])
         declared_length = _content_length(scope)
         if declared_length is not None and declared_length > max_bytes:
             await _too_large(scope, receive, send)
@@ -46,6 +46,19 @@ class RequestBodyLimitMiddleware:
             return {"type": "http.request", "body": b"", "more_body": False}
 
         await self._app(scope, replay_body, send)
+
+    def _max_bytes(self, path: str) -> int:
+        exact = self._path_limits.get(path)
+        if exact is not None:
+            return exact
+        matching_prefixes = (
+            (prefix, limit)
+            for prefix, limit in self._path_limits.items()
+            if prefix.endswith("/") and path.startswith(prefix)
+        )
+        return max(
+            matching_prefixes, key=lambda item: len(item[0]), default=("", self._default_max_bytes)
+        )[1]
 
 
 def _content_length(scope: Scope) -> int | None:

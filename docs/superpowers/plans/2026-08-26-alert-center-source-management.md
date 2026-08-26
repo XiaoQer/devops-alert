@@ -226,7 +226,7 @@ cd backend
 
 预期：全部通过，Token 仅首次响应可见，管理操作可安全重放。
 
-- [ ] **步骤 7：提交任务 2**
+- [x] **步骤 7：提交任务 2**
 
 ```bash
 git add backend/src/incident_intelligence backend/tests
@@ -264,7 +264,7 @@ git commit -m "feat: 实现告警源与凭据管理"
 - `SourceReceiptService.record_authenticated_failure(source_id, outcome, reason_code, request_id, now) -> None`。
 - 适配器新增可信参数 `alert_source_id`，但继续从外部负载计算 `source_event_id`、`source_instance` 和 `source_alert_key` 摘要。
 
-- [ ] **步骤 1：写认证、隔离和验证入口失败测试**
+- [x] **步骤 1：写认证、隔离和验证入口失败测试**
 
 ```python
 def test_same_external_identity_is_isolated_by_registered_source(api_context) -> None:
@@ -282,7 +282,7 @@ def test_validation_persists_only_receipt(api_context) -> None:
     assert count_rows("correlation_jobs") == 0
 ```
 
-- [ ] **步骤 2：运行聚焦测试确认失败**
+- [x] **步骤 2：运行聚焦测试确认失败**
 
 运行：
 
@@ -293,11 +293,11 @@ cd backend
 
 预期：动态路由、来源认证和 Receipt 尚不存在而失败。
 
-- [ ] **步骤 3：实现来源认证**
+- [x] **步骤 3：实现来源认证**
 
 解析 `iisrc_<credential_id>.<secret>`，用公开凭据 ID 定位记录，以 `secrets.compare_digest()` 比较 SHA-256 摘要，并依次检查来源归属、适配器类型、凭据状态和来源状态。未认证请求不写 Receipt；已认证但停用或类型不匹配请求写固定安全结果。
 
-- [ ] **步骤 4：把 Receipt 纳入成功事务并实现失败小事务**
+- [x] **步骤 4：把 Receipt 纳入成功事务并实现失败小事务**
 
 ```python
 @dataclass(frozen=True)
@@ -310,15 +310,15 @@ class ReceiptContext:
 
 `SignalIntakeService` 在成功事务内聚合 `SignalIntakeCounts`，插入一条 Receipt，更新来源计数和时间，并清理超 1,000 条或超过 30 天的旧记录。适配器失败通过 `SourceReceiptService` 独立记录 `PAYLOAD_REJECTED`；领域事务失败完整回滚后尽力记录 `PROCESSING_FAILED`。
 
-- [ ] **步骤 5：实现动态普通入口和验证入口**
+- [x] **步骤 5：实现动态普通入口和验证入口**
 
 普通入口路径为 `/api/v1/intake/{adapter}/{alert_source_id}`，验证入口追加 `/validate`。两者复用认证、容量和适配器转换；验证入口不调用 `SignalIntakeService.ingest()`。固定入口继续使用原环境 Token，并注入对应系统兼容来源 ID。
 
-- [ ] **步骤 6：补齐容量、失败和兼容回归**
+- [x] **步骤 6：补齐容量、失败和兼容回归**
 
 验证动态 Alertmanager 256 KiB、CloudEvents 64 KiB、批次 100 条、Token 跨来源失败、撤销立即失败、停用后失败、旧兼容 Token 继续可用、错误响应不回显 Token 或 payload。
 
-- [ ] **步骤 7：运行外部接入完整回归**
+- [x] **步骤 7：运行外部接入完整回归**
 
 运行：
 

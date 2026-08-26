@@ -17,10 +17,16 @@ from incident_intelligence.domain.signal_intake import (
     decide_alert_projection,
 )
 from incident_intelligence.ids import IdPrefix, new_id
+from incident_intelligence.persistence.alert_source_repository import AlertSourceRepository
 from incident_intelligence.persistence.correlation_repository import CorrelationRepository
 from incident_intelligence.persistence.models import AlertRow, SignalIntakeResultRow
 from incident_intelligence.persistence.repositories import RecordRepositories
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from incident_intelligence.services.source_receipts import (
+    ReceiptContext,
+    ReceiptCounts,
+    record_receipt,
+)
 
 
 class SignalIntakeItemResult(BaseModel):
@@ -76,14 +82,27 @@ class SignalIntakeService:
         commands: Sequence[SignalCommand],
         actor: str,
         request_id: str,
+        receipt_context: ReceiptContext | None = None,
     ) -> SignalIntakeBatchResult:
         for command in commands:
             reject_forbidden_identity(command.model_dump(mode="json"))
         fingerprints = tuple(_fingerprint(command) for command in commands)
         try:
-            return self._submit_once(commands, fingerprints, actor, request_id)
+            return self._submit_once(
+                commands,
+                fingerprints,
+                actor,
+                request_id,
+                receipt_context,
+            )
         except IntegrityError:
-            return self._submit_once(commands, fingerprints, actor, request_id)
+            return self._submit_once(
+                commands,
+                fingerprints,
+                actor,
+                request_id,
+                receipt_context,
+            )
 
     def _submit_once(
         self,
@@ -91,6 +110,7 @@ class SignalIntakeService:
         fingerprints: tuple[str, ...],
         actor: str,
         request_id: str,
+        receipt_context: ReceiptContext | None,
     ) -> SignalIntakeBatchResult:
         with self._uow_factory() as uow:
             records = _records(uow)
@@ -106,10 +126,32 @@ class SignalIntakeService:
                 )
                 for command, fingerprint in zip(commands, fingerprints, strict=True)
             )
+            counts = _counts(items)
+            if receipt_context is not None:
+                _validate_receipt_context(commands, receipt_context)
+                record_receipt(
+                    _alert_sources(uow),
+                    id_factory=self._id_factory,
+                    context=receipt_context,
+                    outcome="REPLAYED" if all(item.replayed for item in items) else "ACCEPTED",
+                    reason_code=(
+                        "exact_batch_replay"
+                        if all(item.replayed for item in items)
+                        else "signal_batch_accepted"
+                    ),
+                    input_count=len(commands),
+                    counts=ReceiptCounts(
+                        opened=counts.opened + counts.reopened,
+                        updated=counts.updated,
+                        resolved=counts.resolved,
+                        replayed=counts.replayed,
+                        ignored=counts.stale + counts.orphan_resolved,
+                    ),
+                )
             uow.commit()
         return SignalIntakeBatchResult(
             items=items,
-            counts=_counts(items),
+            counts=counts,
         )
 
     def _submit_command(
@@ -268,6 +310,28 @@ def _correlation(uow: SqlAlchemyUnitOfWork) -> CorrelationRepository:
     if uow.correlation is None:
         raise RuntimeError("工作单元没有可用关联仓储")
     return uow.correlation
+
+
+def _alert_sources(uow: SqlAlchemyUnitOfWork) -> AlertSourceRepository:
+    if uow.alert_sources is None:
+        raise RuntimeError("工作单元没有可用告警源仓储")
+    return uow.alert_sources
+
+
+def _validate_receipt_context(
+    commands: Sequence[SignalCommand],
+    context: ReceiptContext,
+) -> None:
+    expected_source = {
+        "ALERTMANAGER": "alertmanager",
+        "CLOUDEVENTS": "cloudevents",
+        "MANUAL": "manual",
+    }[context.adapter_type]
+    if any(
+        command.alert_source_id != context.alert_source_id or command.source != expected_source
+        for command in commands
+    ):
+        raise ValueError("接收上下文与信号命令来源不一致")
 
 
 def _alert_from_row(row: AlertRow) -> Alert:
