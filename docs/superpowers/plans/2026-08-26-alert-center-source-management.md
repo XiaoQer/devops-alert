@@ -431,7 +431,7 @@ cd backend
 
 预期：全部通过，列表、统计、Overview 和旧接口同时可用。
 
-- [ ] **步骤 7：提交任务 4**
+- [x] **步骤 7：提交任务 4**
 
 ```bash
 git add backend/src/incident_intelligence backend/tests
@@ -459,7 +459,7 @@ git commit -m "feat: 提供告警中心读取接口"
 - `App.vue` 管理 `activeView: "incidents" | "alerts" | "alert-sources"`，不增加外部路由依赖。
 - `openIncident(incidentId)` 从告警页切回事故中心并调用现有 `selectIncident()`。
 
-- [ ] **步骤 1：写共享请求和导航失败测试**
+- [x] **步骤 1：写共享请求和导航失败测试**
 
 ```javascript
 it("保留后端安全错误并把非结构化 5xx 转为服务不可用", async () => {
@@ -474,7 +474,7 @@ it("点击告警导航显示真实告警页面而不是后续提示", async () =
 });
 ```
 
-- [ ] **步骤 2：运行前端聚焦测试确认失败**
+- [x] **步骤 2：运行前端聚焦测试确认失败**
 
 运行：
 
@@ -485,15 +485,15 @@ npm test -- src/api/request.test.js src/api/incidents.test.js src/App.test.js
 
 预期：共享请求模块和真实页面导航尚不存在而失败。
 
-- [ ] **步骤 3：抽取请求边界并保持事故 API 回归**
+- [x] **步骤 3：抽取请求边界并保持事故 API 回归**
 
 `requestJson()` 继续合并调用方 headers、保留 AbortError，并只信任后端字符串 `code/message`。事故接口导入共享函数，原事故错误文案和已有测试保持不变。
 
-- [ ] **步骤 4：实现应用级页面选择**
+- [x] **步骤 4：实现应用级页面选择**
 
 `App.vue` 保留现有事故中心状态，只在 `activeView === "incidents"` 时展示事故工作区；告警和告警源页面使用独立组件占位挂载点。导航按钮具有稳定 `data-testid` 和 `aria-current="page"`。
 
-- [ ] **步骤 5：运行事故中心前端回归**
+- [x] **步骤 5：运行事故中心前端回归**
 
 运行：
 

@@ -15,7 +15,8 @@ import { useIncidentCenter } from "./composables/useIncidentCenter";
 
 const navItems = [
   { id: "incidents", label: "事故中心", icon: PhPulse },
-  { id: "alerts", label: "告警", icon: PhBell },
+  { id: "alerts", label: "告警中心", icon: PhBell },
+  { id: "alert-sources", label: "接入源管理", icon: PhGear },
   { id: "catalog", label: "服务目录", icon: PhSquaresFour },
   { id: "jobs", label: "关联任务", icon: PhLinkSimple },
   { id: "status", label: "平台状态", icon: PhMonitor },
@@ -39,6 +40,7 @@ const clockText = computed(() => new Intl.DateTimeFormat("zh-CN", {
   year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
   second: "2-digit", hour12: false,
 }).format(now.value).replaceAll("/", "-"));
+const pageTitle = computed(() => navItems.find((item) => item.id === activeNav.value)?.label ?? "事故智能中心");
 const isOperating = computed(() => operationState.value === "pending");
 const isClaimed = computed(() => Boolean(selectedIncident.value?.claimedAt));
 const can = (action) => selectedIncident.value?.allowedActionCodes.includes(action) ?? false;
@@ -78,8 +80,11 @@ async function focusAlerts() {
   document.querySelector("#related-alerts")?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 function chooseNav(item) {
-  if (item.id === "incidents") activeNav.value = item.id;
-  showNotice(item.id === "incidents" ? "已返回事故中心" : `${item.label}将在后续页面中完善`);
+  if (["incidents", "alerts", "alert-sources"].includes(item.id)) {
+    activeNav.value = item.id;
+    return;
+  }
+  showNotice(`${item.label}将在后续页面中完善`);
 }
 </script>
 
@@ -87,18 +92,18 @@ function chooseNav(item) {
   <div class="app-shell">
     <aside class="sidebar" aria-label="主导航">
       <div class="brand"><PhShieldCheck :size="23" weight="fill" /><span>事故智能中心</span></div>
-      <nav class="nav-list"><button v-for="item in navItems" :key="item.id" type="button" :class="['nav-item', { active: activeNav === item.id }]" @click="chooseNav(item)"><component :is="item.icon" :size="21" /><span>{{ item.label }}</span></button></nav>
+      <nav class="nav-list"><button v-for="item in navItems" :key="item.id" type="button" :data-testid="`nav-${item.id}`" :aria-current="activeNav === item.id ? 'page' : undefined" :class="['nav-item', { active: activeNav === item.id }]" @click="chooseNav(item)"><component :is="item.icon" :size="21" /><span>{{ item.label }}</span></button></nav>
       <div class="sidebar-footer"><button type="button" class="nav-item muted" @click="showNotice('系统设置将在后续阶段完善')"><PhGear :size="20" /><span>系统设置</span></button><button type="button" class="nav-item muted" @click="showNotice('导航已收起')"><PhCaretLeft :size="20" /><span>收起导航</span></button></div>
     </aside>
 
     <main class="main-surface">
       <header class="topbar">
-        <div class="title-group"><h1>事故中心</h1><div class="environment-control"><select v-model="environment" aria-label="环境筛选"><option value="all">全部环境</option><option value="production">生产环境</option><option value="staging">预发环境</option></select><PhCaretDown :size="14" /></div></div>
-        <label class="search-box"><PhMagnifyingGlass :size="18" /><input v-model="search" aria-label="搜索事故、服务或团队" placeholder="搜索事故、服务或团队" /></label>
+        <div class="title-group"><h1>{{ pageTitle }}</h1><div v-if="activeNav === 'incidents'" class="environment-control"><select v-model="environment" aria-label="环境筛选"><option value="all">全部环境</option><option value="production">生产环境</option><option value="staging">预发环境</option></select><PhCaretDown :size="14" /></div></div>
+        <label v-if="activeNav === 'incidents'" class="search-box"><PhMagnifyingGlass :size="18" /><input v-model="search" aria-label="搜索事故、服务或团队" placeholder="搜索事故、服务或团队" /></label>
         <div class="topbar-meta"><time :datetime="now.toISOString()">{{ clockText }}</time><button type="button" class="avatar-button" aria-label="用户菜单" @click="showNotice('当前使用本地控制面身份')"><span>我</span><PhCaretDown :size="13" /></button></div>
       </header>
 
-      <div class="workspace">
+      <div v-if="activeNav === 'incidents'" class="workspace">
         <section class="incident-queue" aria-label="事故列表">
           <div v-if="listState === 'loading'" class="empty-state"><PhPulse :size="24" /><strong>正在读取事故</strong><span>数据来自事故中心后端</span></div>
           <div v-else-if="listState === 'error'" class="empty-state error-state"><PhQuestion :size="24" /><strong>{{ listError }}</strong><button type="button" data-testid="retry-list" class="button secondary" @click="loadList">重新加载</button></div>
@@ -141,6 +146,12 @@ function chooseNav(item) {
           </template>
         </section>
       </div>
+      <section v-else-if="activeNav === 'alerts'" data-testid="alert-center" class="module-placeholder">
+        <PhBell :size="30" /><h2>告警中心</h2><p>正在接入后端真实告警数据。</p>
+      </section>
+      <section v-else-if="activeNav === 'alert-sources'" data-testid="alert-source-center" class="module-placeholder">
+        <PhGear :size="30" /><h2>接入源管理</h2><p>正在接入告警源、凭据与接收记录。</p>
+      </section>
     </main>
 
     <IncidentResolveDialog :open="resolveOpen" :disabled="isOperating" @close="resolveOpen = false" @operate="submitOperation" />

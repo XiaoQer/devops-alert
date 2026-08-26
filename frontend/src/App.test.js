@@ -50,6 +50,18 @@ beforeEach(() => {
 afterEach(() => { vi.clearAllMocks(); vi.useRealTimers(); });
 
 describe("事故中心真实联调", () => {
+  it("导航可切换到真实告警和告警源页面挂载点", async () => {
+    const wrapper = mount(App); await flushPromises();
+
+    await wrapper.get('[data-testid="nav-alerts"]').trigger("click");
+    expect(wrapper.get('[data-testid="alert-center"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="nav-alerts"]').attributes("aria-current")).toBe("page");
+
+    await wrapper.get('[data-testid="nav-alert-sources"]').trigger("click");
+    expect(wrapper.get('[data-testid="alert-source-center"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="nav-alert-sources"]').attributes("aria-current")).toBe("page");
+  });
+
   it("启动后展示后端事故、关联原因和关联告警", async () => {
     const wrapper = mount(App); await flushPromises();
     expect(wrapper.text()).toContain("支付服务错误率升高");

@@ -1,4 +1,6 @@
-export class IncidentApiError extends Error {
+import { ApiError, requestJson } from "./request";
+
+export class IncidentApiError extends ApiError {
   constructor(code, userMessage, status = 0) {
     super(userMessage);
     this.name = "IncidentApiError";
@@ -8,38 +10,17 @@ export class IncidentApiError extends Error {
   }
 }
 
-async function requestJson(path, options = {}) {
-  try {
-    const response = await fetch(path, {
-      ...options,
-      headers: { Accept: "application/json", ...(options.headers ?? {}) },
-    });
-    const isJson = response.headers.get("Content-Type")?.includes("application/json");
-    const body = isJson ? await response.json() : null;
-    if (!response.ok) {
-      const hasSafeError = typeof body?.code === "string";
-      const upstreamUnavailable = response.status >= 500 && !hasSafeError;
-      throw new IncidentApiError(
-        upstreamUnavailable
-          ? "incident_api_unavailable"
-          : (hasSafeError ? body.code : "incident_api_error"),
-        upstreamUnavailable
-          ? "事故服务暂时不可用，本次操作结果未知"
-          : typeof body?.message === "string"
-          ? body.message
-          : "事故数据暂时不可用，请稍后重试",
-        response.status,
-      );
-    }
-    return body;
-  } catch (error) {
-    if (error?.name === "AbortError" || error instanceof IncidentApiError) throw error;
-    throw new IncidentApiError(
-      "incident_api_unavailable",
-      "事故数据暂时不可用，请稍后重试",
-    );
-  }
-}
+const incidentReadMessages = {
+  unavailableCode: "incident_api_unavailable",
+  unavailable: "事故数据暂时不可用，请稍后重试",
+  errorCode: "incident_api_error",
+  error: "事故数据暂时不可用，请稍后重试",
+};
+
+const incidentWriteMessages = {
+  ...incidentReadMessages,
+  unavailable: "事故服务暂时不可用，本次操作结果未知",
+};
 
 export function fetchIncidents(filters = {}, options = {}) {
   const params = new URLSearchParams();
@@ -50,13 +31,13 @@ export function fetchIncidents(filters = {}, options = {}) {
   if (filters.query?.trim()) params.set("query", filters.query.trim());
   params.set("limit", String(filters.limit ?? 100));
   params.set("offset", String(filters.offset ?? 0));
-  return requestJson(`/api/v1/incidents?${params.toString()}`, { signal: options.signal });
+  return requestJson(`/api/v1/incidents?${params.toString()}`, { signal: options.signal }, incidentReadMessages);
 }
 
 export function fetchIncidentOverview(incidentId, options = {}) {
   return requestJson(`/api/v1/incidents/${encodeURIComponent(incidentId)}/overview`, {
     signal: options.signal,
-  });
+  }, incidentReadMessages);
 }
 
 const incidentActions = new Set([
@@ -93,6 +74,7 @@ export function executeIncidentAction(
       body: JSON.stringify(command),
       signal: options.signal,
     },
+    incidentWriteMessages,
   );
 }
 
@@ -100,5 +82,5 @@ export function claimIncident(incidentId, options = {}) {
   return requestJson(`/api/v1/incidents/${encodeURIComponent(incidentId)}/claim`, {
     method: "POST",
     signal: options.signal,
-  });
+  }, incidentWriteMessages);
 }
