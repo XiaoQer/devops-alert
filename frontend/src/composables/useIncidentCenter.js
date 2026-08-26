@@ -5,6 +5,8 @@ import {
   fetchIncidentOverview,
   fetchIncidents,
 } from "../api/incidents";
+import { fetchIncidentAlertGroups } from "../api/alertGroups";
+import { toAlertGroupListItem } from "../presentation/alertGroupView";
 import { toIncidentDetail, toIncidentListItem } from "../presentation/incidentView";
 
 function safeMessage(error, fallback) {
@@ -24,16 +26,44 @@ export function useIncidentCenter() {
   const operationState = ref("idle");
   const operationError = ref("");
   const retryableOperation = ref(null);
+  const incidentGroups = ref([]);
+  const incidentGroupState = ref("idle");
+  const incidentGroupError = ref("");
   const claimPending = computed(() => operationState.value === "pending");
   let listController;
   let detailController;
   let operationController;
+  let incidentGroupController;
   let debounceTimer;
   let listSequence = 0;
   let detailSequence = 0;
+  let incidentGroupSequence = 0;
 
   const activeIncidents = computed(() => incidents.value.filter((item) => item.stateTone !== "resolved"));
   const resolvedIncidents = computed(() => incidents.value.filter((item) => item.stateTone === "resolved"));
+
+  async function loadIncidentGroups(id) {
+    incidentGroupController?.abort();
+    incidentGroupController = new AbortController();
+    const sequence = ++incidentGroupSequence;
+    incidentGroupState.value = "loading";
+    incidentGroupError.value = "";
+    try {
+      const response = await fetchIncidentAlertGroups(
+        id,
+        { limit: 50, offset: 0 },
+        { signal: incidentGroupController.signal },
+      );
+      if (sequence !== incidentGroupSequence || id !== selectedId.value) return;
+      incidentGroups.value = response.items.map(toAlertGroupListItem);
+      incidentGroupState.value = incidentGroups.value.length ? "ready" : "empty";
+    } catch (error) {
+      if (error?.name === "AbortError" || sequence !== incidentGroupSequence) return;
+      incidentGroups.value = [];
+      incidentGroupState.value = "error";
+      incidentGroupError.value = safeMessage(error, "关联告警组暂时不可用");
+    }
+  }
 
   async function loadDetail(id) {
     if (!id) return;
@@ -47,9 +77,12 @@ export function useIncidentCenter() {
       if (sequence !== detailSequence) return;
       selectedIncident.value = toIncidentDetail(response);
       detailState.value = "ready";
+      loadIncidentGroups(id);
     } catch (error) {
       if (error?.name === "AbortError" || sequence !== detailSequence) return;
       selectedIncident.value = null;
+      incidentGroups.value = [];
+      incidentGroupState.value = "idle";
       detailState.value = "error";
       detailError.value = safeMessage(error, "事故详情暂时不可用，请稍后重试");
     }
@@ -72,6 +105,8 @@ export function useIncidentCenter() {
       if (!incidents.value.length) {
         selectedId.value = null;
         selectedIncident.value = null;
+        incidentGroups.value = [];
+        incidentGroupState.value = "idle";
         detailState.value = "idle";
         return;
       }
@@ -84,6 +119,8 @@ export function useIncidentCenter() {
       incidents.value = [];
       selectedId.value = null;
       selectedIncident.value = null;
+      incidentGroups.value = [];
+      incidentGroupState.value = "idle";
       listState.value = "error";
       detailState.value = "idle";
       listError.value = safeMessage(error, "事故数据暂时不可用，请稍后重试");
@@ -177,6 +214,7 @@ export function useIncidentCenter() {
     window.clearTimeout(debounceTimer);
     listController?.abort();
     detailController?.abort();
+    incidentGroupController?.abort();
     operationController?.abort();
   });
 
@@ -184,7 +222,8 @@ export function useIncidentCenter() {
     environment, search, incidents, selectedId, selectedIncident, activeIncidents,
     resolvedIncidents, listState, detailState, listError, detailError, claimPending,
     operationState, operationError, retryableOperation,
+    incidentGroups, incidentGroupState, incidentGroupError,
     loadList, loadDetail, selectIncident, claimSelected, executeSelectedAction,
-    retryLastAction, refreshAfterConflict,
+    retryLastAction, refreshAfterConflict, loadIncidentGroups,
   };
 }

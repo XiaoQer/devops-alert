@@ -2,6 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./IncidentCenterApp.vue";
+import { fetchAlertGroupMembers, fetchAlertGroupOverview, fetchAlertGroups, fetchAlertGroupSummary, fetchIncidentAlertGroups } from "./api/alertGroups";
 import {
   executeIncidentAction,
   fetchIncidentOverview,
@@ -13,6 +14,18 @@ vi.mock("./api/incidents", () => ({
   fetchIncidentOverview: vi.fn(),
   fetchIncidents: vi.fn(),
 }));
+vi.mock("./api/alertGroups", () => ({
+  fetchAlertGroupMembers: vi.fn(), fetchAlertGroupOverview: vi.fn(),
+  fetchAlertGroups: vi.fn(), fetchAlertGroupSummary: vi.fn(), fetchIncidentAlertGroups: vi.fn(),
+}));
+
+const alertGroup = {
+  id: "agr_real_1", title: "支付服务错误率升高", state: "ACTIVE", storm_state: "STORM",
+  severity: "critical", service: "payment-api", environment: "production", symptom: "errors",
+  active_count: 101, total_count: 101, impacted_resource_count: 101,
+  first_observed_at: "2026-08-25T02:06:18Z", last_observed_at: "2026-08-25T02:09:45Z",
+  explanation: "服务、环境和异常类型一致，已收敛为同一问题。", incident: null,
+};
 
 const listItem = (overrides = {}) => ({
   id: "inc_real_1", title: "支付服务错误率升高", severity: "critical", state: "INVESTIGATING",
@@ -46,6 +59,11 @@ beforeEach(() => {
     id: "inc_real_1", action: "CLAIM", state: "INVESTIGATING",
     assignee: "manual-api-client", version: 2,
   });
+  fetchAlertGroups.mockResolvedValue({ items: [alertGroup], total: 1, limit: 50, offset: 0 });
+  fetchAlertGroupSummary.mockResolvedValue({ active_groups: 1, severe_active_groups: 1, active_alerts: 101, storm_groups: 1, resolved_groups: 0, compression_ratio: 101, peak_rate_per_minute: 101, pending_group_jobs: 0 });
+  fetchAlertGroupOverview.mockResolvedValue({ group: alertGroup, reason_codes: [], source_distribution: [], severity_distribution: [], impacted_resources: [] });
+  fetchAlertGroupMembers.mockResolvedValue({ items: [], total: 101, limit: 100, offset: 0 });
+  fetchIncidentAlertGroups.mockResolvedValue({ items: [alertGroup], total: 1, limit: 50, offset: 0 });
 });
 afterEach(() => { vi.clearAllMocks(); vi.useRealTimers(); });
 
@@ -54,7 +72,9 @@ describe("事故中心真实联调", () => {
     const wrapper = mount(App); await flushPromises();
 
     await wrapper.get('[data-testid="nav-alerts"]').trigger("click");
-    expect(wrapper.get('[data-testid="alert-center"]').exists()).toBe(true);
+    await flushPromises();
+    expect(wrapper.get('[data-testid="alert-group-center"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain("101 条原始告警");
     expect(wrapper.get('[data-testid="nav-alerts"]').attributes("aria-current")).toBe("page");
 
     await wrapper.get('[data-testid="nav-alert-sources"]').trigger("click");

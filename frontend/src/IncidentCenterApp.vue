@@ -11,7 +11,7 @@ import IncidentOperationDialog from "./components/IncidentOperationDialog.vue";
 import IncidentQuickNote from "./components/IncidentQuickNote.vue";
 import IncidentResolveDialog from "./components/IncidentResolveDialog.vue";
 import IncidentStageBar from "./components/IncidentStageBar.vue";
-import AlertCenter from "./components/AlertCenter.vue";
+import AlertGroupCenter from "./components/AlertGroupCenter.vue";
 import AlertSourceManager from "./components/AlertSourceManager.vue";
 import { useIncidentCenter } from "./composables/useIncidentCenter";
 
@@ -27,6 +27,7 @@ const {
   environment, search, incidents, selectedId, selectedIncident, activeIncidents, resolvedIncidents,
   listState, detailState, listError, detailError, operationState, operationError,
   retryableOperation, loadList, loadDetail, selectIncident: selectFromServer,
+  incidentGroups, incidentGroupState, incidentGroupError, loadIncidentGroups,
   executeSelectedAction, retryLastAction, refreshAfterConflict,
 } = useIncidentCenter();
 const alertsFocused = ref(false);
@@ -147,12 +148,13 @@ function openIncident(incidentId) {
             <div class="detail-body operations-layout"><div class="detail-main-column">
               <IncidentActivityTimeline :activities="selectedIncident.activities" :truncated="selectedIncident.activitiesTruncated" />
               <section class="correlation-explanation"><div class="section-title"><PhQuestion :size="20" weight="bold" /><h3>为什么归为同一事故</h3><span v-if="selectedIncident.ruleVersion" class="rule-confirmed"><PhCheckCircle :size="14" weight="fill" />规则确认</span></div><p>{{ selectedIncident.reason }}</p></section>
+              <section class="incident-groups-section"><div class="content-heading"><div><h3>关联问题（{{ incidentGroups.length }} 组）</h3><span>同类原始告警已先收敛，再进入事故</span></div></div><div v-if="incidentGroupState === 'loading'" class="compact-empty">正在读取关联问题</div><div v-else-if="incidentGroupState === 'error'" class="compact-empty error-state">{{ incidentGroupError }} <button type="button" class="link-button" @click="loadIncidentGroups(selectedId)">重试</button></div><div v-else-if="incidentGroupState === 'empty'" class="compact-empty">该事故暂未关联告警组，人工处置不受影响</div><div v-else class="incident-group-list"><article v-for="group in incidentGroups" :key="group.id"><div><strong>{{ group.title }}</strong><span>{{ group.service }} · {{ group.environment }} · {{ group.symptom }}</span></div><span :class="['badge', `badge-${group.severityTone}`]">{{ group.severity }}</span><span v-if="group.storm" class="badge badge-storm">{{ group.stormText }}</span><small>{{ group.memberText }} · {{ group.resourceText }}</small></article></div></section>
               <section id="related-alerts" :class="['alerts-section', { focused: alertsFocused }]"><div class="content-heading"><h3>关联告警（{{ selectedIncident.alertTotal }}）</h3><span v-if="selectedIncident.alertsTruncated">当前展示 1–{{ selectedIncident.alerts.length }} 条</span><button v-else type="button" class="link-button" @click="focusAlerts">查看告警</button></div><div class="alerts-table" role="table" aria-label="关联告警"><div class="alerts-head" role="row"><span>告警名称</span><span>状态</span><span>首次出现</span><span>持续时间</span><span>来源</span></div><div v-for="alert in selectedIncident.alerts" :key="alert.id" data-testid="related-alert-row" class="alert-row" role="row"><strong>{{ alert.name }}</strong><span :class="['alert-state', { resolved: alert.state === '已恢复' }]"><PhCircle :size="8" weight="fill" />{{ alert.state }}</span><span>{{ alert.firstSeen }}</span><span>{{ alert.duration }}</span><span class="source-label"><PhCloud v-if="alert.sourceType === 'cloud'" :size="17" /><PhPulse v-else :size="17" />{{ alert.source }}</span></div></div></section>
             </div><IncidentQuickNote v-if="can('ADD_NOTE')" :disabled="isOperating" :reset-key="selectedIncident.version" @operate="submitOperation" /></div>
           </template>
         </section>
       </div>
-      <AlertCenter v-else-if="activeNav === 'alerts'" @open-incident="openIncident" />
+      <AlertGroupCenter v-else-if="activeNav === 'alerts'" @open-incident="openIncident" />
       <AlertSourceManager v-else-if="activeNav === 'alert-sources'" />
     </main>
 

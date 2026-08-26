@@ -8,6 +8,7 @@ import {
   fetchIncidents,
   IncidentApiError,
 } from "../api/incidents";
+import { fetchIncidentAlertGroups } from "../api/alertGroups";
 import { useIncidentCenter } from "./useIncidentCenter";
 
 vi.mock("../api/incidents", async (importOriginal) => {
@@ -19,6 +20,7 @@ vi.mock("../api/incidents", async (importOriginal) => {
     fetchIncidents: vi.fn(),
   };
 });
+vi.mock("../api/alertGroups", () => ({ fetchIncidentAlertGroups: vi.fn() }));
 
 const listItem = {
   id: "inc_1",
@@ -67,6 +69,7 @@ function mountCenter() {
 beforeEach(() => {
   fetchIncidents.mockResolvedValue({ items: [listItem], total: 1, limit: 100, offset: 0 });
   fetchIncidentOverview.mockResolvedValue(overview);
+  fetchIncidentAlertGroups.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
   executeIncidentAction.mockResolvedValue({ version: 5 });
 });
 
@@ -75,6 +78,16 @@ afterEach(() => {
 });
 
 describe("事故处置前端状态", () => {
+  it("详情优先读取关联告警组，告警组失败不阻断人工处置", async () => {
+    fetchIncidentAlertGroups.mockRejectedValueOnce({ userMessage: "告警组暂时不可用" });
+    const mounted = mountCenter(); await flushPromises();
+    expect(fetchIncidentAlertGroups).toHaveBeenCalledWith("inc_1", { limit: 50, offset: 0 }, expect.any(Object));
+    expect(mounted.center.detailState.value).toBe("ready");
+    expect(mounted.center.incidentGroupState.value).toBe("error");
+    expect(mounted.center.incidentGroupError.value).toBe("告警组暂时不可用");
+    mounted.wrapper.unmount();
+  });
+
   it("写入成功后重新读取列表和详情", async () => {
     const mounted = mountCenter();
     await flushPromises();
