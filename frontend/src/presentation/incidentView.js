@@ -171,6 +171,7 @@ export function toIncidentDetail(overview, now = new Date()) {
   const [state] = stateMap[overview.state] ?? ["未知状态"];
   return {
     ...base,
+    stateCode: overview.state,
     owner: overview.assignee ? actorLabel(overview.assignee) : "未认领",
     claimedAt: overview.claimed_at ? formatDateTime(overview.claimed_at) : null,
     stateChangedAt: formatDateTime(overview.state_changed_at),

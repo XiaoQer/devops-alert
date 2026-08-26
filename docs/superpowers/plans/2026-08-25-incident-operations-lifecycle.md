@@ -696,7 +696,7 @@ git commit -m "feat: 管理事故处置前端状态"
 - Components emit: `operate({ action, payload })`、`refresh()`。
 - App consumes Task 7 `executeSelectedAction`、`retryLastAction`、`refreshAfterConflict`。
 
-- [ ] **Step 1: 编写阶段栏、快速记录和允许操作失败测试**
+- [x] **Step 1: 编写阶段栏、快速记录和允许操作失败测试**
 
 ```javascript
 it("按后端允许操作展示调查阶段和主推进按钮", async () => {
@@ -720,23 +720,23 @@ it("快速记录提交固定分类和真实版本", async () => {
 });
 ```
 
-- [ ] **Step 2: 编写解决、重新打开、关闭和只读终态失败测试**
+- [x] **Step 2: 编写解决、重新打开、关闭和只读终态失败测试**
 
 解决弹窗测试必须证明根因可以为空，但分类、说明和措施为空时按钮禁用；`RESOLVED` 只展示重新打开和关闭；`CLOSED` 不渲染任何写按钮或快速记录表单。
 
-- [ ] **Step 3: 编写活动时间线和错误恢复失败测试**
+- [x] **Step 3: 编写活动时间线和错误恢复失败测试**
 
 时间线显示状态变化、分类、操作人、说明和解决内容；不显示原始枚举或 `manual-api-client`。版本冲突显示“事故已被其他操作更新”和刷新按钮；网络结果未知显示“重试本次操作”，重试复用 Task 7 key。
 
-- [ ] **Step 4: 运行页面测试确认组件缺失失败**
+- [x] **Step 4: 运行页面测试确认组件缺失失败**
 
 Run: `cd frontend && npm test -- src/App.test.js`
 
-- [ ] **Step 5: 实现小组件和页面编排**
+- [x] **Step 5: 实现小组件和页面编排**
 
 `IncidentStageBar` 展示七阶段、当前阶段、`primaryAction` 和 `allowedTransitions`；回退状态不伪造历史完成标记，只高亮当前状态。`IncidentActivityTimeline` 按服务端顺序渲染活动。弹窗关闭时清空未提交正文，禁止在日志或 URL 中保存内容。
 
-- [ ] **Step 6: 运行完整前端测试与构建**
+- [x] **Step 6: 运行完整前端测试与构建**
 
 Run: `cd frontend && npm test && npm run build && npm run test:sites`
 

@@ -1,7 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import App from "./App.vue";
+import App from "./IncidentCenterApp.vue";
 import {
   executeIncidentAction,
   fetchIncidentOverview,
@@ -113,5 +113,131 @@ describe("事故中心真实联调", () => {
     await flushPromises();
     expect(wrapper.text()).toContain("最新搜索结果");
     expect(wrapper.text()).not.toContain("过期搜索结果");
+  });
+
+  it("按后端允许操作展示调查阶段、主推进和解除认领", async () => {
+    fetchIncidentOverview.mockResolvedValueOnce(overview({
+      assignee: "manual-api-client",
+      claimed_at: "2026-08-25T02:12:00Z",
+      allowed_actions: ["RELEASE", "TRANSITION", "ADD_NOTE", "RESOLVE"],
+    }));
+
+    const wrapper = mount(App); await flushPromises();
+
+    expect(wrapper.get('[data-testid="incident-stage-bar"]').text()).toContain("调查中");
+    expect(wrapper.get('[data-testid="primary-operation"]').text()).toBe("推进到缓解中");
+    expect(wrapper.find('[data-testid="release-incident"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="reopen-incident"]').exists()).toBe(false);
+  });
+
+  it("快速记录提交固定分类和真实版本", async () => {
+    const wrapper = mount(App); await flushPromises();
+
+    await wrapper.get('[aria-label="处置记录分类"]').setValue("CURRENT_FINDING");
+    await wrapper.get('[aria-label="处置记录内容"]').setValue("错误集中在两个实例");
+    await wrapper.get('[data-testid="save-note"]').trigger("click");
+    await flushPromises();
+
+    expect(executeIncidentAction).toHaveBeenCalledWith(
+      "inc_real_1",
+      "notes",
+      {
+        expected_version: 1,
+        category: "CURRENT_FINDING",
+        message: "错误集中在两个实例",
+      },
+      expect.any(String),
+      expect.any(Object),
+    );
+  });
+
+  it("解决事故要求分类、说明和措施，根因允许为空", async () => {
+    const wrapper = mount(App); await flushPromises();
+    await wrapper.get('[data-testid="resolve-incident"]').trigger("click");
+
+    expect(wrapper.get('[data-testid="confirm-resolve"]').attributes("disabled")).toBeDefined();
+    await wrapper.get('[aria-label="解决分类"]').setValue("RECOVERED");
+    await wrapper.get('[aria-label="解决说明"]').setValue("错误率已经恢复");
+    await wrapper.get('[aria-label="采取措施"]').setValue("隔离异常实例并扩容");
+    expect(wrapper.get('[data-testid="confirm-resolve"]').attributes("disabled")).toBeUndefined();
+    await wrapper.get('[data-testid="confirm-resolve"]').trigger("click");
+    await flushPromises();
+
+    expect(executeIncidentAction).toHaveBeenCalledWith(
+      "inc_real_1",
+      "resolve",
+      expect.objectContaining({
+        expected_version: 1,
+        category: "RECOVERED",
+        root_cause: null,
+      }),
+      expect.any(String),
+      expect.any(Object),
+    );
+  });
+
+  it("已解决只展示重新打开和关闭，已关闭保持只读", async () => {
+    fetchIncidentOverview
+      .mockResolvedValueOnce(overview({
+        state: "RESOLVED",
+        allowed_actions: ["REOPEN", "CLOSE"],
+        allowed_transitions: [],
+        primary_action: { action: "CLOSE", target_state: null },
+      }))
+      .mockResolvedValueOnce(overview({
+        state: "CLOSED",
+        allowed_actions: [],
+        allowed_transitions: [],
+        primary_action: null,
+      }));
+    const wrapper = mount(App); await flushPromises();
+
+    expect(wrapper.find('[data-testid="reopen-incident"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="close-incident"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="quick-note"]').exists()).toBe(false);
+
+    await wrapper.vm.$.setupState.loadDetail("inc_real_1");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="incident-write-actions"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="quick-note"]').exists()).toBe(false);
+  });
+
+  it("活动时间线只显示中文业务内容和安全操作者", async () => {
+    fetchIncidentOverview.mockResolvedValueOnce(overview({
+      activities: [{
+        id: "iact_1", kind: "NOTE_ADDED", actor: "manual-api-client",
+        from_state: null, to_state: null, note_category: "CURRENT_FINDING",
+        message: "错误集中在两个实例", resolution_category: null,
+        resolution_actions: null, root_cause: null, incident_version: 2,
+        created_at: "2026-08-25T02:10:00Z",
+      }],
+    }));
+
+    const wrapper = mount(App); await flushPromises();
+    const timeline = wrapper.get('[data-testid="activity-timeline"]');
+
+    expect(timeline.text()).toContain("添加处置记录");
+    expect(timeline.text()).toContain("当前发现");
+    expect(timeline.text()).toContain("当前操作员");
+    expect(timeline.text()).not.toContain("NOTE_ADDED");
+    expect(timeline.text()).not.toContain("manual-api-client");
+  });
+
+  it("版本冲突显示刷新入口且不伪造成功", async () => {
+    executeIncidentAction.mockRejectedValueOnce({
+      code: "incident_version_conflict",
+      userMessage: "事故已被其他操作更新，请刷新后重试",
+      status: 409,
+    });
+    const wrapper = mount(App); await flushPromises();
+
+    await wrapper.get('[data-testid="claim-incident"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="operation-error"]').text()).toContain(
+      "事故已被其他操作更新",
+    );
+    expect(wrapper.find('[data-testid="refresh-conflict"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="incident-owner"]').text()).toContain("未认领");
   });
 });

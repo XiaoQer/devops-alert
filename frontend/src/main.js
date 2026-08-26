@@ -1,5 +1,5 @@
 import { createApp } from "vue";
-import App from "./App.vue";
+import App from "./IncidentCenterApp.vue";
 import "./styles.css";
 
 createApp(App).mount("#root");
