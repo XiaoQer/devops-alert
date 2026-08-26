@@ -550,7 +550,7 @@ git commit -m "feat: 扩展事故处置聚合详情"
 - Produces: `toIncidentDetail` 对阶段、允许操作、主操作和活动的中文转换。
 - Consumes: Task 4/5 HTTP 契约。
 
-- [ ] **Step 1: 编写七种相对地址、幂等头和正文失败测试**
+- [x] **Step 1: 编写七种相对地址、幂等头和正文失败测试**
 
 ```javascript
 it.each(["claim", "release", "transitions", "notes", "resolve", "reopen", "close"])(
@@ -569,7 +569,7 @@ it.each(["claim", "release", "transitions", "notes", "resolve", "reopen", "close
 );
 ```
 
-- [ ] **Step 2: 编写活动和权限中文转换失败测试**
+- [x] **Step 2: 编写活动和权限中文转换失败测试**
 
 ```javascript
 expect(detail.allowedActions).toEqual(["添加处置记录", "推进状态", "解决事故"]);
@@ -580,11 +580,11 @@ expect(detail.activities[0]).toMatchObject({
 expect(JSON.stringify(detail)).not.toContain("manual-api-client");
 ```
 
-- [ ] **Step 3: 运行前端聚焦测试确认函数或字段缺失失败**
+- [x] **Step 3: 运行前端聚焦测试确认函数或字段缺失失败**
 
 Run: `cd frontend && npm test -- src/api/incidents.test.js src/presentation/incidentView.test.js`
 
-- [ ] **Step 4: 实现通用安全写客户端和纯转换**
+- [x] **Step 4: 实现通用安全写客户端和纯转换**
 
 ```javascript
 export function executeIncidentAction(
@@ -604,13 +604,13 @@ export function executeIncidentAction(
 
 转换层只翻译后端固定枚举；未知枚举显示“未知操作”而不猜测。活动 actor `manual-api-client` 显示为“当前操作员”，根因为空显示“尚未确认”。
 
-- [ ] **Step 5: 运行聚焦测试**
+- [x] **Step 5: 运行聚焦测试**
 
 Run: `cd frontend && npm test -- src/api/incidents.test.js src/presentation/incidentView.test.js`
 
 Expected: 全部通过。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add frontend/src/api/incidents.js frontend/src/api/incidents.test.js frontend/src/presentation/incidentView.js frontend/src/presentation/incidentView.test.js

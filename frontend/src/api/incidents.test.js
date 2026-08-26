@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { claimIncident, fetchIncidentOverview, fetchIncidents } from "./incidents";
+import {
+  executeIncidentAction,
+  fetchIncidentOverview,
+  fetchIncidents,
+} from "./incidents";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -22,24 +26,48 @@ describe("事故中心 API 客户端", () => {
     expect(request.mock.calls[0][1].headers).toEqual({ Accept: "application/json" });
   });
 
-  it("读取详情和认领都使用相对地址", async () => {
+  it("读取详情使用相对地址", async () => {
     const response = () =>
       new Response(JSON.stringify({ id: "inc_1" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
-    const request = vi.fn()
-      .mockResolvedValueOnce(response())
-      .mockResolvedValueOnce(response());
+    const request = vi.fn().mockResolvedValueOnce(response());
     vi.stubGlobal("fetch", request);
 
     await fetchIncidentOverview("inc_1");
-    await claimIncident("inc_1");
 
     expect(request.mock.calls[0][0]).toBe("/api/v1/incidents/inc_1/overview");
-    expect(request.mock.calls[1][0]).toBe("/api/v1/incidents/inc_1/claim");
-    expect(request.mock.calls[1][1].method).toBe("POST");
   });
+
+  it.each(["claim", "release", "transitions", "notes", "resolve", "reopen", "close"])(
+    "%s 通过同源接口发送版本和幂等键",
+    async (action) => {
+      const request = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ version: 2 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", request);
+
+      await executeIncidentAction(
+        "inc_1",
+        action,
+        { expected_version: 1 },
+        "operation-key",
+      );
+
+      expect(request.mock.calls[0][0]).toBe(`/api/v1/incidents/inc_1/${action}`);
+      expect(request.mock.calls[0][1].headers).toMatchObject({
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": "operation-key",
+      });
+      expect(request.mock.calls[0][1].headers.Authorization).toBeUndefined();
+      expect(request.mock.calls[0][1].body).toBe('{"expected_version":1}');
+    },
+  );
 
   it("把后端安全错误转换为用户可读异常", async () => {
     vi.stubGlobal(

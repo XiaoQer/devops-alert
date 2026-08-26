@@ -36,6 +36,9 @@ it("详情只转换后端已经持久化的告警、原因和时间线", () => {
   const overview = {
     ...listItem,
     claimed_at: null,
+    state_changed_at: "2026-08-25T08:00:02Z",
+    resolved_at: null,
+    closed_at: null,
     created_at: "2026-08-25T08:00:02Z",
     alerts: [
       {
@@ -57,6 +60,26 @@ it("详情只转换后端已经持久化的告警、原因和时间线", () => {
       explanation: "窗口内只有一个同服务事故，已自动关联。",
       created_at: "2026-08-25T08:05:01Z",
     },
+    activities: [
+      {
+        id: "iact_1",
+        kind: "NOTE_ADDED",
+        actor: "manual-api-client",
+        from_state: null,
+        to_state: null,
+        note_category: "CURRENT_FINDING",
+        message: "错误集中在两个实例",
+        resolution_category: null,
+        resolution_actions: null,
+        root_cause: null,
+        incident_version: 2,
+        created_at: "2026-08-25T08:09:00Z",
+      },
+    ],
+    activities_truncated: false,
+    allowed_actions: ["ADD_NOTE", "TRANSITION", "RESOLVE"],
+    allowed_transitions: ["TRIAGING", "INVESTIGATING"],
+    primary_action: { action: "TRANSITION", target_state: "TRIAGING" },
     timeline: [
       {
         id: "created:1",
@@ -84,4 +107,49 @@ it("详情只转换后端已经持久化的告警、原因和时间线", () => {
   expect(view.timeline[0].title).toBe("创建事故");
   expect(view.timeline[1].detail).toBe("由当前操作员认领");
   expect(view.timeline[1].detail).not.toContain("manual-api-client");
+  expect(view.allowedActions).toEqual(["添加处置记录", "推进状态", "解决事故"]);
+  expect(view.allowedActionCodes).toEqual(["ADD_NOTE", "TRANSITION", "RESOLVE"]);
+  expect(view.primaryAction).toMatchObject({
+    label: "推进到分诊中",
+    targetState: "TRIAGING",
+  });
+  expect(view.activities[0]).toMatchObject({
+    title: "添加处置记录",
+    category: "当前发现",
+    actor: "当前操作员",
+    rootCause: "尚未确认",
+  });
+  expect(JSON.stringify(view)).not.toContain("manual-api-client");
+});
+
+it("未知活动和操作使用安全中文兜底", () => {
+  const overview = {
+    ...listItem,
+    claimed_at: null,
+    created_at: listItem.detected_at,
+    state_changed_at: listItem.detected_at,
+    resolved_at: null,
+    closed_at: null,
+    alerts: [],
+    alerts_truncated: false,
+    correlation: null,
+    timeline: [],
+    activities: [{
+      id: "iact_unknown", kind: "UNKNOWN_KIND", actor: "remote-actor",
+      from_state: null, to_state: null, note_category: null, message: null,
+      resolution_category: null, resolution_actions: null, root_cause: null,
+      incident_version: 2, created_at: listItem.detected_at,
+    }],
+    activities_truncated: false,
+    allowed_actions: ["UNKNOWN_ACTION"],
+    allowed_transitions: [],
+    primary_action: { action: "UNKNOWN_ACTION", target_state: null },
+  };
+
+  const view = toIncidentDetail(overview);
+
+  expect(view.allowedActions).toEqual(["未知操作"]);
+  expect(view.primaryAction.label).toBe("未知操作");
+  expect(view.activities[0].title).toBe("未知处置活动");
+  expect(view.activities[0].actor).toBe("操作员");
 });

@@ -53,6 +53,43 @@ export function fetchIncidentOverview(incidentId, options = {}) {
   });
 }
 
+const incidentActions = new Set([
+  "claim",
+  "release",
+  "transitions",
+  "notes",
+  "resolve",
+  "reopen",
+  "close",
+]);
+
+export function executeIncidentAction(
+  incidentId,
+  action,
+  command,
+  idempotencyKey,
+  options = {},
+) {
+  if (!incidentActions.has(action)) {
+    throw new IncidentApiError("invalid_incident_action", "未知的事故操作");
+  }
+  if (typeof idempotencyKey !== "string" || !idempotencyKey.trim()) {
+    throw new IncidentApiError("invalid_idempotency_key", "本次操作缺少安全重试标识");
+  }
+  return requestJson(
+    `/api/v1/incidents/${encodeURIComponent(incidentId)}/${action}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": idempotencyKey,
+      },
+      body: JSON.stringify(command),
+      signal: options.signal,
+    },
+  );
+}
+
 export function claimIncident(incidentId, options = {}) {
   return requestJson(`/api/v1/incidents/${encodeURIComponent(incidentId)}/claim`, {
     method: "POST",
