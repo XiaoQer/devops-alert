@@ -12,6 +12,7 @@ from incident_intelligence.persistence.session import get_engine, make_session_f
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.alert_center import AlertCenterService
 from incident_intelligence.services.alert_group_backfill import AlertGroupBackfillService
+from incident_intelligence.services.alert_group_center import AlertGroupCenterService
 from incident_intelligence.services.alert_group_correlation import AlertGroupCorrelationService
 from incident_intelligence.services.alert_group_correlation_jobs import (
     AlertGroupCorrelationJobService,
@@ -86,6 +87,7 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
     app.state.alert_center_service = AlertCenterService(session_factory=session_factory)
+    app.state.alert_group_center_service = AlertGroupCenterService(session_factory=session_factory)
     app.state.source_authentication_service = SourceAuthenticationService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )

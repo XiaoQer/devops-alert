@@ -8,12 +8,14 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Query
 
 from incident_intelligence.api.dependencies import (
+    get_alert_group_center_service,
     get_incident_center_service,
     get_incident_operation_service,
     require_idempotency_key,
     require_manual_actor,
 )
 from incident_intelligence.api.errors import ApiError
+from incident_intelligence.api.schemas.alert_groups import AlertGroupPageResponse
 from incident_intelligence.api.schemas.incidents import (
     IncidentClaimRequest,
     IncidentCloseRequest,
@@ -28,6 +30,10 @@ from incident_intelligence.api.schemas.incidents import (
 )
 from incident_intelligence.domain.enums import IncidentState
 from incident_intelligence.domain.models import Environment
+from incident_intelligence.services.alert_group_center import (
+    AlertGroupCenterService,
+    AlertGroupResourceNotFound,
+)
 from incident_intelligence.services.incident_center import (
     IncidentCenterService,
     IncidentListQuery,
@@ -48,6 +54,7 @@ from incident_intelligence.services.incident_operations import (
 router = APIRouter(prefix="/api/v1/incidents", tags=["incidents"])
 ManualActor = Annotated[str, Depends(require_manual_actor)]
 IncidentService = Annotated[IncidentCenterService, Depends(get_incident_center_service)]
+GroupService = Annotated[AlertGroupCenterService, Depends(get_alert_group_center_service)]
 OperationService = Annotated[IncidentOperationService, Depends(get_incident_operation_service)]
 IdempotencyKey = Annotated[str, Depends(require_idempotency_key)]
 INCIDENT_ID = compile_pattern(r"^inc_[0-9a-f]{32}$")
@@ -88,6 +95,24 @@ def get_incident_overview(
             service.get_overview(incident_id, actor=actor), from_attributes=True
         )
     except IncidentResourceNotFound as error:
+        raise _not_found() from error
+
+
+@router.get("/{incident_id}/alert-groups", response_model=AlertGroupPageResponse)
+def list_incident_alert_groups(
+    incident_id: str,
+    actor: ManualActor,
+    center: GroupService,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0, le=10_000)] = 0,
+) -> AlertGroupPageResponse:
+    del actor
+    _require_incident_id(incident_id)
+    try:
+        return AlertGroupPageResponse.model_validate(
+            center.list_incident_groups(incident_id, limit=limit, offset=offset).model_dump()
+        )
+    except AlertGroupResourceNotFound as error:
         raise _not_found() from error
 
 

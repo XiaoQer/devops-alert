@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from incident_intelligence.persistence.models import (
     AlertGroupCorrelationJobRow,
     AlertGroupDecisionRow,
+    AlertGroupMemberRow,
+    AlertGroupRow,
     AlertRow,
     AlertSourceRow,
     CorrelationDecisionRow,
@@ -154,6 +156,19 @@ class AlertCenterRepository:
 
     def find_signal(self, signal_event_id: str) -> SignalEventRow | None:
         return self._session.get(SignalEventRow, signal_event_id)
+
+    def find_alert_group(self, alert_id: str, alert_cycle: int) -> AlertGroupRow | None:
+        return self._session.scalar(
+            select(AlertGroupRow)
+            .join(
+                AlertGroupMemberRow,
+                AlertGroupMemberRow.alert_group_id == AlertGroupRow.id,
+            )
+            .where(
+                AlertGroupMemberRow.alert_id == alert_id,
+                AlertGroupMemberRow.alert_cycle == alert_cycle,
+            )
+        )
 
     def alert_signals(self, alert: AlertRow, *, limit: int) -> tuple[SignalEventRow, ...]:
         related_signal_ids = select(SignalIntakeResultRow.signal_event_id).where(

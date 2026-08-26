@@ -142,6 +142,16 @@ class AlertCorrelationView(BaseModel):
     incident: AlertIncidentBrief | None
 
 
+class AlertGroupBrief(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str
+    title: str
+    total_count: int = Field(ge=1)
+    storm_state: str
+    incident_id: str | None
+
+
 class AlertProcessingStep(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -168,6 +178,7 @@ class AlertOverview(BaseModel):
     signals: tuple[AlertSignalView, ...] = Field(max_length=100)
     signals_truncated: bool
     correlation: AlertCorrelationView
+    group: AlertGroupBrief | None
     processing_steps: tuple[AlertProcessingStep, ...] = Field(min_length=3, max_length=3)
 
 
@@ -273,6 +284,7 @@ class AlertCenterService:
             all_signals = repository.alert_signals(record.alert, limit=101)
             visible_signals = all_signals[:100]
             correlation = _correlation_view(repository.correlation(record.alert.id))
+            group = repository.find_alert_group(record.alert.id, record.alert.cycle)
             source = _source_brief(record.source)
             signal_count = len(all_signals)
             return AlertOverview(
@@ -291,6 +303,17 @@ class AlertCenterService:
                 signals=tuple(_signal_view(signal) for signal in visible_signals),
                 signals_truncated=len(all_signals) > 100,
                 correlation=correlation,
+                group=(
+                    None
+                    if group is None
+                    else AlertGroupBrief(
+                        id=group.id,
+                        title=group.title,
+                        total_count=group.total_count,
+                        storm_state=group.storm_state,
+                        incident_id=group.incident_id,
+                    )
+                ),
                 processing_steps=_processing_steps(source, signal_count, correlation),
             )
 

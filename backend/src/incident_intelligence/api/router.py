@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from sqlalchemy.engine import Engine
 
+from incident_intelligence.api.routes.alert_groups import router as alert_groups_router
 from incident_intelligence.api.routes.alert_sources import router as alert_sources_router
 from incident_intelligence.api.routes.alertmanager import router as alertmanager_router
 from incident_intelligence.api.routes.alerts import router as alerts_router
@@ -17,6 +18,7 @@ def create_router(engine: Engine) -> APIRouter:
     router = APIRouter()
     router.include_router(create_health_router(engine))
     router.include_router(alert_sources_router)
+    router.include_router(alert_groups_router)
     router.include_router(alerts_router)
     router.include_router(alertmanager_router)
     router.include_router(cloudevents_router)

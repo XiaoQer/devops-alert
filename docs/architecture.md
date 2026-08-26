@@ -60,7 +60,7 @@
 12. 操作员认领、调查、缓解、恢复验证、解决和关闭事故；
 13. 新信号或延迟证据只产生新版本，不覆盖历史事件、快照和报告。
 
-当前已实现 SignalEvent、Alert、服务目录、Alert 级持久关联任务和 Incident 的首版确定性链路。AlertGroup 和按组收敛任务已经完成设计但尚未实施；当前每个不同 Alert 仍会创建独立关联任务。事故人工处置已经实现，自动取证、DiagnosisRun 自动创建和 AI 尚未实现。
+当前已实现 SignalEvent、Alert、AlertGroup、服务目录、组级持久关联任务和 Incident 的首版确定性链路。新 Alert 先异步归组，再由可合并的组级任务关联事故；历史 Alert 级任务只保留排空与读取兼容。事故人工处置已经实现，自动取证、DiagnosisRun 自动创建和 AI 尚未实现。
 
 ## 关联策略
 

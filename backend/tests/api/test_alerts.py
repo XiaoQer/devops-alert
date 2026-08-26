@@ -135,6 +135,9 @@ def test_alert_list_summary_and_overview_contract(context: AlertApiContext) -> N
     assert body["detection"]["summary"] == "实际错误率达到 18.4%"
     assert body["source"]["name"] == "告警中心来源"
     assert body["correlation"]["incident"]["id"] == context.incident_id
+    assert body["group"]["id"].startswith("agr_")
+    assert body["group"]["total_count"] == 1
+    assert body["group"]["incident_id"] == context.incident_id
     assert len(body["processing_steps"]) == 3
     assert "token" not in overview.text.casefold()
     assert "digest" not in overview.text.casefold()
