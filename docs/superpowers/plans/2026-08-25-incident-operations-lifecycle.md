@@ -742,7 +742,7 @@ Run: `cd frontend && npm test && npm run build && npm run test:sites`
 
 Expected: Vitest、Vite 构建和 Sites Worker 全部通过；构建产物不包含 Token。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add frontend/src/components frontend/src/App.vue frontend/src/App.test.js frontend/src/styles.css
@@ -760,7 +760,7 @@ git commit -m "feat: 实现事故处置闭环页面"
 - Consumes: Tasks 1–8 的完整后端和前端能力。
 - Produces: 可重复的真实验收证据和最终能力边界。
 
-- [ ] **Step 1: 运行统一后端验收**
+- [x] **Step 1: 运行统一后端验收**
 
 使用项目独立 MySQL 8.4 测试容器和随机临时密码：
 
@@ -776,7 +776,7 @@ docker compose down -v
 
 Expected: Ruff、格式、Mypy、全部 Pytest 和覆盖率门槛通过；精确测试容器与测试卷被清理。
 
-- [ ] **Step 2: 运行最终前端验收和安全扫描**
+- [x] **Step 2: 运行最终前端验收和安全扫描**
 
 Run: `cd frontend && npm test && npm run build && npm run test:sites`
 
@@ -784,11 +784,11 @@ Run: `rg -n "scenario_id|scenario_version|experiment_id|manual-api-client|II_FRO
 
 Expected: 测试与构建通过；扫描 0 命中。
 
-- [ ] **Step 3: 升级本地项目 MySQL 并启动真实服务**
+- [x] **Step 3: 升级本地项目 MySQL 并启动真实服务**
 
 只通过当前终端环境提供本地数据库 URL 和三个随机 Token，执行 `alembic upgrade head`。前端继续通过 Vite 同源代理注入人工 Token；不得把 Token 写入文件、命令输出或浏览器。
 
-- [ ] **Step 4: 使用公开 API 形成真实事故并完成浏览器旅程**
+- [x] **Step 4: 使用公开 API 形成真实事故并完成浏览器旅程**
 
 通过服务目录和 CloudEvents 正式入口创建一个本地联调事故，不直接写业务表。浏览器依次完成：
 
@@ -799,15 +799,15 @@ Expected: 测试与构建通过；扫描 0 命中。
 
 每一步检查页面状态、负责人、版本和活动时间线；最终用只读 SQL 确认 Incident 为 `CLOSED`、活动数量与操作一致、每个动作只有一条审计和幂等记录。浏览器控制台 error/warn 必须为空。
 
-- [ ] **Step 5: 验证失败与冲突页面**
+- [x] **Step 5: 验证失败与冲突页面**
 
 在后端停止时尝试新增记录，页面必须保留只读详情、明确显示未完成且不得变化状态；恢复后使用同一幂等键重试。再用旧版本触发一次 409，页面必须提示刷新并读取最新事实，不自动重复旧操作。
 
-- [ ] **Step 6: 更新文档和归档规格**
+- [x] **Step 6: 更新文档和归档规格**
 
 `docs/current-state.md` 只记录实际通过的状态、操作、测试数量、覆盖率和浏览器证据；README 增加写接口和本地使用说明，但不写凭据或联调业务正文。把规格状态改为“已完成并归档”，补充每条验收证据后移入 `specs/completed/`。
 
-- [ ] **Step 7: 最终检查并提交**
+- [x] **Step 7: 最终检查并提交**
 
 ```bash
 git diff --check

@@ -4,7 +4,7 @@
 
 本项目从零开始建设，与故障注入平台物理隔离。它不包含故障场景、注入器、Chaos 权限、实验恢复或评测标准答案。非生产故障实验只能通过真实监控和版本化公开契约验证本平台，不得把实验身份或答案写入诊断链路。
 
-当前平台提供健康检查、原子且幂等的人工事故报告、Alertmanager Webhook、CloudEvents 1.0 两种模式接入、版本化服务目录、持久关联任务、规则优先的可解释事故关联，以及连接真实 MySQL 的事故中心列表、详情和认领闭环。自动取证、DiagnosisRun 自动创建、AI 分析和完整事故状态流转仍未实现。
+当前平台提供健康检查、原子且幂等的人工事故报告、Alertmanager Webhook、CloudEvents 1.0 两种模式接入、版本化服务目录、持久关联任务、规则优先的可解释事故关联，以及连接真实 MySQL 的事故中心人工处置闭环。事故可完成认领、解除认领、阶段推进、添加记录、解决、重新打开和关闭。自动取证、DiagnosisRun 自动创建和 AI 分析仍未实现。
 
 ## 项目事实
 
@@ -46,9 +46,28 @@ export II_CLOUDEVENTS_TOKEN='<CloudEvents 专用随机 Token>'
 - `GET /api/v1/incidents`：分页、筛选和搜索事故中心队列；
 - `GET /api/v1/incidents/{id}/overview`：读取关联告警、关联解释和事实时间线；
 - `POST /api/v1/incidents/{id}/claim`：以当前认证主体认领事故；
+- `POST /api/v1/incidents/{id}/release`：由当前负责人解除认领；
+- `POST /api/v1/incidents/{id}/transitions`：推进到后端允许的处置阶段；
+- `POST /api/v1/incidents/{id}/notes`：追加固定分类的处置记录；
+- `POST /api/v1/incidents/{id}/resolve`：使用解决分类、说明和措施解决事故；
+- `POST /api/v1/incidents/{id}/reopen`：将已解决事故重新打开为调查中；
+- `POST /api/v1/incidents/{id}/close`：关闭已解决事故；
 - `GET /api/v1/signals/{id}`、`/alerts/{id}`、`/incidents/{id}`、`/diagnosis-runs/{id}`：独立读取四类资源。
 
 除存活检查外，业务接口使用 `Authorization: Bearer <Token>`。人工报告与资源读取使用 `II_API_TOKEN`，Alertmanager 使用 `II_ALERTMANAGER_TOKEN`，CloudEvents 使用 `II_CLOUDEVENTS_TOKEN`，三套 Token 不能交叉使用。人工报告和 CloudEvents 请求体最多 64 KiB，Alertmanager 最多 256 KiB 且单批最多 100 条；人工报告还必须提供长度为 1–256 的 `Idempotency-Key`。
+
+七个事故写接口均要求 `Idempotency-Key` 请求头和请求体中的当前 `expected_version`。相同键与相同请求可安全重试；旧版本会返回 409，页面刷新后读取服务端最终事实，不会在浏览器内伪造成功状态。
+
+本地前端通过开发代理注入人工 Token，Token 不会进入浏览器构建产物：
+
+```bash
+cd frontend
+export II_FRONTEND_API_URL='http://127.0.0.1:8000'
+export II_FRONTEND_API_TOKEN='<与后端 II_API_TOKEN 相同的本地 Token>'
+npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+随后访问 `http://127.0.0.1:5173/`。页面按钮和建议下一步只依据 overview 返回的允许操作展示；已关闭事故保持只读。
 
 CloudEvents 结构化模式最小调用示例：
 
