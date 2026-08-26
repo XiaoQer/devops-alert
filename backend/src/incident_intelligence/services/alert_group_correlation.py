@@ -66,8 +66,13 @@ class AlertGroupCorrelationService:
             group = groups.find_group(job.alert_group_id, for_update=True)
             if group is None:
                 raise RuntimeError("alert_group_correlation_group_not_found")
-            catalog_entry = _catalog(uow).find_service_identity(
-                group.service, group.environment, for_update=True
+            service = group.service
+            catalog_entry = (
+                None
+                if service is None
+                else _catalog(uow).find_service_identity(
+                    service, group.environment, for_update=True
+                )
             )
 
             exact_ids: tuple[str, ...] = ()
@@ -77,14 +82,16 @@ class AlertGroupCorrelationService:
                 and group.state == "ACTIVE"
                 and group.severity in {"critical", "high"}
                 and group.environment == "production"
+                and service is not None
                 and catalog_entry is not None
                 and catalog_entry.state == "ACTIVE"
             )
             if eligible:
+                assert service is not None
                 exact_ids = tuple(
                     row.id
                     for row in correlation.exact_candidates(
-                        service=group.service,
+                        service=service,
                         environment=group.environment,
                         observed_at=group.last_observed_at,
                         window_seconds=CORRELATION_WINDOW_SECONDS,

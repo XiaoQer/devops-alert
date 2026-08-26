@@ -96,18 +96,25 @@ class AlertGroupingService:
             if signal is None:
                 raise RuntimeError("alert_grouping_signal_not_found")
             symptom = normalize_symptom(signal.facts.get("symptom")) or "unknown"
-            catalog_entry = _catalog(uow).find_service_identity(
-                alert.service,
-                alert.environment,
-                for_update=True,
+            service = alert.service
+            catalog_entry = (
+                None
+                if service is None
+                else _catalog(uow).find_service_identity(
+                    service, alert.environment, for_update=True
+                )
             )
             existing_member = repository.find_member(alert.id, alert.cycle, for_update=True)
             existing_link = repository.find_incident_link(alert.id)
-            candidates = repository.active_candidates(
-                service=alert.service,
-                environment=alert.environment,
-                symptom=symptom,
-                limit=GROUPING_CANDIDATE_LIMIT,
+            candidates = (
+                ()
+                if service is None
+                else repository.active_candidates(
+                    service=service,
+                    environment=alert.environment,
+                    symptom=symptom,
+                    limit=GROUPING_CANDIDATE_LIMIT,
+                )
             )
             decision = decide_alert_group(
                 GroupingContext.model_validate(

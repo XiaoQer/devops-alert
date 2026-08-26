@@ -76,6 +76,9 @@ class RecordRepositories:
                 summary=signal.summary,
                 severity=signal.severity,
                 service=signal.service,
+                entity_type=signal.entity_type,
+                entity_key=signal.entity_key,
+                entity_display_name=signal.entity_display_name,
                 environment=signal.environment,
                 observed_at=signal.observed_at,
                 received_at=signal.received_at,
@@ -101,6 +104,9 @@ class RecordRepositories:
                 title=alert.title,
                 severity=alert.severity,
                 service=alert.service,
+                entity_type=alert.entity_type,
+                entity_key=alert.entity_key,
+                entity_display_name=alert.entity_display_name,
                 environment=alert.environment,
                 first_observed_at=alert.first_observed_at,
                 last_observed_at=alert.last_observed_at,
@@ -121,6 +127,9 @@ class RecordRepositories:
         row.title = alert.title
         row.severity = alert.severity
         row.service = alert.service
+        row.entity_type = alert.entity_type
+        row.entity_key = alert.entity_key
+        row.entity_display_name = alert.entity_display_name
         row.environment = alert.environment
         row.first_observed_at = alert.first_observed_at
         row.last_observed_at = alert.last_observed_at

@@ -70,10 +70,11 @@ class CorrelationService:
             if signal is None:
                 raise RuntimeError("correlation_signal_not_found")
             existing_link = correlation.find_link_by_alert(alert.id)
-            catalog_entry = catalog.find_service_identity(
-                alert.service,
-                alert.environment,
-                for_update=True,
+            service = alert.service
+            catalog_entry = (
+                None
+                if service is None
+                else catalog.find_service_identity(service, alert.environment, for_update=True)
             )
 
             exact_ids: tuple[str, ...] = ()
@@ -85,14 +86,16 @@ class CorrelationService:
                 and alert.state == "ACTIVE"
                 and alert.severity in {"critical", "high"}
                 and alert.environment == "production"
+                and service is not None
                 and catalog_entry is not None
                 and catalog_entry.state == "ACTIVE"
             )
             if eligible_for_candidates:
+                assert service is not None
                 exact_ids = tuple(
                     row.id
                     for row in correlation.exact_candidates(
-                        service=alert.service,
+                        service=service,
                         environment=alert.environment,
                         observed_at=alert.last_observed_at,
                         window_seconds=CORRELATION_WINDOW_SECONDS,

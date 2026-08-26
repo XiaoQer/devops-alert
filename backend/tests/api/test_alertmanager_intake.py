@@ -8,7 +8,7 @@ from secrets import token_urlsafe
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
@@ -129,6 +129,45 @@ def test_valid_batch_is_accepted_without_creating_incident_or_diagnosis(
     assert _row_count(migrated_engine, AlertRow) == 1
     assert _row_count(migrated_engine, IncidentRow) == 0
     assert _row_count(migrated_engine, DiagnosisRunRow) == 0
+
+
+def test_alert_without_service_is_persisted_with_real_pod_identity(
+    intake_client: tuple[TestClient, dict[str, str]],
+    firing_payload: dict[str, object],
+    migrated_engine: Engine,
+) -> None:
+    client, tokens = intake_client
+    firing_payload["commonLabels"] = {}
+    labels = firing_payload["alerts"][0]["labels"]  # type: ignore[index]
+    del labels["service"]  # type: ignore[index]
+    labels.update(  # type: ignore[union-attr]
+        {"namespace": "devops-platform", "pod": "aegis-springboot-demo-0"}
+    )
+
+    response = _post(client, tokens, firing_payload)
+
+    assert response.status_code == 202  # type: ignore[attr-defined]
+    with Session(migrated_engine) as session:
+        alert = session.scalar(select(AlertRow))
+        signal = session.scalar(select(SignalEventRow))
+        assert alert is not None
+        assert signal is not None
+        assert alert.service is None
+        assert signal.service is None
+        assert alert.entity_type == "POD"
+        assert alert.entity_display_name == "devops-platform/aegis-springboot-demo-0"
+        assert signal.entity_key == alert.entity_key
+        session.execute(text("SET FOREIGN_KEY_CHECKS=0"))
+        for table_name in (
+            "alert_grouping_jobs",
+            "signal_intake_results",
+            "audit_events",
+            "alerts",
+            "signal_events",
+        ):
+            session.execute(text(f"DELETE FROM {table_name}"))
+        session.execute(text("SET FOREIGN_KEY_CHECKS=1"))
+        session.commit()
 
 
 @pytest.mark.parametrize("token_name", [None, "manual", "cloudevents"])

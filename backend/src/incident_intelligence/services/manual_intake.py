@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 from incident_intelligence.domain.alert_sources import MANUAL_SYSTEM_SOURCE_ID
 from incident_intelligence.domain.enums import AlertState, DiagnosisState, IncidentState
+from incident_intelligence.domain.entities import derive_entity_identity
 from incident_intelligence.domain.forbidden_identity import reject_forbidden_identity
 from incident_intelligence.domain.models import (
     Alert,
@@ -114,6 +115,7 @@ class ManualIntakeService:
                 return _result_from_existing(existing, fingerprint)
 
             now = self._clock().astimezone(UTC)
+            entity = derive_entity_identity({"service": command.service})
             signal = SignalEvent(
                 id=self._id_factory("sig"),
                 alert_source_id=MANUAL_SYSTEM_SOURCE_ID,
@@ -124,6 +126,9 @@ class ManualIntakeService:
                 summary=command.summary,
                 severity=command.severity,
                 service=command.service,
+                entity_type=entity.entity_type,
+                entity_key=entity.entity_key,
+                entity_display_name=entity.display_name,
                 environment=command.environment,
                 observed_at=command.observed_at,
                 received_at=now,
@@ -142,6 +147,9 @@ class ManualIntakeService:
                 title=signal.title,
                 severity=signal.severity,
                 service=signal.service,
+                entity_type=entity.entity_type,
+                entity_key=entity.entity_key,
+                entity_display_name=entity.display_name,
                 environment=signal.environment,
                 first_observed_at=signal.observed_at,
                 last_observed_at=signal.observed_at,
@@ -154,7 +162,7 @@ class ManualIntakeService:
                 state=IncidentState.DETECTED,
                 title=alert.title,
                 severity=alert.severity,
-                service=alert.service,
+                service=command.service,
                 environment=alert.environment,
                 detected_at=now,
                 created_at=now,

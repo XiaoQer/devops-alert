@@ -64,7 +64,7 @@ class AlertGroupListItem(BaseModel):
     state: GroupState
     storm_state: StormState
     severity: Severity
-    service: str
+    service: str | None
     environment: Environment
     symptom: str
     active_count: int = Field(ge=0)
@@ -130,7 +130,7 @@ class AlertGroupMemberItem(BaseModel):
     state: str
     severity: Severity
     source_name: str
-    service: str
+    service: str | None
     environment: Environment
     first_observed_at: datetime
     last_observed_at: datetime

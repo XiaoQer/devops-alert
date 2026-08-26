@@ -61,7 +61,7 @@ class AlertListItem(BaseModel):
     title: str
     state: AlertStateValue
     severity: Severity
-    service: str
+    service: str | None
     environment: Environment
     source: AlertSourceBrief
     first_observed_at: datetime
@@ -167,7 +167,7 @@ class AlertOverview(BaseModel):
     title: str
     state: AlertStateValue
     severity: Severity
-    service: str
+    service: str | None
     environment: Environment
     source: AlertSourceBrief
     first_observed_at: datetime

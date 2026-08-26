@@ -203,6 +203,12 @@ class SignalEventRow(Base):
         CheckConstraint(f"severity IN ({SEVERITY_VALUES})", name="signal_severity"),
         CheckConstraint(f"environment IN ({ENVIRONMENT_VALUES})", name="signal_environment"),
         CheckConstraint(f"event_type IN ({EVENT_TYPE_VALUES})", name="signal_event_type"),
+        CheckConstraint(
+            "entity_type IN ('SERVICE','WORKLOAD','POD','NODE','JOB',"
+            "'INSTANCE','CLUSTER','UNKNOWN')",
+            name="signal_entity_type",
+        ),
+        CheckConstraint("char_length(entity_key) = 64", name="signal_entity_key"),
         Index("ix_signal_events_observed_at", "observed_at"),
         _mysql_table_options(),
     )
@@ -217,7 +223,10 @@ class SignalEventRow(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     summary: Mapped[str] = mapped_column(String(2_000), nullable=False)
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
-    service: Mapped[str] = mapped_column(String(128), nullable=False)
+    service: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    entity_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    entity_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_display_name: Mapped[str] = mapped_column(String(257), nullable=False)
     environment: Mapped[str] = mapped_column(String(32), nullable=False)
     observed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     received_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
@@ -236,6 +245,12 @@ class AlertRow(Base):
         CheckConstraint(f"environment IN ({ENVIRONMENT_VALUES})", name="alert_environment"),
         CheckConstraint("char_length(source_instance) = 64", name="alert_source_instance"),
         CheckConstraint("char_length(source_alert_key) >= 1", name="alert_source_alert_key"),
+        CheckConstraint(
+            "entity_type IN ('SERVICE','WORKLOAD','POD','NODE','JOB',"
+            "'INSTANCE','CLUSTER','UNKNOWN')",
+            name="alert_entity_type",
+        ),
+        CheckConstraint("char_length(entity_key) = 64", name="alert_entity_key"),
         UniqueConstraint(
             "alert_source_id",
             "source",
@@ -262,7 +277,10 @@ class AlertRow(Base):
     cycle: Mapped[int] = mapped_column(nullable=False, default=1, server_default="1")
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
-    service: Mapped[str] = mapped_column(String(128), nullable=False)
+    service: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    entity_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    entity_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_display_name: Mapped[str] = mapped_column(String(257), nullable=False)
     environment: Mapped[str] = mapped_column(String(32), nullable=False)
     first_observed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     last_observed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
@@ -324,6 +342,12 @@ class AlertGroupRow(Base):
         CheckConstraint(f"severity IN ({SEVERITY_VALUES})", name="alert_group_severity"),
         CheckConstraint(f"environment IN ({ENVIRONMENT_VALUES})", name="alert_group_environment"),
         CheckConstraint(
+            "entity_type IN ('SERVICE','WORKLOAD','POD','NODE','JOB',"
+            "'INSTANCE','CLUSTER','UNKNOWN')",
+            name="alert_group_entity_type",
+        ),
+        CheckConstraint("char_length(entity_key) = 64", name="alert_group_entity_key"),
+        CheckConstraint(
             "active_count >= 0 AND total_count >= 1 "
             "AND active_count <= total_count AND impacted_resource_count >= 1",
             name="alert_group_counts",
@@ -337,7 +361,7 @@ class AlertGroupRow(Base):
         Index(
             "ix_alert_groups_candidate",
             "state",
-            "service",
+            "entity_key",
             "environment",
             "symptom",
             "last_observed_at",
@@ -351,7 +375,10 @@ class AlertGroupRow(Base):
     state: Mapped[str] = mapped_column(String(16), nullable=False)
     storm_state: Mapped[str] = mapped_column(String(16), nullable=False)
     rule_version: Mapped[str] = mapped_column(String(32), nullable=False)
-    service: Mapped[str] = mapped_column(String(128), nullable=False)
+    service: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    entity_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    entity_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_display_name: Mapped[str] = mapped_column(String(257), nullable=False)
     environment: Mapped[str] = mapped_column(String(32), nullable=False)
     symptom: Mapped[str] = mapped_column(String(64), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
