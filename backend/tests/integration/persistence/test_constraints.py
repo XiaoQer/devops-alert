@@ -14,6 +14,9 @@ from incident_intelligence.domain.alert_sources import (
 )
 from incident_intelligence.ids import new_id
 from incident_intelligence.persistence.models import (
+    AlertGroupCorrelationJobRow,
+    AlertGroupMemberRow,
+    AlertGroupRow,
     AlertRow,
     CorrelationDecisionRow,
     CorrelationJobRow,
@@ -127,6 +130,58 @@ def seed_incident(session: Session, **overrides: object) -> IncidentRow:
     session.add(incident)
     session.flush()
     return incident
+
+
+def make_alert_group(alert_id: str, **overrides: object) -> AlertGroupRow:
+    values: dict[str, object] = {
+        "id": new_id("agr"),
+        "state": "ACTIVE",
+        "storm_state": "NORMAL",
+        "rule_version": "alert-grouping.v1",
+        "service": "payment-api",
+        "environment": "production",
+        "symptom": "errors",
+        "title": "支付接口错误率升高",
+        "severity": "high",
+        "representative_alert_id": alert_id,
+        "incident_id": None,
+        "first_observed_at": NOW,
+        "last_observed_at": NOW,
+        "state_changed_at": NOW,
+        "last_member_at": NOW,
+        "active_count": 1,
+        "total_count": 1,
+        "impacted_resource_count": 1,
+        "desired_correlation_version": 0,
+        "reason_codes": ["first_alert_created_group"],
+        "explanation": "首条相似告警建立独立告警组。",
+        "created_at": NOW,
+        "updated_at": NOW,
+        "version": 1,
+    }
+    values.update(overrides)
+    return AlertGroupRow(**values)
+
+
+def make_group_correlation_job(
+    alert_group_id: str, **overrides: object
+) -> AlertGroupCorrelationJobRow:
+    values: dict[str, object] = {
+        "id": new_id("gcj"),
+        "alert_group_id": alert_group_id,
+        "target_group_version": 1,
+        "state": "PENDING",
+        "active_slot": 1,
+        "attempts": 0,
+        "available_at": NOW,
+        "lease_owner": None,
+        "lease_expires_at": None,
+        "last_error_code": None,
+        "created_at": NOW,
+        "updated_at": NOW,
+    }
+    values.update(overrides)
+    return AlertGroupCorrelationJobRow(**values)
 
 
 def make_activity(incident_id: str, **overrides: object) -> IncidentActivityRow:
@@ -353,6 +408,100 @@ def test_alert_requires_existing_signal(migrated_engine: Engine) -> None:
             session.commit()
 
         session.rollback()
+
+
+def test_alert_cycle_must_be_positive(migrated_engine: Engine) -> None:
+    with Session(migrated_engine) as session:
+        signal = make_signal()
+        session.add(signal)
+        session.flush()
+        session.add(make_alert(signal.id, cycle=0))
+
+        with pytest.raises(OperationalError):
+            session.commit()
+
+
+def test_alert_group_counts_must_be_consistent(migrated_engine: Engine) -> None:
+    with Session(migrated_engine) as session:
+        alert = seed_alert(session)
+        session.add(make_alert_group(alert.id, active_count=2, total_count=1))
+
+        with pytest.raises(OperationalError):
+            session.commit()
+
+
+def test_alert_cycle_can_only_belong_to_one_group(migrated_engine: Engine) -> None:
+    with Session(migrated_engine) as session:
+        alert = seed_alert(session)
+        first_group = make_alert_group(alert.id)
+        second_group = make_alert_group(alert.id)
+        session.add_all([first_group, second_group])
+        session.flush()
+        member_values = {
+            "alert_id": alert.id,
+            "alert_cycle": 1,
+            "joined_alert_version": 1,
+            "current_alert_version": 1,
+            "current_state": "ACTIVE",
+            "current_severity": "high",
+            "resource_type": "instance",
+            "resource_name": "payment-api-1",
+            "resource_key": "c" * 64,
+            "reason_code": "first_alert_created_group",
+            "joined_at": NOW,
+            "updated_at": NOW,
+        }
+        session.add_all(
+            [
+                AlertGroupMemberRow(alert_group_id=first_group.id, **member_values),
+                AlertGroupMemberRow(alert_group_id=second_group.id, **member_values),
+            ]
+        )
+
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def test_alert_group_has_at_most_one_active_correlation_job(
+    migrated_engine: Engine,
+) -> None:
+    with Session(migrated_engine) as session:
+        alert = seed_alert(session)
+        group = make_alert_group(alert.id)
+        session.add(group)
+        session.flush()
+        session.add_all(
+            [make_group_correlation_job(group.id), make_group_correlation_job(group.id)]
+        )
+
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def test_alert_group_keeps_multiple_terminal_correlation_jobs(
+    migrated_engine: Engine,
+) -> None:
+    with Session(migrated_engine) as session:
+        alert = seed_alert(session)
+        group = make_alert_group(alert.id)
+        session.add(group)
+        session.flush()
+        session.add_all(
+            [
+                make_group_correlation_job(group.id, state="SUCCEEDED", active_slot=None),
+                make_group_correlation_job(group.id, state="FAILED", active_slot=None),
+            ]
+        )
+        session.commit()
+
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(AlertGroupCorrelationJobRow)
+                .where(AlertGroupCorrelationJobRow.alert_group_id == group.id)
+            )
+            == 2
+        )
 
 
 def test_signal_title_length_is_enforced_by_mysql(migrated_engine: Engine) -> None:

@@ -54,6 +54,7 @@ class Alert(FrozenDomainModel):
     source_instance: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_alert_key: str = Field(min_length=1, max_length=128)
     state: AlertState
+    cycle: int = Field(default=1, ge=1)
     title: Title
     severity: Severity
     service: ServiceName

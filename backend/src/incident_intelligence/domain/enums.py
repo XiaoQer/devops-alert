@@ -7,6 +7,16 @@ class AlertState(StrEnum):
     SUPPRESSED = "SUPPRESSED"
 
 
+class AlertGroupState(StrEnum):
+    ACTIVE = "ACTIVE"
+    RESOLVED = "RESOLVED"
+
+
+class StormState(StrEnum):
+    NORMAL = "NORMAL"
+    STORM = "STORM"
+
+
 class IncidentState(StrEnum):
     DETECTED = "DETECTED"
     TRIAGING = "TRIAGING"

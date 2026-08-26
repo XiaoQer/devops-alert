@@ -96,6 +96,7 @@ def test_first_firing_opens_active_alert() -> None:
     assert decision.alert.last_observed_at == TIME_3
     assert decision.alert.state_changed_at == TIME_1
     assert decision.alert.created_at == TIME_4
+    assert decision.alert.cycle == 1
     assert decision.alert.version == 1
 
 
@@ -126,6 +127,7 @@ def test_active_firing_refreshes_content_and_increments_version() -> None:
     assert decision.alert.last_observed_at == TIME_3
     assert decision.alert.state_changed_at == TIME_1
     assert decision.alert.created_at == current.created_at
+    assert decision.alert.cycle == current.cycle
     assert decision.alert.version == 3
 
 
@@ -142,6 +144,7 @@ def test_active_alert_resolves_at_same_or_later_event_time() -> None:
     assert decision.alert.signal_event_id == NEW_SIGNAL_ID
     assert decision.alert.last_observed_at == TIME_3
     assert decision.alert.state_changed_at == TIME_3
+    assert decision.alert.cycle == current.cycle
     assert decision.alert.version == 3
 
 
@@ -175,6 +178,7 @@ def test_resolved_alert_reopens_only_for_a_newer_episode() -> None:
     assert reopen_decision.alert.state is AlertState.ACTIVE
     assert reopen_decision.alert.first_observed_at == TIME_3
     assert reopen_decision.alert.state_changed_at == TIME_3
+    assert reopen_decision.alert.cycle == current.cycle + 1
     assert reopen_decision.alert.version == 4
 
 

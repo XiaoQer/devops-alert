@@ -344,6 +344,7 @@ def _alert_from_row(row: AlertRow) -> Alert:
             "source_instance": row.source_instance,
             "source_alert_key": row.source_alert_key,
             "state": row.state,
+            "cycle": row.cycle,
             "title": row.title,
             "severity": row.severity,
             "service": row.service,

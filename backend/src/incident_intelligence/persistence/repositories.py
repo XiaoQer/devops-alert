@@ -97,6 +97,7 @@ class RecordRepositories:
                 source_instance=alert.source_instance,
                 source_alert_key=alert.source_alert_key,
                 state=alert.state.value,
+                cycle=alert.cycle,
                 title=alert.title,
                 severity=alert.severity,
                 service=alert.service,
@@ -116,6 +117,7 @@ class RecordRepositories:
             raise RuntimeError("待更新的 Alert 不存在")
         row.signal_event_id = alert.signal_event_id
         row.state = alert.state.value
+        row.cycle = alert.cycle
         row.title = alert.title
         row.severity = alert.severity
         row.service = alert.service
