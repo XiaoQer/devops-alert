@@ -218,6 +218,28 @@ def test_same_time_active_firing_uses_last_received_normalized_content() -> None
     assert decision.alert.version == 3
 
 
+def test_projection_preserves_pending_pod_identity_without_service() -> None:
+    command = firing_command(
+        service=None,
+        entity_type="POD",
+        entity_key="4" * 64,
+        entity_display_name="devops-platform/demo-0",
+        service_resolution_status="PENDING",
+        service_resolution_source=None,
+        service_resolution_confidence=None,
+        service_resolution_reason_codes=("service_missing",),
+    )
+
+    decision = decide_alert_projection(None, command, NEW_ALERT_ID, NEW_SIGNAL_ID, TIME_4)
+
+    assert decision.alert is not None
+    assert decision.alert.service is None
+    assert decision.alert.entity_type == "POD"
+    assert decision.alert.entity_key == "4" * 64
+    assert decision.alert.entity_display_name == "devops-platform/demo-0"
+    assert decision.alert.service_resolution_status == "PENDING"
+
+
 def test_already_resolved_alert_does_not_change_for_another_resolution() -> None:
     current = current_alert(AlertState.RESOLVED)
 

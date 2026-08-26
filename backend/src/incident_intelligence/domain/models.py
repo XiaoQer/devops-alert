@@ -1,8 +1,24 @@
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import (
+    AfterValidator,
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
+from incident_intelligence.domain.entities import (
+    EntityType,
+    ResolutionConfidence,
+    ResolutionReasonCode,
+    ServiceResolutionSource,
+    ServiceResolutionStatus,
+    derive_entity_identity,
+)
 from incident_intelligence.domain.enums import AlertState, DiagnosisState, IncidentState
 
 Severity = Literal["critical", "high", "medium", "low"]
@@ -38,12 +54,26 @@ class SignalEvent(FrozenDomainModel):
     title: Title
     summary: Summary
     severity: Severity
-    service: ServiceName
+    service: ServiceName | None
+    entity_type: EntityType
+    entity_key: str = Field(pattern=r"^[0-9a-f]{64}$")
+    entity_display_name: str = Field(min_length=1, max_length=257)
+    service_resolution_status: ServiceResolutionStatus
+    service_resolution_source: ServiceResolutionSource | None = None
+    service_resolution_confidence: ResolutionConfidence | None = None
+    service_resolution_reason_codes: tuple[ResolutionReasonCode, ...] = Field(
+        default=(), max_length=10
+    )
     environment: Environment
     observed_at: UtcAwareDatetime
     received_at: UtcAwareDatetime
     facts: dict[FactKey, FactValue] = Field(default_factory=dict, max_length=50)
     payload_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="before")
+    @classmethod
+    def derive_missing_entity(cls, value: object) -> object:
+        return _with_derived_service_entity(value)
 
 
 class Alert(FrozenDomainModel):
@@ -57,11 +87,44 @@ class Alert(FrozenDomainModel):
     cycle: int = Field(default=1, ge=1)
     title: Title
     severity: Severity
-    service: ServiceName
+    service: ServiceName | None
+    entity_type: EntityType
+    entity_key: str = Field(pattern=r"^[0-9a-f]{64}$")
+    entity_display_name: str = Field(min_length=1, max_length=257)
+    service_resolution_status: ServiceResolutionStatus
+    service_resolution_source: ServiceResolutionSource | None = None
+    service_resolution_confidence: ResolutionConfidence | None = None
+    service_resolution_reason_codes: tuple[ResolutionReasonCode, ...] = Field(
+        default=(), max_length=10
+    )
     environment: Environment
     first_observed_at: UtcAwareDatetime
     last_observed_at: UtcAwareDatetime
     state_changed_at: UtcAwareDatetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def derive_missing_entity(cls, value: object) -> object:
+        return _with_derived_service_entity(value)
+
+
+def _with_derived_service_entity(value: object) -> object:
+    if not isinstance(value, dict) or "entity_type" in value:
+        return value
+    service = value.get("service")
+    if not isinstance(service, str) or not service.strip():
+        return value
+    identity = derive_entity_identity({"service": service})
+    return {
+        **value,
+        "entity_type": identity.entity_type,
+        "entity_key": identity.entity_key,
+        "entity_display_name": identity.display_name,
+        "service_resolution_status": identity.service_resolution_status,
+        "service_resolution_source": identity.service_resolution_source,
+        "service_resolution_confidence": identity.service_resolution_confidence,
+        "service_resolution_reason_codes": identity.service_resolution_reason_codes,
+    }
 
 
 class Incident(FrozenDomainModel):
