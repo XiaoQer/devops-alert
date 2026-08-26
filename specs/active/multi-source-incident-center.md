@@ -6,12 +6,13 @@
 
 ## 背景与目标
 
-从零建设独立生产事故智能平台。平台不把 Prometheus 告警直接等同于事故，而是接收多源事件，形成 SignalEvent、Alert 和 Incident 三层模型，再通过可解释关联、自动取证和受约束 AI 分析形成事故闭环。
+从零建设独立生产事故智能平台。平台不把 Prometheus 告警直接等同于事故，而是接收多源事件，形成 SignalEvent、Alert 和 Incident 独立模型；AlertGroup 作为 Alert 之上的持久化运营投影压缩高可信相似告警，再通过可解释关联、自动取证和受约束 AI 分析形成事故闭环。
 
 ## 范围
 
 - 一个统一 UI 和一个逻辑核心控制器；
 - SignalEvent、Alert、Incident、DiagnosisRun 四个独立领域对象；
+- AlertGroup 和 AlertGroupMember 持久化运营投影；
 - 告警、事故运营和诊断任务三套状态机；
 - Alertmanager、CloudEvents 和人工报告三个首批入口；
 - 轻量服务目录、所有者和一跳依赖；
@@ -46,7 +47,7 @@
 
 实施必须拆分为独立阶段：
 
-1. 工程基线、三层领域模型、DiagnosisRun 和兼容入口；
+1. 工程基线、独立领域模型、DiagnosisRun 和兼容入口；
 2. 服务目录与规则关联；
 3. 通用诊断与首批增强包；
 4. 事故运营与恢复闭环；
@@ -66,6 +67,7 @@
 
 - 三个首批入口输出同一内部契约并通过幂等、乱序、恢复、脱敏和容量测试；
 - SignalEvent、Alert、Incident、DiagnosisRun 可独立查询和审计；
+- 相似 Alert 可确定性归入可解释 AlertGroup，原始事实和成员关系保持可追溯；
 - 无关、跨环境和低可信告警不自动误合并；
 - 每次自动关联能够解释使用的规则和事实；
 - 无专用增强包时仍形成通用基础快照并标记覆盖限制；
