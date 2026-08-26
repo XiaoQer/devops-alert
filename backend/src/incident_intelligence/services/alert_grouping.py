@@ -1,0 +1,376 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from incident_intelligence.domain.alert_grouping import (
+    AlertGroupCandidate,
+    GroupingContext,
+    ResourceIdentity,
+    decide_alert_group,
+    derive_resource_identity,
+)
+from incident_intelligence.domain.catalog import normalize_symptom
+from incident_intelligence.domain.enums import CatalogState
+from incident_intelligence.ids import IdPrefix, new_id
+from incident_intelligence.persistence.alert_group_repository import AlertGroupRepository
+from incident_intelligence.persistence.catalog_repository import ServiceCatalogRepository
+from incident_intelligence.persistence.models import (
+    AlertGroupingJobRow,
+    AlertGroupMemberRow,
+    AlertGroupRow,
+    AlertRow,
+)
+from incident_intelligence.persistence.repositories import RecordRepositories
+from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from incident_intelligence.services.alert_grouping_jobs import (
+    AlertGroupingJobLease,
+    AlertGroupingJobNotRetryable,
+)
+
+GROUPING_RULE_VERSION = "alert-grouping.v1"
+GROUPING_CANDIDATE_LIMIT = 21
+STORM_MEMBER_THRESHOLD = 20
+STORM_WINDOW_SECONDS = 60
+STORM_CLEAR_SECONDS = 300
+SEVERITY_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+GroupingResultAction = Literal["CREATE_GROUP", "JOIN_GROUP", "KEEP_GROUP", "SUPERSEDED"]
+
+
+class AlertGroupingResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    job_id: str = Field(pattern=r"^agj_[0-9a-f]{32}$")
+    alert_id: str = Field(pattern=r"^alt_[0-9a-f]{32}$")
+    alert_cycle: int = Field(ge=1)
+    group_id: str | None = Field(default=None, pattern=r"^agr_[0-9a-f]{32}$")
+    action: GroupingResultAction
+    reason_code: str = Field(min_length=1, max_length=64)
+
+
+class AlertGroupingService:
+    def __init__(
+        self,
+        *,
+        uow_factory: Callable[[], SqlAlchemyUnitOfWork],
+        clock: Callable[[], datetime] | None = None,
+        id_factory: Callable[[IdPrefix], str] = new_id,
+    ) -> None:
+        self._uow_factory = uow_factory
+        self._clock = clock or (lambda: datetime.now(UTC))
+        self._id_factory = id_factory
+
+    def process(self, lease: AlertGroupingJobLease) -> AlertGroupingResult:
+        now = self._clock().astimezone(UTC)
+        with self._uow_factory() as uow:
+            repository = _groups(uow)
+            job = repository.find_grouping_job(lease.id, for_update=True)
+            if (
+                job is None
+                or job.state != "LEASED"
+                or job.lease_owner != lease.lease_owner
+                or job.alert_id != lease.alert_id
+                or job.alert_cycle != lease.alert_cycle
+                or job.alert_version != lease.alert_version
+            ):
+                raise AlertGroupingJobNotRetryable()
+
+            alert = repository.find_alert_for_update(job.alert_id)
+            if alert is None:
+                raise RuntimeError("alert_grouping_alert_not_found")
+            if alert.cycle != job.alert_cycle or alert.version != job.alert_version:
+                _complete_job(job, now)
+                repository.flush()
+                uow.commit()
+                return AlertGroupingResult(
+                    job_id=job.id,
+                    alert_id=job.alert_id,
+                    alert_cycle=job.alert_cycle,
+                    action="SUPERSEDED",
+                    reason_code="alert_version_superseded",
+                )
+
+            signal = repository.find_signal(alert.signal_event_id)
+            if signal is None:
+                raise RuntimeError("alert_grouping_signal_not_found")
+            symptom = normalize_symptom(signal.facts.get("symptom")) or "unknown"
+            catalog_entry = _catalog(uow).find_service_identity(
+                alert.service,
+                alert.environment,
+                for_update=True,
+            )
+            existing_member = repository.find_member(alert.id, alert.cycle, for_update=True)
+            existing_link = repository.find_incident_link(alert.id)
+            candidates = repository.active_candidates(
+                service=alert.service,
+                environment=alert.environment,
+                symptom=symptom,
+                limit=GROUPING_CANDIDATE_LIMIT,
+            )
+            decision = decide_alert_group(
+                GroupingContext.model_validate(
+                    {
+                        "alert_id": alert.id,
+                        "service": alert.service,
+                        "environment": alert.environment,
+                        "symptom": symptom,
+                        "observed_at": alert.last_observed_at,
+                        "catalog_state": (
+                            None if catalog_entry is None else CatalogState(catalog_entry.state)
+                        ),
+                        "existing_group_id": (
+                            None if existing_member is None else existing_member.alert_group_id
+                        ),
+                        "alert_incident_id": (
+                            None if existing_link is None else existing_link.incident_id
+                        ),
+                        "candidates": tuple(_candidate(row) for row in candidates),
+                    }
+                )
+            )
+            identity = derive_resource_identity(signal.facts, alert.id)
+
+            if decision.action == "CREATE_GROUP":
+                group = _new_group(
+                    group_id=self._id_factory("agr"),
+                    alert=alert,
+                    symptom=symptom,
+                    reason_code=decision.reason_codes[0],
+                    explanation=decision.explanation,
+                    now=now,
+                )
+                repository.add_group(group)
+                member = _new_member(group.id, alert, identity, decision.reason_codes[0], now)
+                repository.add_member(member)
+            else:
+                if decision.selected_group_id is None:
+                    raise RuntimeError("alert_grouping_selected_group_missing")
+                selected_group = repository.find_group(decision.selected_group_id, for_update=True)
+                if selected_group is None:
+                    raise RuntimeError("alert_grouping_candidate_not_found")
+                group = selected_group
+                if existing_member is None:
+                    member = _new_member(group.id, alert, identity, decision.reason_codes[0], now)
+                    repository.add_member(member)
+                else:
+                    member = existing_member
+                    member.current_alert_version = alert.version
+                    member.current_state = alert.state
+                    member.current_severity = alert.severity
+                    member.resource_type = identity.resource_type
+                    member.resource_name = identity.resource_name
+                    member.resource_key = identity.resource_key
+                    member.updated_at = now
+                    repository.flush()
+                _refresh_group(
+                    repository,
+                    group,
+                    reason_codes=list(decision.reason_codes),
+                    explanation=decision.explanation,
+                    now=now,
+                )
+
+            _append_audit(
+                _records(uow),
+                audit_id=self._id_factory("aud"),
+                group=group,
+                alert=alert,
+                reason_code=decision.reason_codes[0],
+                action=decision.action,
+                now=now,
+            )
+            _complete_job(job, now)
+            repository.flush()
+            uow.commit()
+            return AlertGroupingResult(
+                job_id=job.id,
+                alert_id=alert.id,
+                alert_cycle=alert.cycle,
+                group_id=group.id,
+                action=decision.action,
+                reason_code=decision.reason_codes[0],
+            )
+
+
+def _new_group(
+    *,
+    group_id: str,
+    alert: AlertRow,
+    symptom: str,
+    reason_code: str,
+    explanation: str,
+    now: datetime,
+) -> AlertGroupRow:
+    active_count = 1 if alert.state == "ACTIVE" else 0
+    return AlertGroupRow(
+        id=group_id,
+        state="ACTIVE" if active_count else "RESOLVED",
+        storm_state="NORMAL",
+        rule_version=GROUPING_RULE_VERSION,
+        service=alert.service,
+        environment=alert.environment,
+        symptom=symptom,
+        title=alert.title,
+        severity=alert.severity,
+        representative_alert_id=alert.id,
+        incident_id=None,
+        first_observed_at=alert.first_observed_at,
+        last_observed_at=alert.last_observed_at,
+        state_changed_at=now,
+        last_member_at=now,
+        active_count=active_count,
+        total_count=1,
+        impacted_resource_count=1,
+        desired_correlation_version=0,
+        reason_codes=[reason_code],
+        explanation=explanation,
+        created_at=now,
+        updated_at=now,
+        version=1,
+    )
+
+
+def _new_member(
+    group_id: str,
+    alert: AlertRow,
+    identity: ResourceIdentity,
+    reason_code: str,
+    now: datetime,
+) -> AlertGroupMemberRow:
+    return AlertGroupMemberRow(
+        alert_group_id=group_id,
+        alert_id=alert.id,
+        alert_cycle=alert.cycle,
+        joined_alert_version=alert.version,
+        current_alert_version=alert.version,
+        current_state=alert.state,
+        current_severity=alert.severity,
+        resource_type=identity.resource_type,
+        resource_name=identity.resource_name,
+        resource_key=identity.resource_key,
+        reason_code=reason_code,
+        joined_at=now,
+        updated_at=now,
+    )
+
+
+def _refresh_group(
+    repository: AlertGroupRepository,
+    group: AlertGroupRow,
+    *,
+    reason_codes: list[str],
+    explanation: str,
+    now: datetime,
+) -> None:
+    members = repository.list_members(group.id)
+    alerts = tuple(
+        alert for member in members if (alert := repository.find_alert(member.alert_id)) is not None
+    )
+    if not members or not alerts:
+        raise RuntimeError("alert_grouping_group_has_no_members")
+
+    active_count = sum(member.current_state == "ACTIVE" for member in members)
+    previous_state = group.state
+    group.state = "ACTIVE" if active_count else "RESOLVED"
+    if group.state != previous_state:
+        group.state_changed_at = now
+    group.active_count = active_count
+    group.total_count = len(members)
+    group.impacted_resource_count = len({member.resource_key for member in members})
+    group.first_observed_at = min(alert.first_observed_at for alert in alerts)
+    group.last_observed_at = max(alert.last_observed_at for alert in alerts)
+    group.last_member_at = max(member.joined_at for member in members)
+    representative = max(
+        zip(members, alerts, strict=True),
+        key=lambda pair: (
+            SEVERITY_RANK[pair[0].current_severity],
+            pair[1].last_observed_at,
+            pair[0].alert_id,
+        ),
+    )
+    group.severity = representative[0].current_severity
+    group.representative_alert_id = representative[0].alert_id
+    group.title = representative[1].title
+    recent_members = sum(
+        member.joined_at >= now - timedelta(seconds=STORM_WINDOW_SECONDS) for member in members
+    )
+    if recent_members >= STORM_MEMBER_THRESHOLD:
+        group.storm_state = "STORM"
+    elif group.storm_state == "STORM" and group.last_member_at <= now - timedelta(
+        seconds=STORM_CLEAR_SECONDS
+    ):
+        group.storm_state = "NORMAL"
+    group.rule_version = GROUPING_RULE_VERSION
+    group.reason_codes = reason_codes
+    group.explanation = explanation
+    group.updated_at = now
+    group.version += 1
+
+
+def _candidate(row: AlertGroupRow) -> AlertGroupCandidate:
+    return AlertGroupCandidate.model_validate(
+        {
+            "id": row.id,
+            "service": row.service,
+            "environment": row.environment,
+            "symptom": row.symptom,
+            "last_observed_at": row.last_observed_at,
+            "incident_id": row.incident_id,
+        }
+    )
+
+
+def _append_audit(
+    records: RecordRepositories,
+    *,
+    audit_id: str,
+    group: AlertGroupRow,
+    alert: AlertRow,
+    reason_code: str,
+    action: str,
+    now: datetime,
+) -> None:
+    records.add_audit(
+        audit_id=audit_id,
+        actor="alert-grouping-worker",
+        action="alert.grouped",
+        resource_type="alert_group",
+        resource_id=group.id,
+        request_id=group.id,
+        details={
+            "reason_code": reason_code,
+            "rule_version": GROUPING_RULE_VERSION,
+            "grouping_action": action,
+            "alert_id": alert.id,
+        },
+        created_at=now,
+    )
+
+
+def _complete_job(job: AlertGroupingJobRow, now: datetime) -> None:
+    job.state = "SUCCEEDED"
+    job.lease_owner = None
+    job.lease_expires_at = None
+    job.last_error_code = None
+    job.updated_at = now
+
+
+def _groups(uow: SqlAlchemyUnitOfWork) -> AlertGroupRepository:
+    if uow.alert_groups is None:
+        raise RuntimeError("工作单元没有可用告警组仓储")
+    return uow.alert_groups
+
+
+def _catalog(uow: SqlAlchemyUnitOfWork) -> ServiceCatalogRepository:
+    if uow.catalog is None:
+        raise RuntimeError("工作单元没有可用服务目录仓储")
+    return uow.catalog
+
+
+def _records(uow: SqlAlchemyUnitOfWork) -> RecordRepositories:
+    if uow.records is None:
+        raise RuntimeError("工作单元没有可用记录仓储")
+    return uow.records

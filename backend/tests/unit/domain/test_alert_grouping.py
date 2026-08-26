@@ -60,6 +60,15 @@ def test_unique_compatible_candidate_is_joined() -> None:
     )
 
 
+def test_out_of_order_processing_within_window_still_converges() -> None:
+    decision = decide_alert_group(
+        context(candidates=(candidate(last_observed_at=NOW + timedelta(seconds=30)),))
+    )
+
+    assert decision.action == "JOIN_GROUP"
+    assert decision.selected_group_id == GROUP_1
+
+
 def test_existing_membership_is_kept_before_reconsidering_candidates() -> None:
     decision = decide_alert_group(
         context(

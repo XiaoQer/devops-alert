@@ -199,7 +199,7 @@ def _incident_is_compatible(
 
 def _is_in_window(context: GroupingContext, candidate: AlertGroupCandidate) -> bool:
     age_seconds = (context.observed_at - candidate.last_observed_at).total_seconds()
-    return 0 <= age_seconds <= GROUPING_WINDOW_SECONDS
+    return abs(age_seconds) <= GROUPING_WINDOW_SECONDS
 
 
 def _resource_digest(resource_type: str, resource_name: str) -> str:

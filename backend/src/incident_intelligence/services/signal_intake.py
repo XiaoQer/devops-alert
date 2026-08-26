@@ -17,8 +17,8 @@ from incident_intelligence.domain.signal_intake import (
     decide_alert_projection,
 )
 from incident_intelligence.ids import IdPrefix, new_id
+from incident_intelligence.persistence.alert_group_repository import AlertGroupRepository
 from incident_intelligence.persistence.alert_source_repository import AlertSourceRepository
-from incident_intelligence.persistence.correlation_repository import CorrelationRepository
 from incident_intelligence.persistence.models import AlertRow, SignalIntakeResultRow
 from incident_intelligence.persistence.repositories import RecordRepositories
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
@@ -114,11 +114,11 @@ class SignalIntakeService:
     ) -> SignalIntakeBatchResult:
         with self._uow_factory() as uow:
             records = _records(uow)
-            correlation = _correlation(uow)
+            alert_groups = _alert_groups(uow)
             items = tuple(
                 self._submit_command(
                     records,
-                    correlation,
+                    alert_groups,
                     command,
                     fingerprint,
                     actor,
@@ -157,7 +157,7 @@ class SignalIntakeService:
     def _submit_command(
         self,
         records: RecordRepositories,
-        correlation: CorrelationRepository,
+        alert_groups: AlertGroupRepository,
         command: SignalCommand,
         fingerprint: str,
         actor: str,
@@ -210,9 +210,9 @@ class SignalIntakeService:
                 records.update_alert(decision.alert)
         alert_id = None if decision.alert is None else decision.alert.id
         if decision.changes_projection and decision.alert is not None:
-            correlation.enqueue(
-                alert_source_id=decision.alert.alert_source_id,
+            alert_groups.enqueue_grouping(
                 alert_id=decision.alert.id,
+                alert_cycle=decision.alert.cycle,
                 alert_version=decision.alert.version,
                 now=now,
             )
@@ -306,10 +306,10 @@ def _records(uow: SqlAlchemyUnitOfWork) -> RecordRepositories:
     return uow.records
 
 
-def _correlation(uow: SqlAlchemyUnitOfWork) -> CorrelationRepository:
-    if uow.correlation is None:
-        raise RuntimeError("工作单元没有可用关联仓储")
-    return uow.correlation
+def _alert_groups(uow: SqlAlchemyUnitOfWork) -> AlertGroupRepository:
+    if uow.alert_groups is None:
+        raise RuntimeError("工作单元没有可用告警组仓储")
+    return uow.alert_groups
 
 
 def _alert_sources(uow: SqlAlchemyUnitOfWork) -> AlertSourceRepository:

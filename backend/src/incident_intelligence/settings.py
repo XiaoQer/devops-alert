@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     correlation_poll_interval_seconds: float = Field(default=1.0, ge=0.1, le=60)
     correlation_lease_seconds: int = Field(default=30, ge=5, le=300)
     correlation_batch_size: int = Field(default=10, ge=1, le=50)
+    alert_grouping_runner_enabled: bool = True
+    alert_grouping_poll_interval_seconds: float = Field(default=1.0, ge=0.1, le=60)
+    alert_grouping_lease_seconds: int = Field(default=30, ge=5, le=300)
+    alert_grouping_batch_size: int = Field(default=10, ge=1, le=50)
 
     @field_validator("database_url")
     @classmethod

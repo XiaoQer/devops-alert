@@ -18,6 +18,7 @@ from incident_intelligence.domain.forbidden_identity import ForbiddenIdentityErr
 from incident_intelligence.domain.signal_intake import SignalCommand
 from incident_intelligence.ids import IdPrefix, new_id
 from incident_intelligence.persistence.models import (
+    AlertGroupingJobRow,
     AlertRow,
     AuditEventRow,
     CorrelationJobRow,
@@ -101,7 +102,7 @@ def test_firing_creates_only_signal_alert_result_and_audits(
         assert count_rows(session, AlertRow) == 1
         assert count_rows(session, SignalIntakeResultRow) == 1
         assert count_rows(session, AuditEventRow) == 2
-        job = session.scalar(select(CorrelationJobRow))
+        job = session.scalar(select(AlertGroupingJobRow))
         assert job is not None
         assert (job.alert_id, job.alert_version, job.state) == (
             result.items[0].alert_id,
@@ -109,6 +110,7 @@ def test_firing_creates_only_signal_alert_result_and_audits(
             "PENDING",
         )
         assert count_rows(session, IncidentRow) == 0
+        assert count_rows(session, CorrelationJobRow) == 0
         assert count_rows(session, DiagnosisRunRow) == 0
         audits = list(session.scalars(select(AuditEventRow).order_by(AuditEventRow.action)))
         assert {audit.action for audit in audits} == {"alert.opened", "signal.received"}
@@ -154,7 +156,7 @@ def test_projection_sequence_updates_resolves_ignores_stale_and_reopens(
         assert count_rows(session, SignalIntakeResultRow) == 5
         assert count_rows(session, AuditEventRow) == 10
         jobs = list(
-            session.scalars(select(CorrelationJobRow).order_by(CorrelationJobRow.alert_version))
+            session.scalars(select(AlertGroupingJobRow).order_by(AlertGroupingJobRow.alert_version))
         )
         assert [(job.alert_version, job.state) for job in jobs] == [
             (1, "PENDING"),
@@ -181,7 +183,8 @@ def test_exact_command_replays_original_result_without_new_rows_or_audit(
         assert count_rows(session, AlertRow) == 1
         assert count_rows(session, SignalIntakeResultRow) == 1
         assert count_rows(session, AuditEventRow) == 2
-        assert count_rows(session, CorrelationJobRow) == 1
+        assert count_rows(session, AlertGroupingJobRow) == 1
+        assert count_rows(session, CorrelationJobRow) == 0
 
 
 def test_same_source_event_identity_with_different_content_conflicts(
@@ -232,7 +235,8 @@ def test_orphan_resolved_replay_keeps_original_null_alert_id(
         assert count_rows(session, SignalEventRow) == 2
         assert count_rows(session, AlertRow) == 1
         assert count_rows(session, AuditEventRow) == 4
-        assert count_rows(session, CorrelationJobRow) == 1
+        assert count_rows(session, AlertGroupingJobRow) == 1
+        assert count_rows(session, CorrelationJobRow) == 0
 
 
 def test_forbidden_identity_is_rejected_before_any_batch_write(
@@ -278,7 +282,8 @@ def test_concurrent_duplicate_converges_to_one_result_and_one_audit_pair(
         assert count_rows(session, AlertRow) == 1
         assert count_rows(session, SignalIntakeResultRow) == 1
         assert count_rows(session, AuditEventRow) == 2
-        assert count_rows(session, CorrelationJobRow) == 1
+        assert count_rows(session, AlertGroupingJobRow) == 1
+        assert count_rows(session, CorrelationJobRow) == 0
 
 
 def test_second_command_failure_rolls_back_entire_batch(
@@ -312,6 +317,7 @@ def test_second_command_failure_rolls_back_entire_batch(
         assert count_rows(session, AlertRow) == 0
         assert count_rows(session, SignalIntakeResultRow) == 0
         assert count_rows(session, AuditEventRow) == 0
+        assert count_rows(session, AlertGroupingJobRow) == 0
         assert count_rows(session, CorrelationJobRow) == 0
 
 
