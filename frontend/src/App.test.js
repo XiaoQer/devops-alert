@@ -2,9 +2,17 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App.vue";
-import { claimIncident, fetchIncidentOverview, fetchIncidents } from "./api/incidents";
+import {
+  executeIncidentAction,
+  fetchIncidentOverview,
+  fetchIncidents,
+} from "./api/incidents";
 
-vi.mock("./api/incidents", () => ({ claimIncident: vi.fn(), fetchIncidentOverview: vi.fn(), fetchIncidents: vi.fn() }));
+vi.mock("./api/incidents", () => ({
+  executeIncidentAction: vi.fn(),
+  fetchIncidentOverview: vi.fn(),
+  fetchIncidents: vi.fn(),
+}));
 
 const listItem = (overrides = {}) => ({
   id: "inc_real_1", title: "支付服务错误率升高", severity: "critical", state: "INVESTIGATING",
@@ -14,7 +22,12 @@ const listItem = (overrides = {}) => ({
 });
 
 const overview = (overrides = {}) => ({
-  ...listItem(), claimed_at: null, created_at: "2026-08-25T02:06:20Z", alerts_truncated: false,
+  ...listItem(), claimed_at: null, created_at: "2026-08-25T02:06:20Z",
+  state_changed_at: "2026-08-25T02:06:20Z", resolved_at: null, closed_at: null,
+  alerts_truncated: false, activities: [], activities_truncated: false,
+  allowed_actions: ["CLAIM", "TRANSITION", "ADD_NOTE", "RESOLVE"],
+  allowed_transitions: ["MITIGATING", "MONITORING_RECOVERY"],
+  primary_action: { action: "TRANSITION", target_state: "MITIGATING" },
   alerts: [
     { id: "alt_1", title: "支付接口 5xx 错误率升高", state: "ACTIVE", severity: "critical", source: "alertmanager", first_observed_at: "2026-08-25T02:06:18Z", last_observed_at: "2026-08-25T02:09:45Z", version: 1 },
     { id: "alt_2", title: "支付成功率下降", state: "ACTIVE", severity: "high", source: "cloudevents", first_observed_at: "2026-08-25T02:07:12Z", last_observed_at: "2026-08-25T02:09:45Z", version: 1 },
@@ -29,7 +42,10 @@ const overview = (overrides = {}) => ({
 beforeEach(() => {
   fetchIncidents.mockResolvedValue({ items: [listItem()], total: 1, limit: 100, offset: 0 });
   fetchIncidentOverview.mockResolvedValue(overview());
-  claimIncident.mockResolvedValue({ id: "inc_real_1", assignee: "manual-api-client", claimed_at: "2026-08-25T02:12:00Z", version: 2 });
+  executeIncidentAction.mockResolvedValue({
+    id: "inc_real_1", action: "CLAIM", state: "INVESTIGATING",
+    assignee: "manual-api-client", version: 2,
+  });
 });
 afterEach(() => { vi.clearAllMocks(); vi.useRealTimers(); });
 
@@ -71,7 +87,13 @@ describe("事故中心真实联调", () => {
     fetchIncidentOverview.mockResolvedValueOnce(overview()).mockResolvedValueOnce(overview({ assignee: "manual-api-client", claimed_at: "2026-08-25T02:12:00Z", version: 2 }));
     const wrapper = mount(App); await flushPromises();
     await wrapper.get('[data-testid="claim-incident"]').trigger("click"); await flushPromises();
-    expect(claimIncident).toHaveBeenCalledWith("inc_real_1");
+    expect(executeIncidentAction).toHaveBeenCalledWith(
+      "inc_real_1",
+      "claim",
+      { expected_version: 1 },
+      expect.any(String),
+      expect.any(Object),
+    );
     expect(wrapper.get('[data-testid="incident-owner"]').text()).toContain("当前操作员");
     expect(wrapper.get('[data-testid="claim-incident"]').text()).toContain("已认领");
   });

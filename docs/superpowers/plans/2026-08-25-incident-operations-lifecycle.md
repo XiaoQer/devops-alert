@@ -628,7 +628,7 @@ git commit -m "feat: 增加事故处置前端客户端"
 - Produces refs: `operationState`、`operationError`、`retryableOperation`。
 - Consumes: Task 6 `executeIncidentAction`。
 
-- [ ] **Step 1: 编写成功刷新和失败不伪造状态测试**
+- [x] **Step 1: 编写成功刷新和失败不伪造状态测试**
 
 ```javascript
 it("写入成功后重新读取列表和详情", async () => {
@@ -654,25 +654,25 @@ it("网络结果未知时保留同一个幂等键用于重试", async () => {
 });
 ```
 
-- [ ] **Step 2: 编写版本冲突刷新测试**
+- [x] **Step 2: 编写版本冲突刷新测试**
 
 冲突响应不得自动重放旧操作；`refreshAfterConflict` 只重新读取服务端列表和详情，清除待重试命令，并显示最新版本。
 
-- [ ] **Step 3: 运行聚焦测试确认状态方法缺失失败**
+- [x] **Step 3: 运行聚焦测试确认状态方法缺失失败**
 
 Run: `cd frontend && npm test -- src/composables/useIncidentCenter.test.js`
 
-- [ ] **Step 4: 实现单一在途操作、稳定键和刷新**
+- [x] **Step 4: 实现单一在途操作、稳定键和刷新**
 
 使用 `crypto.randomUUID()` 生成非 Secret 幂等键；一次用户动作只生成一次。网络不可用保留 `{action, command, key}`，明确业务 4xx/409 不保留重试；组件卸载时取消请求但不在浏览器持久化命令或 key。
 
-- [ ] **Step 5: 运行组合式状态和现有页面回归测试**
+- [x] **Step 5: 运行组合式状态和现有页面回归测试**
 
 Run: `cd frontend && npm test -- src/composables/useIncidentCenter.test.js src/App.test.js`
 
 Expected: 全部通过。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add frontend/src/composables/useIncidentCenter.js frontend/src/composables/useIncidentCenter.test.js

@@ -1,6 +1,10 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
-import { claimIncident, fetchIncidentOverview, fetchIncidents } from "../api/incidents";
+import {
+  executeIncidentAction,
+  fetchIncidentOverview,
+  fetchIncidents,
+} from "../api/incidents";
 import { toIncidentDetail, toIncidentListItem } from "../presentation/incidentView";
 
 function safeMessage(error, fallback) {
@@ -17,9 +21,13 @@ export function useIncidentCenter() {
   const detailState = ref("idle");
   const listError = ref("");
   const detailError = ref("");
-  const claimPending = ref(false);
+  const operationState = ref("idle");
+  const operationError = ref("");
+  const retryableOperation = ref(null);
+  const claimPending = computed(() => operationState.value === "pending");
   let listController;
   let detailController;
+  let operationController;
   let debounceTimer;
   let listSequence = 0;
   let detailSequence = 0;
@@ -88,19 +96,76 @@ export function useIncidentCenter() {
     loadDetail(id);
   }
 
-  async function claimSelected() {
-    if (!selectedId.value || claimPending.value) return;
-    claimPending.value = true;
+  async function performOperation(operation) {
+    if (operationState.value === "pending") return false;
+    operationController = new AbortController();
+    operationState.value = "pending";
+    operationError.value = "";
     try {
-      await claimIncident(selectedId.value);
+      await executeIncidentAction(
+        operation.incidentId,
+        operation.action,
+        operation.command,
+        operation.key,
+        { signal: operationController.signal },
+      );
+      retryableOperation.value = null;
       await loadList();
+      operationState.value = "succeeded";
       return true;
     } catch (error) {
-      detailError.value = safeMessage(error, "事故认领失败，请稍后重试");
+      if (error?.name === "AbortError") return false;
+      if (error?.code === "incident_api_unavailable") {
+        retryableOperation.value = operation;
+        operationState.value = "unknown";
+        operationError.value = safeMessage(
+          error,
+          "事故操作结果暂时未知，请重试本次操作",
+        );
+        return false;
+      }
+      retryableOperation.value = null;
+      if (error?.code === "incident_version_conflict") {
+        operationState.value = "conflict";
+      } else {
+        operationState.value = "error";
+      }
+      operationError.value = safeMessage(error, "事故操作未完成，请稍后重试");
       return false;
     } finally {
-      claimPending.value = false;
+      operationController = undefined;
     }
+  }
+
+  async function executeSelectedAction(action, payload = {}) {
+    if (!selectedId.value || !selectedIncident.value || operationState.value === "pending") {
+      return false;
+    }
+    const operation = {
+      incidentId: selectedId.value,
+      action,
+      command: { expected_version: selectedIncident.value.version, ...payload },
+      key: globalThis.crypto.randomUUID(),
+    };
+    retryableOperation.value = null;
+    return performOperation(operation);
+  }
+
+  async function retryLastAction() {
+    const operation = retryableOperation.value;
+    if (!operation || operationState.value === "pending") return false;
+    return performOperation(operation);
+  }
+
+  async function refreshAfterConflict() {
+    retryableOperation.value = null;
+    operationError.value = "";
+    operationState.value = "idle";
+    await loadList();
+  }
+
+  function claimSelected() {
+    return executeSelectedAction("claim", {});
   }
 
   watch([environment, search], () => {
@@ -112,11 +177,14 @@ export function useIncidentCenter() {
     window.clearTimeout(debounceTimer);
     listController?.abort();
     detailController?.abort();
+    operationController?.abort();
   });
 
   return {
     environment, search, incidents, selectedId, selectedIncident, activeIncidents,
     resolvedIncidents, listState, detailState, listError, detailError, claimPending,
-    loadList, loadDetail, selectIncident, claimSelected,
+    operationState, operationError, retryableOperation,
+    loadList, loadDetail, selectIncident, claimSelected, executeSelectedAction,
+    retryLastAction, refreshAfterConflict,
   };
 }
