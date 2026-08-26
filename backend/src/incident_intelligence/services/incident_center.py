@@ -128,6 +128,7 @@ class IncidentOverview(BaseModel):
     closed_at: datetime | None
     created_at: datetime
     version: int
+    alert_total: int = Field(ge=0)
     alerts: tuple[IncidentAlertView, ...]
     alerts_truncated: bool
     correlation: IncidentCorrelationView | None
@@ -195,8 +196,8 @@ class IncidentCenterService:
             incident = repository.find_incident(incident_id)
             if incident is None:
                 raise IncidentResourceNotFound()
-            linked = repository.linked_alerts(incident_id, limit=101)
-            visible = linked[:100]
+            alert_total = repository.count_linked_alerts(incident_id)
+            visible = repository.linked_alerts(incident_id, limit=100)
             decision = repository.latest_decision(incident_id)
             activities = repository.activities(incident_id, limit=201)
             visible_activities = activities[:200]
@@ -243,6 +244,7 @@ class IncidentCenterService:
                 closed_at=incident.closed_at,
                 created_at=incident.created_at,
                 version=incident.version,
+                alert_total=alert_total,
                 alerts=tuple(
                     IncidentAlertView(
                         id=record.alert.id,
@@ -256,7 +258,7 @@ class IncidentCenterService:
                     )
                     for record in visible
                 ),
-                alerts_truncated=len(linked) > 100,
+                alerts_truncated=alert_total > len(visible),
                 correlation=(
                     None
                     if decision is None

@@ -168,6 +168,7 @@ def test_list_and_overview_return_real_bounded_aggregate(
         "action": "TRANSITION",
         "target_state": "TRIAGING",
     }
+    assert body["alert_total"] == 2
     assert len(body["alerts"]) == 2
     assert body["correlation"]["rule_version"] == "correlation.v1"
     assert body["correlation"]["explanation"] == "窗口内只有一个同服务事故，已自动关联。"  # noqa: RUF001

@@ -128,6 +128,9 @@ h1 { font-size: 24px; line-height: 1.2; letter-spacing: -0.02em; }
 .alert-item-title, .alert-item-badges { display: flex; align-items: center; gap: 8px; }
 .alert-item-title strong { overflow: hidden; color: #e1e7ef; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .alert-list-item > span:not(.alert-item-title, .alert-item-badges), .alert-list-item small { font-size: 11px; }
+.alert-pagination { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; border-top: 1px solid var(--border-soft); color: #7f8c9d; background: #0e151e; font-size: 11px; }
+.alert-pagination > div { display: flex; gap: 12px; }
+.alert-pagination .link-button:disabled { color: #526071; cursor: not-allowed; }
 .alert-detail-panel { min-width: 0; overflow-y: auto; }
 .alert-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 22px 24px 18px; border-bottom: 1px solid var(--border-soft); }
 .alert-detail-header h2 { font-size: 21px; }

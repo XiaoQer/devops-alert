@@ -4,7 +4,7 @@ import { PhArrowRight, PhBell, PhCheckCircle, PhCircle, PhQuestion, PhWarning } 
 import { useAlertCenter } from "../composables/useAlertCenter";
 
 defineEmits(["open-incident"]);
-const { state, severity, environment, linked, search, alerts, summary, selectedId, detail, listState, summaryState, detailState, listError, summaryError, detailError, loadList, loadSummary, loadDetail, selectAlert } = useAlertCenter();
+const { state, severity, environment, linked, search, alerts, summary, selectedId, detail, total, hasPrevious, hasNext, rangeStart, rangeEnd, listState, summaryState, detailState, listError, summaryError, detailError, loadList, loadSummary, loadDetail, selectAlert, goPrevious, goNext } = useAlertCenter();
 </script>
 
 <template>
@@ -25,7 +25,7 @@ const { state, severity, environment, linked, search, alerts, summary, selectedI
         <div v-if="listState === 'loading'" class="empty-state"><PhBell :size="24" /><strong>正在读取告警</strong></div>
         <div v-else-if="listState === 'error'" class="empty-state error-state"><PhQuestion :size="24" /><strong>{{ listError }}</strong><button type="button" class="button secondary" @click="loadList">重新加载</button></div>
         <div v-else-if="listState === 'empty'" class="empty-state"><PhCheckCircle :size="24" /><strong>当前没有符合条件的告警</strong><span>调整筛选条件后可重新查看</span></div>
-        <template v-else><button v-for="alert in alerts" :key="alert.id" type="button" :class="['alert-list-item', { selected: selectedId === alert.id }]" @click="selectAlert(alert.id)"><span class="alert-item-title"><PhCircle :size="8" weight="fill" :class="`dot-${alert.severityTone}`" /><strong>{{ alert.title }}</strong></span><span class="alert-item-badges"><span :class="['badge', `badge-${alert.severityTone}`]">{{ alert.severity }}</span><span :class="['badge', `badge-${alert.stateTone}`]">{{ alert.state }}</span></span><span>{{ alert.service }} · {{ alert.environment }}</span><small>{{ alert.sourceName }} · {{ alert.signalCount }} 条信号</small></button></template>
+        <template v-else><button v-for="alert in alerts" :key="alert.id" type="button" :class="['alert-list-item', { selected: selectedId === alert.id }]" @click="selectAlert(alert.id)"><span class="alert-item-title"><PhCircle :size="8" weight="fill" :class="`dot-${alert.severityTone}`" /><strong>{{ alert.title }}</strong></span><span class="alert-item-badges"><span :class="['badge', `badge-${alert.severityTone}`]">{{ alert.severity }}</span><span :class="['badge', `badge-${alert.stateTone}`]">{{ alert.state }}</span></span><span>{{ alert.service }} · {{ alert.environment }}</span><small>{{ alert.sourceName }} · {{ alert.signalCount }} 条信号</small></button><footer class="alert-pagination"><span>第 {{ rangeStart }}–{{ rangeEnd }} 条，共 {{ total }} 条</span><div><button type="button" class="link-button" :disabled="!hasPrevious" @click="goPrevious">上一页</button><button type="button" data-testid="alert-next-page" class="link-button" :disabled="!hasNext" @click="goNext">下一页</button></div></footer></template>
       </section>
       <section class="alert-detail-panel" aria-live="polite">
         <div v-if="detailState === 'loading'" class="detail-placeholder"><PhBell :size="28" /><strong>正在读取告警详情</strong></div>

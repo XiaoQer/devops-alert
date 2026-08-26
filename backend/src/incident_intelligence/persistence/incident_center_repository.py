@@ -166,6 +166,16 @@ class IncidentCenterRepository:
         )
         return tuple(LinkedAlertRecord(link=link, alert=alert) for link, alert in rows)
 
+    def count_linked_alerts(self, incident_id: str) -> int:
+        return int(
+            self._session.scalar(
+                select(func.count(IncidentAlertLinkRow.alert_id)).where(
+                    IncidentAlertLinkRow.incident_id == incident_id
+                )
+            )
+            or 0
+        )
+
     def activities(self, incident_id: str, *, limit: int) -> tuple[IncidentActivityRow, ...]:
         return tuple(
             self._session.scalars(

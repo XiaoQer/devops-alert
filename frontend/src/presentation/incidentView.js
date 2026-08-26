@@ -168,10 +168,11 @@ export function toIncidentListItem(item, now = new Date()) {
 
 export function toIncidentDetail(overview, now = new Date()) {
   const latestActivity = overview.activities?.at(-1)?.created_at;
+  const alertTotal = overview.alert_total ?? overview.alerts.length;
   const base = toIncidentListItem(
     { ...overview, last_activity_at: latestActivity
         ?? overview.alerts.at(-1)?.last_observed_at ?? overview.detected_at,
-      alert_count: overview.alerts.length },
+      alert_count: alertTotal },
     now,
   );
   const [state] = stateMap[overview.state] ?? ["未知状态"];
@@ -186,7 +187,8 @@ export function toIncidentDetail(overview, now = new Date()) {
     stateChangedAt: formatDateTime(overview.state_changed_at),
     resolvedAt: overview.resolved_at ? formatDateTime(overview.resolved_at) : null,
     closedAt: overview.closed_at ? formatDateTime(overview.closed_at) : null,
-    impact: `当前关联 ${overview.alerts.length} 条告警，事故状态为${state}`,
+    alertTotal,
+    impact: `当前关联 ${alertTotal} 条告警，事故状态为${state}`,
     reason: overview.correlation?.explanation ?? "暂无可展示的关联决策。",
     ruleVersion: overview.correlation?.rule_version ?? null,
     reasonCodes: overview.correlation?.reason_codes ?? [],

@@ -40,4 +40,22 @@ describe("告警中心状态", () => {
     expect(mounted.center.detail.value).toBeNull();
     mounted.wrapper.unmount();
   });
+
+  it("使用后端总数分页并能读取下一页", async () => {
+    fetchAlerts
+      .mockResolvedValueOnce({ items: [apiAlert()], total: 101, limit: 50, offset: 0 })
+      .mockResolvedValueOnce({ items: [{ ...apiAlert(), id: "alt_page_2" }], total: 101, limit: 50, offset: 50 });
+    const mounted = mountCenter(); await flushPromises();
+
+    expect(mounted.center.total.value).toBe(101);
+    expect(mounted.center.hasNext.value).toBe(true);
+    await mounted.center.goNext(); await flushPromises();
+
+    expect(fetchAlerts).toHaveBeenLastCalledWith(
+      expect.objectContaining({ limit: 50, offset: 50 }),
+      expect.any(Object),
+    );
+    expect(mounted.center.offset.value).toBe(50);
+    mounted.wrapper.unmount();
+  });
 });

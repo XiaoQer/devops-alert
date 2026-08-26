@@ -110,6 +110,7 @@ class IncidentOverviewResponse(BaseModel):
     closed_at: datetime | None
     created_at: datetime
     version: int
+    alert_total: int = Field(ge=0)
     alerts: tuple[IncidentAlertResponse, ...]
     alerts_truncated: bool
     correlation: IncidentCorrelationResponse | None

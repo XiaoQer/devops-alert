@@ -18,4 +18,15 @@ describe("真实告警中心页面", () => {
     await wrapper.get('[data-testid="open-linked-incident"]').trigger("click");
     expect(wrapper.emitted("open-incident")[0]).toEqual(["inc_1"]);
   });
+
+  it("展示真实总数和翻页入口", async () => {
+    fetchAlerts.mockResolvedValue({ items: [apiAlert()], total: 101, limit: 50, offset: 0 });
+    fetchAlertSummary.mockResolvedValue({ window: "24h", active: 101, severe_active: 101, resolved: 0, unlinked_active: 0, by_source: [], calculated_at: "2026-08-26T08:00:00Z" });
+    fetchAlertOverview.mockResolvedValue(apiOverview());
+
+    const wrapper = mount(AlertCenter); await flushPromises();
+
+    expect(wrapper.text()).toContain("第 1–1 条，共 101 条");
+    expect(wrapper.get('[data-testid="alert-next-page"]').attributes("disabled")).toBeUndefined();
+  });
 });

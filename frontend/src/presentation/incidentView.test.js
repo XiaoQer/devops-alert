@@ -52,6 +52,7 @@ it("详情只转换后端已经持久化的告警、原因和时间线", () => {
         version: 2,
       },
     ],
+    alert_total: 101,
     alerts_truncated: false,
     correlation: {
       outcome: "LINKED_EXACT_SERVICE",
@@ -102,6 +103,8 @@ it("详情只转换后端已经持久化的告警、原因和时间线", () => {
 
   expect(view.reason).toBe("窗口内只有一个同服务事故，已自动关联。");
   expect(view.alerts).toHaveLength(1);
+  expect(view.alertTotal).toBe(101);
+  expect(view.impact).toContain("当前关联 101 条告警");
   expect(view.alerts[0]).toMatchObject({ state: "触发中", source: "Alertmanager" });
   expect(view.timeline).toHaveLength(2);
   expect(view.timeline[0].title).toBe("创建事故");

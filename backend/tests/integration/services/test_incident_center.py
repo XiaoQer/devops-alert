@@ -11,6 +11,7 @@ from incident_intelligence.ids import new_id
 from incident_intelligence.persistence.models import (
     AlertRow,
     IncidentActivityRow,
+    IncidentAlertLinkRow,
     IncidentRow,
     SignalEventRow,
 )
@@ -115,6 +116,95 @@ def seed_activities(
                 for index in range(count)
             ]
         )
+
+
+def seed_linked_alerts(
+    session_factory: sessionmaker[Session], incident_id: str, *, count: int
+) -> None:
+    with session_factory.begin() as session:
+        incident = session.get(IncidentRow, incident_id)
+        assert incident is not None
+        session.add(
+            IncidentAlertLinkRow(
+                incident_id=incident_id,
+                alert_id=incident.primary_alert_id,
+                relation="PRIMARY",
+                decision_id=None,
+                linked_at=NOW,
+                created_at=NOW,
+            )
+        )
+        for index in range(1, count):
+            signal_id = new_id("sig")
+            alert_id = new_id("alt")
+            observed_at = NOW + timedelta(microseconds=index)
+            session.add(
+                SignalEventRow(
+                    id=signal_id,
+                    alert_source_id=MANUAL_SYSTEM_SOURCE_ID,
+                    source="manual",
+                    source_event_id=f"bounded-alert-{index}",
+                    event_type="manual.reported",
+                    title=f"支付接口错误率升高 {index}",
+                    summary="支付接口持续返回错误",
+                    severity="high",
+                    service="payment-api",
+                    environment="production",
+                    observed_at=observed_at,
+                    received_at=observed_at,
+                    facts={"region": "cn-east-1"},
+                    payload_fingerprint=f"{index:064x}",
+                    created_at=observed_at,
+                    version=1,
+                )
+            )
+            session.flush()
+            session.add(
+                AlertRow(
+                    id=alert_id,
+                    signal_event_id=signal_id,
+                    alert_source_id=MANUAL_SYSTEM_SOURCE_ID,
+                    source="manual",
+                    source_instance="b" * 64,
+                    source_alert_key=f"bounded-alert-{index}",
+                    state="ACTIVE",
+                    title=f"支付接口错误率升高 {index}",
+                    severity="high",
+                    service="payment-api",
+                    environment="production",
+                    first_observed_at=observed_at,
+                    last_observed_at=observed_at,
+                    state_changed_at=observed_at,
+                    created_at=observed_at,
+                    version=1,
+                )
+            )
+            session.flush()
+            session.add(
+                IncidentAlertLinkRow(
+                    incident_id=incident_id,
+                    alert_id=alert_id,
+                    relation="RELATED",
+                    decision_id=None,
+                    linked_at=observed_at,
+                    created_at=observed_at,
+                )
+            )
+
+
+def test_overview_returns_real_alert_total_when_members_are_truncated(
+    migrated_engine: Engine,
+) -> None:
+    session_factory = sessionmaker(bind=migrated_engine, expire_on_commit=False)
+    incident_id = seed_incident(session_factory, identity="alert-total")
+    seed_linked_alerts(session_factory, incident_id, count=101)
+    service = IncidentCenterService(session_factory=session_factory)
+
+    overview = service.get_overview(incident_id, actor="manual-api-client")
+
+    assert overview.alert_total == 101
+    assert len(overview.alerts) == 100
+    assert overview.alerts_truncated is True
 
 
 def test_overview_returns_bounded_activities_and_actor_actions(
