@@ -10,6 +10,7 @@ from incident_intelligence.api.middleware import RequestBodyLimitMiddleware
 from incident_intelligence.api.router import create_router
 from incident_intelligence.persistence.session import get_engine, make_session_factory
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from incident_intelligence.services.alert_center import AlertCenterService
 from incident_intelligence.services.alert_sources import AlertSourceService
 from incident_intelligence.services.catalog import ServiceCatalogService
 from incident_intelligence.services.correlation import CorrelationReadService, CorrelationService
@@ -56,6 +57,7 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
     app.state.alert_source_service = AlertSourceService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
+    app.state.alert_center_service = AlertCenterService(session_factory=session_factory)
     app.state.source_authentication_service = SourceAuthenticationService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )

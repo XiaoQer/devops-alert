@@ -329,7 +329,7 @@ cd backend
 
 预期：全部通过；来源隔离、重放、失败回滚和既有事故关联均保持正确。
 
-- [ ] **步骤 8：提交任务 3**
+- [x] **步骤 8：提交任务 3**
 
 ```bash
 git add backend/src/incident_intelligence backend/tests
@@ -361,7 +361,7 @@ git commit -m "feat: 接入独立告警源与接收记录"
 - `AlertCenterService.get_overview(alert_id: str) -> AlertOverview`。
 - 现有 `/api/v1/alerts/{id}` 和 `/api/v1/alerts/{id}/correlation` 保持响应兼容。
 
-- [ ] **步骤 1：写读取服务失败测试**
+- [x] **步骤 1：写读取服务失败测试**
 
 ```python
 def test_list_filters_by_source_service_time_and_incident_link(service) -> None:
@@ -383,7 +383,7 @@ def test_overview_is_bounded_and_explains_correlation(service) -> None:
     assert overview.correlation.explanation
 ```
 
-- [ ] **步骤 2：运行读取服务测试确认失败**
+- [x] **步骤 2：运行读取服务测试确认失败**
 
 运行：
 
@@ -394,15 +394,15 @@ cd backend
 
 预期：告警中心仓储和服务尚不存在而失败。
 
-- [ ] **步骤 3：实现有界仓储查询和服务投影**
+- [x] **步骤 3：实现有界仓储查询和服务投影**
 
 列表使用独立总数查询和稳定排序 `last_observed_at DESC, id DESC`；关键词最长 100 字符并转义 SQL 通配符；Overview 最多加载 101 条 SignalEvent 以计算截断，不读取 payload 指纹、幂等记录、凭据或审计正文。
 
-- [ ] **步骤 4：写 API 契约失败测试**
+- [x] **步骤 4：写 API 契约失败测试**
 
 覆盖全部筛选、非法枚举、非法时间窗口、`limit > 100`、统一未找到、统计固定窗口、详情字段白名单、关联失败状态和旧接口兼容。
 
-- [ ] **步骤 5：实现路由和响应 Schema**
+- [x] **步骤 5：实现路由和响应 Schema**
 
 ```python
 @router.get("", response_model=AlertPageResponse)
@@ -420,7 +420,7 @@ def get_alert_overview(alert_id: str, ...) -> AlertOverviewResponse:
 
 静态 `/summary` 必须在动态 `/{alert_id}` 之前注册，避免被资源路由吞掉。
 
-- [ ] **步骤 6：运行告警 API 与兼容回归**
+- [x] **步骤 6：运行告警 API 与兼容回归**
 
 运行：
 
