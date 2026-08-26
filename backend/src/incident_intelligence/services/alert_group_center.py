@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from incident_intelligence.domain.models import Environment, Severity
@@ -194,12 +194,18 @@ class AlertGroupCenterService:
             }[window]
         )
         with self._session_factory() as session:
-            active_groups = _count(session, AlertGroupRow, AlertGroupRow.state == "ACTIVE")
+            active_groups = _count(
+                session,
+                AlertGroupRow,
+                AlertGroupRow.state == "ACTIVE",
+                _group_has_members(),
+            )
             severe = _count(
                 session,
                 AlertGroupRow,
                 AlertGroupRow.state == "ACTIVE",
                 AlertGroupRow.severity.in_(("critical", "high")),
+                _group_has_members(),
             )
             active_alerts = _count(session, AlertRow, AlertRow.state == "ACTIVE")
             storms = _count(
@@ -207,12 +213,14 @@ class AlertGroupCenterService:
                 AlertGroupRow,
                 AlertGroupRow.state == "ACTIVE",
                 AlertGroupRow.storm_state == "STORM",
+                _group_has_members(),
             )
             resolved = _count(
                 session,
                 AlertGroupRow,
                 AlertGroupRow.state == "RESOLVED",
                 AlertGroupRow.state_changed_at >= cutoff,
+                _group_has_members(),
             )
             per_minute = (
                 select(func.count().label("rate"))
@@ -354,7 +362,7 @@ class AlertGroupCenterService:
 
 
 def _group_filters(statement: Any, filters: AlertGroupFilters, query: str | None) -> Any:
-    result = statement
+    result = statement.where(_group_has_members())
     values = {
         "state": AlertGroupRow.state,
         "severity": AlertGroupRow.severity,
@@ -385,6 +393,14 @@ def _group_filters(statement: Any, filters: AlertGroupFilters, query: str | None
             )
         )
     return result
+
+
+def _group_has_members() -> Any:
+    return exists(
+        select(AlertGroupMemberRow.alert_id).where(
+            AlertGroupMemberRow.alert_group_id == AlertGroupRow.id
+        )
+    )
 
 
 def _group_item(group: AlertGroupRow, incident: IncidentRow | None) -> AlertGroupListItem:

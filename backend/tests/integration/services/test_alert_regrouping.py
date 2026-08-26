@@ -15,6 +15,10 @@ from incident_intelligence.persistence.models import (
     SignalEventRow,
 )
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from incident_intelligence.services.alert_group_center import (
+    AlertGroupCenterService,
+    AlertGroupFilters,
+)
 from incident_intelligence.services.alert_regrouping import AlertRegroupingService
 from tests.integration.persistence.test_constraints import (
     make_alert,
@@ -127,3 +131,9 @@ def test_legacy_unlinked_groups_are_consolidated_without_deleting_history(
             session.execute(
                 update(model).where(model.service.is_(None)).values(service="test-cleanup")
             )
+
+    visible = AlertGroupCenterService(session_factory=session_factory).list_groups(
+        AlertGroupFilters()
+    )
+    assert visible.total == 1
+    assert visible.items[0].total_count == 3
