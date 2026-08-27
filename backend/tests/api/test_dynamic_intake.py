@@ -168,6 +168,35 @@ def test_two_registered_sources_isolate_same_external_alert_and_record_receipts(
     assert _count(context.engine, AlertSourceReceiptRow) == 2
 
 
+def test_registered_alertmanager_accepts_experiment_labels_without_persisting_them(
+    context: DynamicIntakeContext,
+) -> None:
+    source = _create_source(context, "实验标签来源", "ALERTMANAGER")
+    payload = _alertmanager_payload()
+    payload["alerts"][0]["labels"].update(  # type: ignore[index]
+        {
+            "scenario_id": "P0-DB-01",
+            "experiment_id": "exp-123",
+            "category": "fault-experiment",
+        }
+    )
+
+    response = context.client.post(
+        f"/api/v1/intake/alertmanager/{source['source']['id']}",
+        headers={"Authorization": f"Bearer {source['token']}"},
+        json=payload,
+    )
+
+    assert response.status_code == 202, response.text
+    with Session(context.engine) as session:
+        facts = session.scalar(select(SignalEventRow.facts))
+        receipt = session.scalar(select(AlertSourceReceiptRow))
+    assert facts is not None
+    assert set(facts).isdisjoint({"scenario_id", "experiment_id", "category"})
+    assert receipt is not None
+    assert receipt.outcome == "ACCEPTED"
+
+
 def test_validation_writes_receipt_without_domain_records(
     context: DynamicIntakeContext,
 ) -> None:

@@ -308,3 +308,11 @@ MySQL 8.4 已成为当前唯一可用持久化基线。共享外部信号接入�
 - 真实浏览器验证页面只显示 4 个仍有成员的告警组，目标组信息与数据库一致且控制台无错误或警告；Alertmanager 容器可通过 `host.docker.internal:8000` 访问后端健康检查。
 
 当前边界：问题签名首版仍是版本化确定性规则，不跨告警源自动归组，不查询 Kubernetes 或 Prometheus 补齐标签，也不自动改写已有 Incident 或已解决历史组。
+
+## 2026-08-27 Alertmanager 实验标签宽容接入已验收
+
+- Alertmanager Webhook 不再因为 `scenario_id`、`scenario_version`、`experiment_id` 等实验标签返回 422，也不会因单条告警包含这些标签而拒绝整个批次；
+- 实验标签和 `category=fault-experiment` 仍属于非白名单事实，在标准化时忽略，不进入 SignalEvent、Alert、AlertGroup、事故、日志或 API；
+- CloudEvents、人工报告、服务目录和标准化领域命令的禁止身份规则保持不变；
+- 固定兼容入口与动态注册来源均有 API 回归测试，验证返回 202、安全 Receipt 为 ACCEPTED 且数据库 facts 不包含实验标签；
+- 统一验收为 157 个 Python 文件格式通过、93 个源码文件 Mypy 通过、488 项后端测试通过，覆盖率 91.85%。

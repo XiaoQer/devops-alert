@@ -14,7 +14,6 @@ from incident_intelligence.adapters.common import (
     AdapterValidationError,
     normalize_source_uri,
 )
-from incident_intelligence.domain.forbidden_identity import ForbiddenIdentityError
 
 NOW = datetime(2026, 8, 25, 8, 5, tzinfo=UTC)
 FIRING_PAYLOAD = {
@@ -260,20 +259,35 @@ def test_unknown_extension_fields_are_ignored_without_being_persisted() -> None:
     assert "arbitrary" not in command.model_dump_json()
 
 
-def test_forbidden_identity_is_scanned_before_unknown_fields_are_ignored() -> None:
+def test_experiment_identity_in_unknown_webhook_field_is_ignored() -> None:
     payload = deepcopy(FIRING_PAYLOAD)
-    payload["futureWebhookField"] = {"scenario_id": "hidden"}
+    payload["futureWebhookField"] = {
+        "scenario_id": "P0-DB-01",
+        "experiment_id": "exp-123",
+    }
 
-    with pytest.raises(ForbiddenIdentityError):
-        AlertmanagerWebhook.model_validate(payload)
+    webhook = AlertmanagerWebhook.model_validate(payload)
+
+    assert "scenario_id" not in webhook.model_dump_json()
+    assert "experiment_id" not in webhook.model_dump_json()
 
 
-def test_forbidden_identity_is_rejected_from_alert_labels() -> None:
+def test_experiment_identity_labels_are_accepted_without_persistence() -> None:
     payload = deepcopy(FIRING_PAYLOAD)
-    payload["alerts"][0]["labels"]["scenario_id"] = "hidden"
+    payload["alerts"][0]["labels"].update(
+        {
+            "scenario_id": "P0-DB-01",
+            "experiment_id": "exp-123",
+            "category": "fault-experiment",
+        }
+    )
 
-    with pytest.raises(ForbiddenIdentityError):
-        to_signal_commands(AlertmanagerWebhook.model_validate(payload), NOW)
+    command = to_signal_commands(AlertmanagerWebhook.model_validate(payload), NOW)[0]
+
+    serialized = command.model_dump_json()
+    assert "scenario_id" not in serialized
+    assert "experiment_id" not in serialized
+    assert "fault-experiment" not in serialized
 
 
 def test_grouping_json_order_and_ignored_urls_do_not_change_event_identity() -> None:

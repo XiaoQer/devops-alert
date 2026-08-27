@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from hashlib import sha256
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from incident_intelligence.adapters.common import (
     AdapterValidationError,
@@ -13,7 +13,6 @@ from incident_intelligence.adapters.common import (
 )
 from incident_intelligence.domain.alert_sources import ALERTMANAGER_COMPAT_SOURCE_ID
 from incident_intelligence.domain.entities import derive_entity_identity
-from incident_intelligence.domain.forbidden_identity import reject_forbidden_identity
 from incident_intelligence.domain.models import UtcAwareDatetime
 from incident_intelligence.domain.signal_intake import SignalCommand
 
@@ -86,12 +85,6 @@ class AlertmanagerWebhook(BaseModel):
     external_url: BoundedText = Field(alias="externalURL")
     alerts: tuple[AlertmanagerAlert, ...] = Field(min_length=1, max_length=100)
 
-    @model_validator(mode="before")
-    @classmethod
-    def reject_forbidden_input(cls, value: object) -> object:
-        reject_forbidden_identity(value)
-        return value
-
 
 def to_signal_commands(
     webhook: AlertmanagerWebhook,
@@ -99,7 +92,6 @@ def to_signal_commands(
     *,
     alert_source_id: str = ALERTMANAGER_COMPAT_SOURCE_ID,
 ) -> tuple[SignalCommand, ...]:
-    reject_forbidden_identity(webhook.model_dump(mode="json"))
     normalized_uri = normalize_source_uri(webhook.external_url)
     source_instance = sha256(normalized_uri.encode("utf-8")).hexdigest()
     return tuple(

@@ -2,7 +2,7 @@
 
 ## 状态
 
-已确认，实施中。
+已完成并验收。
 
 ## 背景与目标
 
@@ -16,6 +16,7 @@
 - `service` 在 SignalEvent、Alert 和 AlertGroup 中可空，不设置异步解析状态；
 - 从已有标签确定性提取 SERVICE、WORKLOAD、POD、NODE、JOB、INSTANCE、CLUSTER 或 UNKNOWN 主要实体，仅用于展示和归组；
 - 未知扩展字段忽略，已知字段继续执行长度、数量和禁止身份检查；
+- Alertmanager 携带 `scenario_id`、`scenario_version`、`experiment_id` 等实验标签时不拒绝整个 Webhook；这些标签作为非白名单字段忽略，不得进入 SignalEvent、Alert、AlertGroup、日志或 API；
 - 缺少服务的告警照常入库、查询、恢复、归组和展示；
 - 告警组保留真实实体摘要；问题边界和归集键由独立的“问题签名告警归集”规格定义；
 - 服务为空的告警组不进入现有服务目录事故关联，保存可解释的跳过结果；
@@ -40,7 +41,7 @@
 
 - Webhook 仍限制 256 KiB 和单批最多 100 条；
 - 标签和注解继续限制键值长度与数量；
-- 禁止实验身份继续递归拒绝；
+- Alertmanager 输入中的实验身份键不再触发整批拒绝，但必须在标准化前过滤，不能进入持久化模型；其他输入契约的禁止身份规则保持不变；
 - 原始请求、未知字段、Generator URL 和 Secret 不持久化；
 - 数据库迁移安全回填现有服务告警，降级时若存在空服务则明确停止；
 - 无服务告警不会创建虚假服务目录项或虚假事故。
@@ -51,6 +52,7 @@
 - 缺少 environment 时保存 unknown，缺少或未知 severity 时保存 medium 并记录原因码；
 - 缺少 summary 和 description 时仍可用 alertname 形成可展示标题与摘要；
 - 未知扩展字段不会导致合法 Webhook 被拒绝，也不会进入持久化；
+- 携带 `scenario_id`、`experiment_id` 或实验分类标签的合法 Alertmanager Webhook 返回 202，实验身份不进入标准化命令或持久化；
 - Pod、Node、Job 等已有标签形成稳定实体摘要；没有资源标签时形成 UNKNOWN 实体；
 - 无服务实体能够被问题签名层安全归组，同时保留每个资源的独立成员事实；
 - 无服务告警组不创建 Incident，并保存固定中文解释；
@@ -63,4 +65,6 @@
 - AlertmanagerConfig 已取消 service 路由过滤，真实接收 6 条无 service 的 `KubePodNotReady` 告警；
 - 无 service 归组领域测试和真实 MySQL 集成测试已通过；
 - 本地历史失败归组任务重试后 6/6 成功，页面告警组总数从 2 增加到 8；
-- 前端实体中文展示与无 service 事故关联跳过决策尚未完成，因此规格继续保持活跃。
+- 前端已显示“服务未提供”和真实实体，无 service 告警组保存事故关联跳过决策；
+- Alertmanager 实验标签不再触发 422，固定入口和动态注册来源均验证返回 202，且实验标签未进入数据库 facts；
+- 统一验收为 488 项后端测试通过、覆盖率 91.85%，Ruff、格式和 93 个源码文件 Mypy 检查通过；前端相关展示已在问题签名归集规格中完成验收。

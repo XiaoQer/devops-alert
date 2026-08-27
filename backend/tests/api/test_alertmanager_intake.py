@@ -323,24 +323,31 @@ def test_invalid_item_rejects_the_whole_batch_without_writes(
     assert _row_count(migrated_engine, AuditEventRow) == 0
 
 
-def test_forbidden_identity_is_rejected_without_echoing_its_value(
+def test_experiment_identity_labels_are_accepted_without_persistence(
     intake_client: tuple[TestClient, dict[str, str]],
     firing_payload: dict[str, object],
     migrated_engine: Engine,
 ) -> None:
     client, tokens = intake_client
     payload = deepcopy(firing_payload)
-    payload["alerts"][0]["labels"]["scenario_id"] = "must-not-be-echoed"  # type: ignore[index]
+    payload["alerts"][0]["labels"].update(  # type: ignore[index]
+        {
+            "scenario_id": "P0-DB-01",
+            "experiment_id": "exp-123",
+            "category": "fault-experiment",
+        }
+    )
 
     response = _post(client, tokens, payload)
 
-    assert response.status_code == 422  # type: ignore[attr-defined]
-    assert response.json() == {  # type: ignore[attr-defined]
-        "code": "forbidden_identity",
-        "message": "请求包含平台禁止接收的字段",
-    }
-    assert "must-not-be-echoed" not in response.text  # type: ignore[attr-defined]
-    assert _row_count(migrated_engine, SignalEventRow) == 0
+    assert response.status_code == 202  # type: ignore[attr-defined]
+    assert _row_count(migrated_engine, SignalEventRow) == 1
+    with Session(migrated_engine) as session:
+        facts = session.scalar(select(SignalEventRow.facts))
+    assert facts is not None
+    assert "scenario_id" not in facts
+    assert "experiment_id" not in facts
+    assert "category" not in facts
 
 
 def test_source_event_conflict_uses_stable_safe_response(
