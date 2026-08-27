@@ -15,6 +15,14 @@ SourceName = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
 ]
+EnvironmentCode = Annotated[
+    str,
+    StringConstraints(pattern=r"^[a-z][a-z0-9-]{0,31}$", max_length=32),
+]
+EnvironmentName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=64),
+]
 SourceId = Annotated[str, StringConstraints(pattern=r"^src_[0-9a-f]{32}$")]
 CredentialId = Annotated[str, StringConstraints(pattern=r"^acr_[0-9a-f]{32}$")]
 
@@ -35,12 +43,22 @@ class AlertSourceRequest(BaseModel):
 class CreateAlertSourceRequest(AlertSourceRequest):
     name: SourceName
     source_type: Literal["ALERTMANAGER", "CLOUDEVENTS"]
+    environment: EnvironmentCode
+    environment_name: EnvironmentName
 
 
 class UpdateAlertSourceRequest(AlertSourceRequest):
     expected_version: int = Field(ge=1)
     name: SourceName | None = None
     state: Literal["ENABLED", "DISABLED"] | None = None
+    environment: EnvironmentCode | None = None
+    environment_name: EnvironmentName | None = None
+
+    @model_validator(mode="after")
+    def require_complete_environment(self) -> UpdateAlertSourceRequest:
+        if (self.environment is None) != (self.environment_name is None):
+            raise ValueError("环境代码和环境名称必须同时提供")
+        return self
 
 
 class CredentialMutationRequest(AlertSourceRequest):
@@ -65,6 +83,9 @@ class AlertSourceResponse(BaseModel):
     source_type: Literal["ALERTMANAGER", "CLOUDEVENTS", "MANUAL"]
     management_type: Literal["USER_MANAGED", "SYSTEM_MANAGED"]
     state: Literal["ENABLED", "DISABLED"]
+    environment: EnvironmentCode
+    environment_name: EnvironmentName
+    environment_configured: bool
     version: int = Field(ge=1)
     last_accepted_at: datetime | None
     last_rejected_at: datetime | None

@@ -18,6 +18,7 @@ from incident_intelligence.persistence.models import (
     AlertGroupingJobRow,
     AlertRow,
     AlertSourceReceiptRow,
+    AuditEventRow,
     SignalEventRow,
     SignalIntakeResultRow,
 )
@@ -62,14 +63,26 @@ def context(migrated_engine: Engine) -> Iterator[DynamicIntakeContext]:
                 session.commit()
 
 
-def _create_source(context: DynamicIntakeContext, name: str, source_type: str):
+def _create_source(
+    context: DynamicIntakeContext,
+    name: str,
+    source_type: str,
+    *,
+    environment: str = "production",
+    environment_name: str = "生产环境",
+):
     response = context.client.post(
         "/api/v1/alert-sources",
         headers={
             **context.manual_headers,
             "Idempotency-Key": f"create-{sha256(name.encode()).hexdigest()[:16]}",
         },
-        json={"name": name, "source_type": source_type},
+        json={
+            "name": name,
+            "source_type": source_type,
+            "environment": environment,
+            "environment_name": environment_name,
+        },
     )
     assert response.status_code == 201
     return response.json()
@@ -166,6 +179,66 @@ def test_two_registered_sources_isolate_same_external_alert_and_record_receipts(
     assert _count(context.engine, AlertRow) == 2
     assert _count(context.engine, AlertGroupingJobRow) == 2
     assert _count(context.engine, AlertSourceReceiptRow) == 2
+
+
+def test_registered_source_environment_overrides_payload_environment(
+    context: DynamicIntakeContext,
+) -> None:
+    source = _create_source(context, "可信生产来源", "ALERTMANAGER")
+    payload = _alertmanager_payload()
+    payload["alerts"][0]["labels"]["environment"] = "development"  # type: ignore[index]
+
+    response = context.client.post(
+        f"/api/v1/intake/alertmanager/{source['source']['id']}",
+        headers={"Authorization": f"Bearer {source['token']}"},
+        json=payload,
+    )
+
+    assert response.status_code == 202, response.text
+    with Session(context.engine) as session:
+        signal = session.scalar(select(SignalEventRow))
+        alert = session.scalar(select(AlertRow))
+        intake_audit = session.scalar(
+            select(AuditEventRow).where(AuditEventRow.action == "signal.received")
+        )
+    assert signal is not None and signal.environment == "production"
+    assert "environment" not in signal.facts
+    assert alert is not None and alert.environment == "production"
+    assert intake_audit is not None
+    assert (
+        intake_audit.details["normalization_reason_codes"] == "source_environment_overrode_payload"
+    )
+
+
+def test_source_environment_cannot_change_while_active_alerts_exist(
+    context: DynamicIntakeContext,
+) -> None:
+    source = _create_source(context, "存在活动告警的来源", "ALERTMANAGER")
+    received = context.client.post(
+        f"/api/v1/intake/alertmanager/{source['source']['id']}",
+        headers={"Authorization": f"Bearer {source['token']}"},
+        json=_alertmanager_payload(),
+    )
+    assert received.status_code == 202
+    disabled = context.client.patch(
+        f"/api/v1/alert-sources/{source['source']['id']}",
+        headers={**context.manual_headers, "Idempotency-Key": "disable-active-source"},
+        json={"expected_version": 1, "state": "DISABLED"},
+    )
+    assert disabled.status_code == 200
+
+    changed = context.client.patch(
+        f"/api/v1/alert-sources/{source['source']['id']}",
+        headers={**context.manual_headers, "Idempotency-Key": "change-active-source-env"},
+        json={
+            "expected_version": 2,
+            "environment": "development",
+            "environment_name": "开发环境",
+        },
+    )
+
+    assert changed.status_code == 409
+    assert changed.json()["code"] == "source_environment_has_active_alerts"
 
 
 def test_registered_alertmanager_accepts_experiment_labels_without_persisting_them(

@@ -19,6 +19,7 @@ from incident_intelligence.domain.alert_sources import (
     ReceiptOutcome,
 )
 from incident_intelligence.domain.forbidden_identity import reject_forbidden_identity
+from incident_intelligence.domain.models import Environment
 from incident_intelligence.ids import IdPrefix, new_id
 from incident_intelligence.persistence.alert_source_repository import AlertSourceRepository
 from incident_intelligence.persistence.models import (
@@ -34,6 +35,10 @@ SourceName = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
 ]
+EnvironmentName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=64),
+]
 
 
 class CreateAlertSourceCommand(BaseModel):
@@ -41,6 +46,8 @@ class CreateAlertSourceCommand(BaseModel):
 
     name: SourceName
     source_type: Literal["ALERTMANAGER", "CLOUDEVENTS"]
+    environment: Environment
+    environment_name: EnvironmentName
 
 
 class UpdateAlertSourceCommand(BaseModel):
@@ -49,10 +56,14 @@ class UpdateAlertSourceCommand(BaseModel):
     expected_version: int = Field(ge=1)
     name: SourceName | None = None
     state: AlertSourceState | None = None
+    environment: Environment | None = None
+    environment_name: EnvironmentName | None = None
 
     @model_validator(mode="after")
     def require_change(self) -> UpdateAlertSourceCommand:
-        if self.name is None and self.state is None:
+        if (self.environment is None) != (self.environment_name is None):
+            raise ValueError("环境代码和环境名称必须同时提供")
+        if self.name is None and self.state is None and self.environment is None:
             raise ValueError("至少提供一个告警源变更字段")
         return self
 
@@ -75,6 +86,9 @@ class AlertSourceView(BaseModel):
     source_type: AlertSourceType
     management_type: AlertSourceManagementType
     state: AlertSourceState
+    environment: Environment
+    environment_name: EnvironmentName
+    environment_configured: bool
     version: int = Field(ge=1)
     last_accepted_at: datetime | None
     last_rejected_at: datetime | None
@@ -202,6 +216,9 @@ class AlertSourceService:
                     source_type=command.source_type,
                     management_type="USER_MANAGED",
                     state="ENABLED",
+                    environment=command.environment,
+                    environment_name=command.environment_name,
+                    environment_configured=True,
                     version=1,
                     last_accepted_at=None,
                     last_rejected_at=None,
@@ -270,7 +287,16 @@ class AlertSourceService:
                 replay = self._find_replay(sources, scope, key_hash, fingerprint)
                 if replay is not None:
                     return replay
-                source = self._mutable_source(sources, source_id)
+                allow_system_environment_configuration = (
+                    command.environment is not None
+                    and command.name is None
+                    and command.state is None
+                )
+                source = self._mutable_source(
+                    sources,
+                    source_id,
+                    allow_system_environment_configuration=allow_system_environment_configuration,
+                )
                 replay = self._find_replay(sources, scope, key_hash, fingerprint)
                 if replay is not None:
                     return replay
@@ -284,6 +310,14 @@ class AlertSourceService:
                     raise LastActiveCredentialError("enabled_source_requires_credential")
                 if command.state is not None:
                     source.state = command.state
+                if command.environment is not None:
+                    if source.state != "DISABLED" and source.environment_configured:
+                        raise AlertSourceConflict("source_environment_change_requires_disabled")
+                    if sources.active_alert_count(source.id) > 0:
+                        raise AlertSourceConflict("source_environment_has_active_alerts")
+                    source.environment = command.environment
+                    source.environment_name = cast(str, command.environment_name)
+                    source.environment_configured = True
                 now = self._advance(source)
                 sources.flush()
                 self._record_operation(
@@ -529,11 +563,15 @@ class AlertSourceService:
         self,
         sources: AlertSourceRepository,
         source_id: str,
+        *,
+        allow_system_environment_configuration: bool = False,
     ) -> AlertSourceRow:
         source = sources.find_source(source_id, for_update=True)
         if source is None:
             raise AlertSourceResourceNotFound()
-        if source.management_type == "SYSTEM_MANAGED":
+        if source.management_type == "SYSTEM_MANAGED" and not (
+            allow_system_environment_configuration and not source.environment_configured
+        ):
             raise SystemManagedSourceError()
         return source
 
@@ -684,6 +722,9 @@ def _source_view(sources: AlertSourceRepository, source: AlertSourceRow) -> Aler
         source_type=cast(AlertSourceType, source.source_type),
         management_type=cast(AlertSourceManagementType, source.management_type),
         state=cast(AlertSourceState, source.state),
+        environment=source.environment,
+        environment_name=source.environment_name,
+        environment_configured=source.environment_configured,
         version=source.version,
         last_accepted_at=source.last_accepted_at,
         last_rejected_at=source.last_rejected_at,

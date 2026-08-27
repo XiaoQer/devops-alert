@@ -46,7 +46,12 @@ def service(session_factory: sessionmaker[Session]) -> AlertSourceService:
 
 def create_source(service: AlertSourceService, *, key: str = "create-1"):
     return service.create_source(
-        CreateAlertSourceCommand(name="生产 Alertmanager", source_type="ALERTMANAGER"),
+        CreateAlertSourceCommand(
+            name="生产 Alertmanager",
+            source_type="ALERTMANAGER",
+            environment="production",
+            environment_name="生产环境",
+        ),
         idempotency_key=key,
         actor=ACTOR,
         request_id="req-create",
@@ -189,7 +194,12 @@ def test_name_and_idempotency_conflicts_are_explicit(service: AlertSourceService
         create_source(service, key="different-key")
     with pytest.raises(AlertSourceConflict) as conflict:
         service.create_source(
-            CreateAlertSourceCommand(name="另一个来源", source_type="CLOUDEVENTS"),
+            CreateAlertSourceCommand(
+                name="另一个来源",
+                source_type="CLOUDEVENTS",
+                environment="development",
+                environment_name="开发环境",
+            ),
             idempotency_key="create-1",
             actor=ACTOR,
             request_id="req-conflict",

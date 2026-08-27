@@ -596,7 +596,7 @@ def test_catalog_identity_and_dependency_edge_are_unique(migrated_engine: Engine
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"environment": "private"},
+        {"environment": "Private environment"},
         {"service": ""},
         {"owner_team": ""},
     ],

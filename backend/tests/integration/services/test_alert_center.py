@@ -78,13 +78,23 @@ def seeded(migrated_engine: Engine) -> SeededAlerts:
     uow_factory = partial(SqlAlchemyUnitOfWork, session_factory)
     source_service = AlertSourceService(uow_factory=uow_factory, clock=lambda: NOW)
     source_a = source_service.create_source(
-        CreateAlertSourceCommand(name="生产 Alertmanager", source_type="ALERTMANAGER"),
+        CreateAlertSourceCommand(
+            name="生产 Alertmanager",
+            source_type="ALERTMANAGER",
+            environment="production",
+            environment_name="生产环境",
+        ),
         idempotency_key="create-source-a",
         actor="manual-api-client",
         request_id="req-source-a",
     ).source
     source_b = source_service.create_source(
-        CreateAlertSourceCommand(name="订单 Alertmanager", source_type="ALERTMANAGER"),
+        CreateAlertSourceCommand(
+            name="订单 Alertmanager",
+            source_type="ALERTMANAGER",
+            environment="production",
+            environment_name="生产环境",
+        ),
         idempotency_key="create-source-b",
         actor="manual-api-client",
         request_id="req-source-b",

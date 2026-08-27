@@ -17,7 +17,7 @@ from incident_intelligence.persistence.base import Base
 from incident_intelligence.persistence.types import UtcDateTime
 
 SEVERITY_VALUES = "'critical', 'high', 'medium', 'low'"
-ENVIRONMENT_VALUES = "'production', 'staging', 'development', 'unknown'"
+ENVIRONMENT_CHECK = "environment REGEXP '^[a-z][a-z0-9-]{0,31}$'"
 EVENT_TYPE_VALUES = "'manual.reported', 'alert.firing', 'alert.resolved'"
 PROJECTION_OUTCOME_VALUES = (
     "'opened', 'updated', 'resolved', 'reopened', 'stale', 'orphan_resolved'"
@@ -76,6 +76,7 @@ class AlertSourceRow(Base):
             f"management_type IN ({ALERT_SOURCE_MANAGEMENT_VALUES})", name="management_type"
         ),
         CheckConstraint(f"state IN ({ALERT_SOURCE_STATE_VALUES})", name="state"),
+        CheckConstraint(ENVIRONMENT_CHECK, name="environment"),
         CheckConstraint("version >= 1", name="version"),
         CheckConstraint(
             "accepted_requests >= 0 AND rejected_requests >= 0 "
@@ -93,6 +94,9 @@ class AlertSourceRow(Base):
     source_type: Mapped[str] = mapped_column(String(16), nullable=False)
     management_type: Mapped[str] = mapped_column(String(16), nullable=False)
     state: Mapped[str] = mapped_column(String(16), nullable=False)
+    environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    environment_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    environment_configured: Mapped[bool] = mapped_column(nullable=False)
     version: Mapped[int] = mapped_column(nullable=False)
     last_accepted_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
     last_rejected_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
@@ -202,7 +206,7 @@ class SignalEventRow(Base):
             "alert_source_id", "source", "source_event_id", name="signal_source_identity"
         ),
         CheckConstraint(f"severity IN ({SEVERITY_VALUES})", name="signal_severity"),
-        CheckConstraint(f"environment IN ({ENVIRONMENT_VALUES})", name="signal_environment"),
+        CheckConstraint(ENVIRONMENT_CHECK, name="signal_environment"),
         CheckConstraint(f"event_type IN ({EVENT_TYPE_VALUES})", name="signal_event_type"),
         CheckConstraint(
             "entity_type IN ('SERVICE','WORKLOAD','POD','NODE','JOB',"
@@ -243,7 +247,7 @@ class AlertRow(Base):
         CheckConstraint("state IN ('ACTIVE', 'RESOLVED', 'SUPPRESSED')", name="alert_state"),
         CheckConstraint("cycle >= 1", name="alert_cycle"),
         CheckConstraint(f"severity IN ({SEVERITY_VALUES})", name="alert_severity"),
-        CheckConstraint(f"environment IN ({ENVIRONMENT_VALUES})", name="alert_environment"),
+        CheckConstraint(ENVIRONMENT_CHECK, name="alert_environment"),
         CheckConstraint("char_length(source_instance) = 64", name="alert_source_instance"),
         CheckConstraint("char_length(source_alert_key) >= 1", name="alert_source_alert_key"),
         CheckConstraint(
@@ -298,7 +302,7 @@ class IncidentRow(Base):
             name="incident_state",
         ),
         CheckConstraint(f"severity IN ({SEVERITY_VALUES})", name="incident_severity"),
-        CheckConstraint(f"environment IN ({ENVIRONMENT_VALUES})", name="incident_environment"),
+        CheckConstraint(ENVIRONMENT_CHECK, name="incident_environment"),
         CheckConstraint(
             "(assignee IS NULL AND claimed_at IS NULL) OR "
             "(assignee IS NOT NULL AND claimed_at IS NOT NULL)",
@@ -341,7 +345,7 @@ class AlertGroupRow(Base):
         CheckConstraint(f"state IN ({ALERT_GROUP_STATE_VALUES})", name="alert_group_state"),
         CheckConstraint(f"storm_state IN ({STORM_STATE_VALUES})", name="alert_group_storm_state"),
         CheckConstraint(f"severity IN ({SEVERITY_VALUES})", name="alert_group_severity"),
-        CheckConstraint(f"environment IN ({ENVIRONMENT_VALUES})", name="alert_group_environment"),
+        CheckConstraint(ENVIRONMENT_CHECK, name="alert_group_environment"),
         CheckConstraint(
             "entity_type IN ('SERVICE','WORKLOAD','POD','NODE','JOB',"
             "'INSTANCE','CLUSTER','UNKNOWN')",
@@ -773,7 +777,7 @@ class ServiceCatalogEntryRow(Base):
         UniqueConstraint("service", "environment", name="service_catalog_identity"),
         CheckConstraint(f"state IN ({CATALOG_STATE_VALUES})", name="catalog_state"),
         CheckConstraint(
-            f"environment IN ({ENVIRONMENT_VALUES})",
+            ENVIRONMENT_CHECK,
             name="catalog_environment",
         ),
         CheckConstraint("char_length(service) >= 1", name="catalog_service_not_empty"),

@@ -86,10 +86,11 @@ class SignalIntakeService:
     ) -> SignalIntakeBatchResult:
         for command in commands:
             reject_forbidden_identity(command.model_dump(mode="json"))
-        fingerprints = tuple(_fingerprint(command) for command in commands)
+        effective_commands = self._apply_source_environments(commands)
+        fingerprints = tuple(_fingerprint(command) for command in effective_commands)
         try:
             return self._submit_once(
-                commands,
+                effective_commands,
                 fingerprints,
                 actor,
                 request_id,
@@ -97,12 +98,47 @@ class SignalIntakeService:
             )
         except IntegrityError:
             return self._submit_once(
-                commands,
+                effective_commands,
                 fingerprints,
                 actor,
                 request_id,
                 receipt_context,
             )
+
+    def _apply_source_environments(
+        self,
+        commands: Sequence[SignalCommand],
+    ) -> tuple[SignalCommand, ...]:
+        with self._uow_factory() as uow:
+            sources = _alert_sources(uow)
+            result: list[SignalCommand] = []
+            for command in commands:
+                source = sources.find_source(command.alert_source_id)
+                if source is None:
+                    raise RuntimeError("signal_alert_source_not_found")
+                if source.environment_configured:
+                    reason_codes = command.normalization_reason_codes
+                    if command.environment not in {"unknown", source.environment}:
+                        filtered_reason_codes = tuple(
+                            code
+                            for code in reason_codes
+                            if code != "source_environment_overrode_payload"
+                        )
+                        reason_codes = (
+                            *filtered_reason_codes[:9],
+                            "source_environment_overrode_payload",
+                        )
+                    result.append(
+                        command.model_copy(
+                            update={
+                                "environment": source.environment,
+                                "normalization_reason_codes": reason_codes,
+                            }
+                        )
+                    )
+                else:
+                    result.append(command)
+            return tuple(result)
 
     def _submit_once(
         self,
@@ -241,6 +277,7 @@ class SignalIntakeService:
             request_id=request_id,
             reason_code="external_signal_received",
             adapter=command.source,
+            normalization_reason_codes=command.normalization_reason_codes,
             created_at=now,
         )
         self._append_audit(
@@ -277,10 +314,13 @@ class SignalIntakeService:
         adapter: str,
         created_at: datetime,
         parent_id: str | None = None,
+        normalization_reason_codes: tuple[str, ...] = (),
     ) -> None:
         details = {"reason_code": reason_code, "adapter": adapter}
         if parent_id is not None:
             details["parent_id"] = parent_id
+        if normalization_reason_codes:
+            details["normalization_reason_codes"] = ",".join(normalization_reason_codes)
         records.add_audit(
             audit_id=audit_id,
             actor=actor,

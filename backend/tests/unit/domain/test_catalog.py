@@ -58,7 +58,7 @@ def test_catalog_entry_is_strict_bounded_and_frozen() -> None:
     for invalid in (
         {"id": "service-1"},
         {"owner_team": "x" * 129},
-        {"environment": "private"},
+        {"environment": "Private environment"},
         {"state": "DELETED"},
         {"version": 0},
         {"unexpected": "value"},

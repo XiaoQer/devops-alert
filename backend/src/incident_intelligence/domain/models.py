@@ -18,7 +18,10 @@ from incident_intelligence.domain.entities import (
 from incident_intelligence.domain.enums import AlertState, DiagnosisState, IncidentState
 
 Severity = Literal["critical", "high", "medium", "low"]
-Environment = Literal["production", "staging", "development", "unknown"]
+Environment = Annotated[
+    str,
+    StringConstraints(pattern=r"^[a-z][a-z0-9-]{0,31}$", max_length=32),
+]
 EventType = Literal["manual.reported", "alert.firing", "alert.resolved"]
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 Summary = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2_000)]

@@ -42,7 +42,12 @@ def _create_source(session_factory: sessionmaker[Session]):
         clock=lambda: NOW,
     )
     return service.create_source(
-        CreateAlertSourceCommand(name="动态 Alertmanager", source_type="ALERTMANAGER"),
+        CreateAlertSourceCommand(
+            name="动态 Alertmanager",
+            source_type="ALERTMANAGER",
+            environment="production",
+            environment_name="生产环境",
+        ),
         idempotency_key="create-source",
         actor="manual-api-client",
         request_id="req-create",

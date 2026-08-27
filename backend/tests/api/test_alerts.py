@@ -41,7 +41,12 @@ def context(migrated_engine: Engine) -> Iterator[AlertApiContext]:
         source_response = client.post(
             "/api/v1/alert-sources",
             headers={**headers, "Idempotency-Key": "create-alert-api-source"},
-            json={"name": "告警中心来源", "source_type": "ALERTMANAGER"},
+            json={
+                "name": "告警中心来源",
+                "source_type": "ALERTMANAGER",
+                "environment": "production",
+                "environment_name": "生产环境",
+            },
         )
         source = source_response.json()
         client.post(

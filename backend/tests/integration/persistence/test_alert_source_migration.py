@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import column, insert, inspect, select, table
@@ -135,6 +136,9 @@ def test_upgrade_creates_source_tables_and_backfills_manual_identity(
             "source_type",
             "management_type",
             "state",
+            "environment",
+            "environment_name",
+            "environment_configured",
             "version",
             "last_accepted_at",
             "last_rejected_at",
@@ -157,7 +161,13 @@ def test_upgrade_creates_source_tables_and_backfills_manual_identity(
         signal_events = table("signal_events", column("id"), column("alert_source_id"))
         alerts = table("alerts", column("id"), column("alert_source_id"))
         alert_sources = table(
-            "alert_sources", column("id"), column("management_type"), column("state")
+            "alert_sources",
+            column("id"),
+            column("management_type"),
+            column("state"),
+            column("environment"),
+            column("environment_name"),
+            column("environment_configured"),
         )
         with Session(mysql_engine) as session:
             assert set(session.scalars(select(alert_sources.c.id))) == {
@@ -169,6 +179,9 @@ def test_upgrade_creates_source_tables_and_backfills_manual_identity(
                 "SYSTEM_MANAGED"
             }
             assert set(session.scalars(select(alert_sources.c.state))) == {"ENABLED"}
+            assert set(session.scalars(select(alert_sources.c.environment))) == {"unknown"}
+            assert set(session.scalars(select(alert_sources.c.environment_name))) == {"环境待配置"}
+            assert set(session.scalars(select(alert_sources.c.environment_configured))) == {False}
             assert (
                 session.scalar(
                     select(signal_events.c.alert_source_id).where(signal_events.c.id == signal_id)
@@ -188,5 +201,55 @@ def test_alert_source_migration_matches_orm_metadata(alembic_config: Config) -> 
     command.upgrade(alembic_config, "head")
     try:
         command.check(alembic_config)
+    finally:
+        command.downgrade(alembic_config, "base")
+
+
+def test_downgrade_rejects_custom_environments_without_losing_data(
+    alembic_config: Config,
+    mysql_engine: Engine,
+) -> None:
+    command.downgrade(alembic_config, "base")
+    command.upgrade(alembic_config, "head")
+    service_catalog = table(
+        "service_catalog_entries",
+        column("id"),
+        column("service"),
+        column("environment"),
+        column("owner_team"),
+        column("state"),
+        column("created_at"),
+        column("updated_at"),
+        column("version"),
+    )
+    service_id = new_id("svc")
+    try:
+        with Session(mysql_engine) as session:
+            session.execute(
+                insert(service_catalog).values(
+                    id=service_id,
+                    service="payment-api",
+                    environment="private",
+                    owner_team="payments",
+                    state="ACTIVE",
+                    created_at=NOW,
+                    updated_at=NOW,
+                    version=1,
+                )
+            )
+            session.commit()
+
+        with pytest.raises(RuntimeError, match="旧版本不支持自定义环境"):
+            command.downgrade(alembic_config, "0008_problem_signature_grouping")
+
+        with Session(mysql_engine) as session:
+            assert (
+                session.scalar(
+                    select(service_catalog.c.environment).where(service_catalog.c.id == service_id)
+                )
+                == "private"
+            )
+            session.execute(service_catalog.delete().where(service_catalog.c.id == service_id))
+            session.commit()
     finally:
         command.downgrade(alembic_config, "base")

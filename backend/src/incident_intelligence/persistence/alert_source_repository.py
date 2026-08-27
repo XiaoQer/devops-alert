@@ -6,6 +6,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from incident_intelligence.persistence.models import (
+    AlertRow,
     AlertSourceCredentialRow,
     AlertSourceOperationRow,
     AlertSourceReceiptRow,
@@ -108,6 +109,19 @@ class AlertSourceRepository:
                 .where(
                     AlertSourceCredentialRow.alert_source_id == source_id,
                     AlertSourceCredentialRow.state == "ACTIVE",
+                )
+            )
+            or 0
+        )
+
+    def active_alert_count(self, source_id: str) -> int:
+        return (
+            self._session.scalar(
+                select(func.count())
+                .select_from(AlertRow)
+                .where(
+                    AlertRow.alert_source_id == source_id,
+                    AlertRow.state == "ACTIVE",
                 )
             )
             or 0
