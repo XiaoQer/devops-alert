@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from incident_intelligence.domain.models import Environment, Severity
 from incident_intelligence.persistence.models import (
+    AlertEventLifecycleJobRow,
     AlertGroupCorrelationJobRow,
     AlertGroupingJobRow,
     AlertGroupMemberRow,
@@ -197,13 +198,13 @@ class AlertGroupCenterService:
             active_groups = _count(
                 session,
                 AlertGroupRow,
-                AlertGroupRow.state == "ACTIVE",
+                AlertGroupRow.state.in_(("FORMING", "ACTIVE", "OBSERVING")),
                 _group_has_members(),
             )
             severe = _count(
                 session,
                 AlertGroupRow,
-                AlertGroupRow.state == "ACTIVE",
+                AlertGroupRow.state.in_(("FORMING", "ACTIVE")),
                 AlertGroupRow.severity.in_(("critical", "high")),
                 _group_has_members(),
             )
@@ -211,7 +212,7 @@ class AlertGroupCenterService:
             storms = _count(
                 session,
                 AlertGroupRow,
-                AlertGroupRow.state == "ACTIVE",
+                AlertGroupRow.state.in_(("FORMING", "ACTIVE")),
                 AlertGroupRow.storm_state == "STORM",
                 _group_has_members(),
             )
@@ -230,14 +231,22 @@ class AlertGroupCenterService:
                 .subquery()
             )
             peak = int(session.scalar(select(func.max(per_minute.c.rate))) or 0)
-            pending = _count(
-                session,
-                AlertGroupingJobRow,
-                AlertGroupingJobRow.state.in_(("PENDING", "LEASED")),
-            ) + _count(
-                session,
-                AlertGroupCorrelationJobRow,
-                AlertGroupCorrelationJobRow.state.in_(("PENDING", "LEASED")),
+            pending = (
+                _count(
+                    session,
+                    AlertGroupingJobRow,
+                    AlertGroupingJobRow.state.in_(("PENDING", "LEASED")),
+                )
+                + _count(
+                    session,
+                    AlertGroupCorrelationJobRow,
+                    AlertGroupCorrelationJobRow.state.in_(("PENDING", "LEASED")),
+                )
+                + _count(
+                    session,
+                    AlertEventLifecycleJobRow,
+                    AlertEventLifecycleJobRow.state.in_(("PENDING", "LEASED")),
+                )
             )
             return AlertGroupSummary(
                 window=window,

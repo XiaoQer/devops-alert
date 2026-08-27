@@ -23,6 +23,10 @@ def test_correlation_runner_settings_have_safe_bounded_defaults() -> None:
     assert configured.correlation_lease_seconds == 30
     assert configured.correlation_batch_size == 10
     assert configured.alert_group_backfill_batch_size == 100
+    assert configured.alert_event_lifecycle_runner_enabled is True
+    assert configured.alert_event_lifecycle_poll_interval_seconds == 1.0
+    assert configured.alert_event_lifecycle_lease_seconds == 30
+    assert configured.alert_event_lifecycle_batch_size == 10
 
     for overrides in (
         {"correlation_poll_interval_seconds": 0.09},
@@ -33,6 +37,12 @@ def test_correlation_runner_settings_have_safe_bounded_defaults() -> None:
         {"correlation_batch_size": 51},
         {"alert_group_backfill_batch_size": 0},
         {"alert_group_backfill_batch_size": 101},
+        {"alert_event_lifecycle_poll_interval_seconds": 0.09},
+        {"alert_event_lifecycle_poll_interval_seconds": 61},
+        {"alert_event_lifecycle_lease_seconds": 4},
+        {"alert_event_lifecycle_lease_seconds": 301},
+        {"alert_event_lifecycle_batch_size": 0},
+        {"alert_event_lifecycle_batch_size": 51},
     ):
         with pytest.raises(ValidationError):
             settings(**overrides)

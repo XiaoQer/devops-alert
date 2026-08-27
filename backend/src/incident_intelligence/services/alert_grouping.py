@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -12,6 +12,11 @@ from incident_intelligence.domain.alert_event_clustering import (
     MembershipDecision,
     decide_membership,
     score_candidate,
+)
+from incident_intelligence.domain.alert_event_lifecycle import (
+    AlertEventState,
+    LifecycleContext,
+    decide_lifecycle,
 )
 from incident_intelligence.domain.alert_event_profiles import (
     AlertEventProfile,
@@ -180,10 +185,12 @@ class AlertGroupingService:
                 )
                 group.profile_version += 1
                 _save_current_profile(repository, group, now=now)
+                _schedule_lifecycle(repository, group, now=now)
             else:
                 candidate_batch = repository.candidate_events(
                     environment=alert.environment,
                     observed_at=alert.last_observed_at,
+                    received_at=signal.received_at,
                     entity_key=alert.entity_key,
                     service=alert.service,
                     problem_key=signature.problem_key,
@@ -202,7 +209,13 @@ class AlertGroupingService:
                     )
                     for candidate in candidate_batch.items
                 )
-                decision = decide_membership(scores, candidates_truncated=candidate_batch.truncated)
+                decision = _late_membership_decision(
+                    alert=alert,
+                    signal=signal,
+                    signature=signature,
+                    candidates=candidate_batch.items,
+                    truncated=candidate_batch.truncated,
+                ) or decide_membership(scores, candidates_truncated=candidate_batch.truncated)
                 if decision.outcome == "PENDING_CONFIRMATION":
                     repository.save_membership_decision(
                         decision_id=self._id_factory("amd"),
@@ -249,6 +262,7 @@ class AlertGroupingService:
                 repository.add_member(member)
                 repository.flush()
                 _save_current_profile(repository, group, now=now)
+                _schedule_lifecycle(repository, group, now=now)
                 action = "CREATE_GROUP"
             elif existing_member is None:
                 if decision.selected_group_id is None:
@@ -256,21 +270,61 @@ class AlertGroupingService:
                 selected_group = repository.find_group(decision.selected_group_id, for_update=True)
                 if selected_group is None:
                     raise RuntimeError("alert_grouping_candidate_not_found")
-                group = selected_group
-                if existing_link is not None and group.incident_id is None:
-                    group.incident_id = existing_link.incident_id
-                member = _new_member(group.id, alert, identity, decision.reason_codes[0], now)
-                repository.add_member(member)
-                _refresh_group(
-                    repository,
-                    group,
-                    reason_codes=list(decision.reason_codes),
-                    explanation=decision.explanation,
-                    now=now,
-                )
-                group.profile_version += 1
-                _save_current_profile(repository, group, now=now)
-                action = "JOIN_GROUP"
+                if selected_group.total_count >= selected_group.member_limit:
+                    decision = MembershipDecision(
+                        outcome="CREATE_EVENT",
+                        selected_group_id=None,
+                        candidate_group_ids=decision.candidate_group_ids,
+                        reason_codes=("event_member_limit_reached",),
+                        explanation="候选事件已达到成员上限, 已创建同一风暴的后继事件。",
+                    )
+                    group = _new_group(
+                        group_id=self._id_factory("agr"),
+                        alert=alert,
+                        signature=signature,
+                        symptom=symptom,
+                        reason_code=decision.reason_codes[0],
+                        explanation=decision.explanation,
+                        incident_id=(
+                            selected_group.incident_id
+                            if existing_link is None
+                            else existing_link.incident_id
+                        ),
+                        continuation_group_id=selected_group.id,
+                        now=now,
+                    )
+                    repository.add_group(group)
+                    repository.add_member(
+                        _new_member(group.id, alert, identity, decision.reason_codes[0], now)
+                    )
+                    repository.flush()
+                    _save_current_profile(repository, group, now=now)
+                    _schedule_lifecycle(repository, group, now=now)
+                    action = "CREATE_GROUP"
+                else:
+                    group = selected_group
+                    if existing_link is not None and group.incident_id is None:
+                        group.incident_id = existing_link.incident_id
+                    member = _new_member(group.id, alert, identity, decision.reason_codes[0], now)
+                    repository.add_member(member)
+                    late_correction = (
+                        group.state == "CLOSED"
+                        and group.closed_at is not None
+                        and signal.observed_at <= group.closed_at
+                        and signal.received_at <= group.closed_at + timedelta(minutes=5)
+                    )
+                    _refresh_group(
+                        repository,
+                        group,
+                        reason_codes=list(decision.reason_codes),
+                        explanation=decision.explanation,
+                        now=now,
+                        allow_late_correction=late_correction,
+                    )
+                    group.profile_version += 1
+                    _save_current_profile(repository, group, now=now)
+                    _schedule_lifecycle(repository, group, now=now)
+                    action = "JOIN_GROUP"
 
             repository.save_membership_decision(
                 decision_id=self._id_factory("amd"),
@@ -375,6 +429,39 @@ def _build_profile(
     )
 
 
+def _late_membership_decision(
+    *,
+    alert: AlertRow,
+    signal: SignalEventRow,
+    signature: ProblemSignature,
+    candidates: tuple[AlertEventCandidateRecord, ...],
+    truncated: bool,
+) -> MembershipDecision | None:
+    if truncated:
+        return None
+    eligible = tuple(
+        candidate.group
+        for candidate in candidates
+        if candidate.group.state == "CLOSED"
+        and candidate.group.closed_at is not None
+        and candidate.group.environment == alert.environment
+        and candidate.group.service == alert.service
+        and candidate.group.problem_key == signature.problem_key
+        and signal.observed_at <= candidate.group.closed_at
+        and signal.received_at <= candidate.group.closed_at + timedelta(minutes=5)
+    )
+    if len(eligible) != 1:
+        return None
+    group = eligible[0]
+    return MembershipDecision(
+        outcome="AUTO_JOIN",
+        selected_group_id=group.id,
+        candidate_group_ids=(group.id,),
+        reason_codes=("late_alert_matches_recent_event",),
+        explanation="迟到告警与刚关闭事件的环境、服务和问题签名完全一致, 已补入原事件。",
+    )
+
+
 def _confirmed_member(fact: AlertEventMemberFact) -> ConfirmedEventMember:
     signature = _member_signature(fact)
     symptom = normalize_symptom(fact.signal.facts.get("symptom")) or "unknown"
@@ -439,11 +526,12 @@ def _new_group(
     explanation: str,
     incident_id: str | None,
     now: datetime,
+    continuation_group_id: str | None = None,
 ) -> AlertGroupRow:
     active_count = 1 if alert.state == "ACTIVE" else 0
     return AlertGroupRow(
         id=group_id,
-        state="ACTIVE" if active_count else "CLOSED",
+        state="FORMING",
         storm_state="NORMAL",
         rule_version=GROUPING_RULE_VERSION,
         service=alert.service,
@@ -470,6 +558,12 @@ def _new_group(
         total_count=1,
         impacted_resource_count=1,
         desired_correlation_version=0,
+        forming_until=now + timedelta(seconds=30),
+        observing_until=None,
+        closed_at=None,
+        member_limit=1_000,
+        continuation_group_id=continuation_group_id,
+        pending_count=0,
         reason_codes=[reason_code],
         explanation=explanation,
         created_at=now,
@@ -509,6 +603,7 @@ def _refresh_group(
     reason_codes: list[str],
     explanation: str,
     now: datetime,
+    allow_late_correction: bool = False,
 ) -> None:
     aggregate = repository.aggregate_group(
         group.id,
@@ -518,7 +613,21 @@ def _refresh_group(
         raise RuntimeError("alert_grouping_group_has_no_members")
 
     previous_state = group.state
-    group.state = "ACTIVE" if aggregate.active_count else "CLOSED"
+    lifecycle = decide_lifecycle(
+        LifecycleContext(
+            state=cast(AlertEventState, group.state),
+            active_count=aggregate.active_count,
+            now=now,
+            forming_until=group.forming_until,
+            observing_until=group.observing_until,
+            closed_at=group.closed_at,
+            allow_late_correction=allow_late_correction,
+        )
+    )
+    group.state = lifecycle.state
+    group.forming_until = lifecycle.forming_until
+    group.observing_until = lifecycle.observing_until
+    group.closed_at = lifecycle.closed_at
     if group.state != previous_state:
         group.state_changed_at = now
     group.active_count = aggregate.active_count
@@ -541,6 +650,28 @@ def _refresh_group(
     group.explanation = explanation
     group.updated_at = now
     group.version += 1
+
+
+def _schedule_lifecycle(
+    repository: AlertGroupRepository,
+    group: AlertGroupRow,
+    *,
+    now: datetime,
+) -> None:
+    if group.state == "FORMING" and group.forming_until is not None:
+        repository.schedule_lifecycle(
+            group,
+            action="FORMING_COMPLETE",
+            available_at=group.forming_until,
+            now=now,
+        )
+    elif group.state == "OBSERVING" and group.observing_until is not None:
+        repository.schedule_lifecycle(
+            group,
+            action="OBSERVATION_COMPLETE",
+            available_at=group.observing_until,
+            now=now,
+        )
 
 
 def _append_audit(
@@ -598,7 +729,7 @@ def _requires_correlation(group: AlertGroupRow, catalog_entry: object | None) ->
     if group.incident_id is not None:
         return True
     base_eligible = (
-        group.state == "ACTIVE"
+        group.state in {"FORMING", "ACTIVE"}
         and group.severity in {"critical", "high"}
         and group.environment == "production"
     )

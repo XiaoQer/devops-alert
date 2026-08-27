@@ -11,6 +11,11 @@ from incident_intelligence.api.router import create_router
 from incident_intelligence.persistence.session import get_engine, make_session_factory
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.alert_center import AlertCenterService
+from incident_intelligence.services.alert_event_lifecycle import AlertEventLifecycleService
+from incident_intelligence.services.alert_event_lifecycle_jobs import (
+    AlertEventLifecycleJobService,
+)
+from incident_intelligence.services.alert_event_lifecycle_runner import AlertEventLifecycleRunner
 from incident_intelligence.services.alert_group_backfill import AlertGroupBackfillService
 from incident_intelligence.services.alert_group_center import AlertGroupCenterService
 from incident_intelligence.services.alert_group_correlation import AlertGroupCorrelationService
@@ -43,6 +48,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     runner_task: asyncio.Task[None] | None = None
     grouping_runner_task: asyncio.Task[None] | None = None
     group_correlation_task: asyncio.Task[None] | None = None
+    lifecycle_task: asyncio.Task[None] | None = None
     if app.state.settings.correlation_runner_enabled:
         runner_task = asyncio.create_task(app.state.correlation_runner.run_forever())
     if (
@@ -54,6 +60,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         group_correlation_task = asyncio.create_task(
             app.state.alert_group_correlation_runner.run_forever()
         )
+    if app.state.settings.alert_event_lifecycle_runner_enabled:
+        lifecycle_task = asyncio.create_task(app.state.alert_event_lifecycle_runner.run_forever())
     try:
         yield
     finally:
@@ -66,6 +74,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if group_correlation_task is not None:
             await app.state.alert_group_correlation_runner.stop()
             await group_correlation_task
+        if lifecycle_task is not None:
+            await app.state.alert_event_lifecycle_runner.stop()
+            await lifecycle_task
 
 
 def create_app(settings: Settings | None = None, *, engine: Engine | None = None) -> FastAPI:
@@ -116,6 +127,12 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
     app.state.alert_grouping_service = AlertGroupingService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
+    app.state.alert_event_lifecycle_job_service = AlertEventLifecycleJobService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
+    )
+    app.state.alert_event_lifecycle_service = AlertEventLifecycleService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
+    )
     app.state.alert_group_backfill_service = AlertGroupBackfillService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
@@ -139,6 +156,11 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
     app.state.alert_grouping_runner = AlertGroupingRunner(
         job_service=app.state.alert_grouping_job_service,
         processor=app.state.alert_grouping_service,
+        settings=resolved_settings,
+    )
+    app.state.alert_event_lifecycle_runner = AlertEventLifecycleRunner(
+        job_service=app.state.alert_event_lifecycle_job_service,
+        processor=app.state.alert_event_lifecycle_service,
         settings=resolved_settings,
     )
     app.state.alert_group_correlation_runner = AlertGroupCorrelationRunner(

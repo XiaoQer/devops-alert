@@ -61,7 +61,7 @@ def test_group_center_exposes_real_counts_second_member_page_and_incident_groups
     center = AlertGroupCenterService(session_factory=session_factory)
     page = center.list_groups(
         AlertGroupFilters(
-            state="ACTIVE",
+            state="FORMING",
             severity="high",
             service="payment-api",
             environment="production",
@@ -85,7 +85,7 @@ def test_group_center_exposes_real_counts_second_member_page_and_incident_groups
     assert summary.storm_groups == 1
     assert summary.compression_ratio == 101.0
     assert summary.peak_rate_per_minute == 101
-    assert summary.pending_group_jobs == 1
+    assert summary.pending_group_jobs == 2
 
     overview = center.get_overview(group_id)
     assert overview.group.total_count == 101

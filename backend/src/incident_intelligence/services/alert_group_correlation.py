@@ -79,7 +79,7 @@ class AlertGroupCorrelationService:
             eligible = (
                 group.version == job.target_group_version
                 and group.incident_id is None
-                and group.state == "ACTIVE"
+                and group.state in {"FORMING", "ACTIVE"}
                 and group.severity in {"critical", "high"}
                 and group.environment == "production"
                 and service is not None

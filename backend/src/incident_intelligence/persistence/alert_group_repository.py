@@ -15,6 +15,7 @@ from incident_intelligence.domain.alert_event_clustering import (
 from incident_intelligence.domain.alert_event_profiles import AlertEventProfile
 from incident_intelligence.ids import new_id
 from incident_intelligence.persistence.models import (
+    AlertEventLifecycleJobRow,
     AlertEventMembershipDecisionRow,
     AlertEventProfileRow,
     AlertGroupCorrelationJobRow,
@@ -163,6 +164,92 @@ class AlertGroupRepository:
             statement = statement.with_for_update()
         return self._session.scalar(statement)
 
+    def find_lifecycle_job(
+        self, job_id: str, *, for_update: bool = False
+    ) -> AlertEventLifecycleJobRow | None:
+        statement = select(AlertEventLifecycleJobRow).where(AlertEventLifecycleJobRow.id == job_id)
+        if for_update:
+            statement = statement.with_for_update()
+        return self._session.scalar(statement)
+
+    def find_active_lifecycle_job(
+        self,
+        group_id: str,
+        action: str,
+        *,
+        for_update: bool = False,
+    ) -> AlertEventLifecycleJobRow | None:
+        statement = select(AlertEventLifecycleJobRow).where(
+            AlertEventLifecycleJobRow.alert_group_id == group_id,
+            AlertEventLifecycleJobRow.action == action,
+            AlertEventLifecycleJobRow.active_slot == 1,
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return self._session.scalar(statement)
+
+    def schedule_lifecycle(
+        self,
+        group: AlertGroupRow,
+        *,
+        action: str,
+        available_at: datetime,
+        now: datetime,
+    ) -> AlertEventLifecycleJobRow:
+        active = self.find_active_lifecycle_job(group.id, action, for_update=True)
+        if active is not None:
+            if active.state == "PENDING":
+                active.target_group_version = max(active.target_group_version, group.version)
+                active.available_at = available_at
+                active.updated_at = now
+            self._session.flush()
+            return active
+        row = AlertEventLifecycleJobRow(
+            id=new_id("alj"),
+            alert_group_id=group.id,
+            target_group_version=group.version,
+            action=action,
+            state="PENDING",
+            active_slot=1,
+            attempts=0,
+            available_at=available_at,
+            lease_owner=None,
+            lease_expires_at=None,
+            last_error_code=None,
+            created_at=now,
+            updated_at=now,
+        )
+        self._session.add(row)
+        self._session.flush()
+        return row
+
+    def claimable_lifecycle_jobs(
+        self, *, now: datetime, limit: int
+    ) -> tuple[AlertEventLifecycleJobRow, ...]:
+        statement = (
+            select(AlertEventLifecycleJobRow)
+            .where(
+                or_(
+                    and_(
+                        AlertEventLifecycleJobRow.state == "PENDING",
+                        AlertEventLifecycleJobRow.available_at <= now,
+                    ),
+                    and_(
+                        AlertEventLifecycleJobRow.state == "LEASED",
+                        AlertEventLifecycleJobRow.lease_expires_at <= now,
+                    ),
+                )
+            )
+            .order_by(
+                AlertEventLifecycleJobRow.available_at,
+                AlertEventLifecycleJobRow.created_at,
+                AlertEventLifecycleJobRow.id,
+            )
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        return tuple(self._session.scalars(statement))
+
     def find_alert_for_update(self, alert_id: str) -> AlertRow | None:
         return self._session.scalar(
             select(AlertRow).where(AlertRow.id == alert_id).with_for_update()
@@ -212,6 +299,7 @@ class AlertGroupRepository:
         *,
         environment: str,
         observed_at: datetime,
+        received_at: datetime,
         entity_key: str,
         service: str | None,
         problem_key: str,
@@ -245,10 +333,21 @@ class AlertGroupRepository:
             self._session.scalars(
                 select(AlertGroupRow)
                 .where(
-                    AlertGroupRow.state.in_(("FORMING", "ACTIVE", "OBSERVING")),
+                    or_(
+                        and_(
+                            AlertGroupRow.state.in_(("FORMING", "ACTIVE", "OBSERVING")),
+                            AlertGroupRow.last_observed_at >= observed_at - timedelta(minutes=15),
+                            AlertGroupRow.last_observed_at <= observed_at + timedelta(minutes=5),
+                        ),
+                        and_(
+                            AlertGroupRow.state == "CLOSED",
+                            AlertGroupRow.closed_at.is_not(None),
+                            AlertGroupRow.closed_at >= observed_at,
+                            AlertGroupRow.closed_at >= received_at - timedelta(minutes=5),
+                            AlertGroupRow.first_observed_at <= observed_at + timedelta(minutes=5),
+                        ),
+                    ),
                     AlertGroupRow.environment == environment,
-                    AlertGroupRow.last_observed_at >= observed_at - timedelta(minutes=15),
-                    AlertGroupRow.last_observed_at <= observed_at + timedelta(minutes=5),
                     or_(*anchors),
                     *safety_filters,
                 )

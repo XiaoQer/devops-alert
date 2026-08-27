@@ -32,6 +32,7 @@ def settings_factory() -> Callable[..., Settings]:
             "cloudevents_token": SecretStr(token_urlsafe(32)),
             "correlation_runner_enabled": False,
             "alert_grouping_runner_enabled": False,
+            "alert_event_lifecycle_runner_enabled": False,
         }
         values.update(overrides)
         return Settings(**values)

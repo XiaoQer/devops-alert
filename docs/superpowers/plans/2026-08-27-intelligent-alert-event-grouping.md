@@ -436,7 +436,7 @@ git commit -m "feat: 将告警归组升级为事件聚类"
 - 产生：`AlertEventLifecycleService.process(lease) -> LifecycleResult`。
 - 产生：持久 Runner 与现有应用生命周期一起启停。
 
-- [ ] **步骤 1：编写四状态、迟到纠正、复发和容量失败测试**
+- [x] **步骤 1：编写四状态、迟到纠正、复发和容量失败测试**
 
 ```python
 def test_all_resolved_enters_observing_then_closes():
@@ -458,14 +458,14 @@ def test_member_1001_rolls_to_continuation_event(service):
     assert result.continuation_group_id == event.id
 ```
 
-- [ ] **步骤 2：运行生命周期测试并确认失败**
+- [x] **步骤 2：运行生命周期测试并确认失败**
 
 ```bash
 cd backend
 .venv/bin/pytest tests/unit/domain/test_alert_event_lifecycle.py tests/integration/services/test_alert_event_lifecycle.py tests/unit/services/test_alert_event_lifecycle_runner.py -q
 ```
 
-- [ ] **步骤 3：实现持久状态机和定时任务**
+- [x] **步骤 3：实现持久状态机和定时任务**
 
 ```python
 class LifecyclePolicy(BaseModel):
@@ -487,14 +487,14 @@ def decide_lifecycle(context: LifecycleContext) -> LifecycleDecision:
 
 迟到补入必须比较 occurred_at、received_at、closed_at 和五分钟容忍；状态纠正写新版本和固定审计。Runner 使用现有租约、最多五次尝试、过期接管和单任务隔离模式。
 
-- [ ] **步骤 4：验证重启接管、恢复观察和 1,001 成员滚动**
+- [x] **步骤 4：验证重启接管、恢复观察和 1,001 成员滚动**
 
 ```bash
 cd backend
 .venv/bin/pytest tests/unit/domain/test_alert_event_lifecycle.py tests/integration/services/test_alert_event_lifecycle.py tests/unit/services/test_alert_event_lifecycle_runner.py tests/integration/test_alert_storm_convergence.py -q
 ```
 
-- [ ] **步骤 5：提交生命周期能力**
+- [x] **步骤 5：提交生命周期能力**
 
 ```bash
 git add backend/src/incident_intelligence/domain/alert_event_lifecycle.py backend/src/incident_intelligence/services/alert_event_lifecycle.py backend/src/incident_intelligence/services/alert_event_lifecycle_jobs.py backend/src/incident_intelligence/services/alert_event_lifecycle_runner.py backend/src/incident_intelligence/persistence/alert_group_repository.py backend/src/incident_intelligence/main.py backend/src/incident_intelligence/settings.py backend/tests

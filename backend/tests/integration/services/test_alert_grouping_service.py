@@ -439,7 +439,8 @@ def test_two_similar_alerts_converge_to_one_explainable_group(
         assert group.total_count == 2
         assert group.active_count == 2
         assert group.impacted_resource_count == 2
-        assert group.state == "ACTIVE"
+        assert group.state == "FORMING"
+        assert group.forming_until == clock[0] + timedelta(seconds=30)
         assert group.symptom == "error_rate"
         assert group.reason_codes == ["high_confidence_event_match"]
         assert group.rule_version == "alert-event-clustering.v1"
@@ -572,7 +573,8 @@ def test_superseded_job_is_safe_and_resolution_updates_group_without_closing_inc
     with session_factory() as session:
         group = session.scalar(select(AlertGroupRow))
         assert group is not None
-        assert group.state == "CLOSED"
+        assert group.state == "OBSERVING"
+        assert group.observing_until == clock[0] + timedelta(minutes=5)
         assert group.active_count == 0
         assert group.total_count == 1
         assert (

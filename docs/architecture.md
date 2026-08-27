@@ -60,7 +60,7 @@
 12. 操作员认领、调查、缓解、恢复验证、解决和关闭事故；
 13. 新信号或延迟证据只产生新版本，不覆盖历史事件、快照和报告。
 
-当前已实现 SignalEvent、Alert、AlertGroup、服务目录、组级持久关联任务和 Incident 的首版确定性链路。新 Alert 先异步归组，再由可合并的组级任务关联事故；历史 Alert 级任务只保留排空与读取兼容。事故人工处置已经实现，自动取证、DiagnosisRun 自动创建和 AI 尚未实现。
+当前已实现 SignalEvent、Alert、AlertGroup、服务目录、事件生命周期、组级持久关联任务和 Incident 的首版确定性链路。新 Alert 先异步归组，事件通过持久任务在 FORMING、ACTIVE、OBSERVING 和 CLOSED 之间转换，再由可合并的组级任务关联事故；历史 Alert 级任务只保留排空与读取兼容。事故人工处置已经实现，自动取证、DiagnosisRun 自动创建和 AI 尚未实现。
 
 问题签名与资源实体严格分离：Pod、Node、Instance 和 Container 是影响对象，不直接充当问题主键。范围按 SERVICE、WORKLOAD、NAMESPACE、CLUSTER、JOB、SOURCE 的固定优先级推导；service 缺失时允许形成可运营告警组，但事故关联保存明确跳过决策，不虚构服务或事故。
 

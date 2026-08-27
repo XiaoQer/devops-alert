@@ -62,7 +62,7 @@ def _count(session: Session, model: type[object]) -> int:
     return int(session.scalar(select(func.count()).select_from(model)) or 0)
 
 
-def test_one_thousand_concurrent_alerts_converge_without_losing_audit_facts(
+def test_one_thousand_one_concurrent_alerts_roll_over_without_losing_audit_facts(
     migrated_engine: Engine,
 ) -> None:
     session_factory = sessionmaker(bind=migrated_engine, expire_on_commit=False)
@@ -89,10 +89,8 @@ def test_one_thousand_concurrent_alerts_converge_without_losing_audit_facts(
     correlation = AlertGroupCorrelationService(
         uow_factory=uow_factory, clock=lambda: NOW + timedelta(minutes=1)
     )
-    batches = [
-        tuple(_command(index) for index in range(start, start + 100))
-        for start in range(1, 1_001, 100)
-    ]
+    commands = tuple(_command(index) for index in range(1, 1_002))
+    batches = [commands[start : start + 100] for start in range(0, len(commands), 100)]
 
     with ThreadPoolExecutor(max_workers=10) as executor:
         results = list(
@@ -103,7 +101,7 @@ def test_one_thousand_concurrent_alerts_converge_without_losing_audit_facts(
                 enumerate(batches),
             )
         )
-    assert sum(result.counts.opened for result in results) == 1_000
+    assert sum(result.counts.opened for result in results) == 1_001
 
     replay = intake.submit_batch(batches[0], "alertmanager-adapter", "req-capacity-replay")
     assert all(item.replayed for item in replay.items)
@@ -121,22 +119,26 @@ def test_one_thousand_concurrent_alerts_converge_without_losing_audit_facts(
     leases = correlation_jobs.claim_batch(
         "capacity-correlation", NOW + timedelta(minutes=1), limit=10, lease_seconds=300
     )
-    assert len(leases) == 1
-    result = correlation.process(leases[0])
-    assert result.linked_alert_count == 1_000
+    assert len(leases) == 2
+    results = [correlation.process(lease) for lease in leases]
+    assert sum(result.linked_alert_count for result in results) == 1_001
 
     with session_factory() as session:
-        group = session.scalar(select(AlertGroupRow))
-        assert group is not None
-        assert group.total_count == 1_000
-        assert group.impacted_resource_count == 1_000
-        assert group.storm_state == "STORM"
-        assert _count(session, SignalEventRow) == 1_000
-        assert _count(session, AlertRow) == 1_000
-        assert _count(session, AlertGroupRow) == 1
-        assert _count(session, AlertGroupMemberRow) == 1_000
+        groups = tuple(session.scalars(select(AlertGroupRow)))
+        assert len(groups) == 2
+        original = next(group for group in groups if group.continuation_group_id is None)
+        continuation = next(group for group in groups if group.continuation_group_id is not None)
+        assert original.total_count == 1_000
+        assert original.impacted_resource_count == 1_000
+        assert original.storm_state == "STORM"
+        assert continuation.total_count == 1
+        assert continuation.continuation_group_id == original.id
+        assert _count(session, SignalEventRow) == 1_001
+        assert _count(session, AlertRow) == 1_001
+        assert _count(session, AlertGroupRow) == 2
+        assert _count(session, AlertGroupMemberRow) == 1_001
         assert _count(session, IncidentRow) == 1
-        assert _count(session, IncidentAlertLinkRow) == 1_000
+        assert _count(session, IncidentAlertLinkRow) == 1_001
         assert (
             session.scalar(
                 select(func.count())
