@@ -5,9 +5,10 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
+from typing import cast
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from incident_intelligence.domain.forbidden_identity import reject_forbidden_identity
 from incident_intelligence.domain.models import Alert, SignalEvent
@@ -88,22 +89,22 @@ class SignalIntakeService:
             reject_forbidden_identity(command.model_dump(mode="json"))
         effective_commands = self._apply_source_environments(commands)
         fingerprints = tuple(_fingerprint(command) for command in effective_commands)
-        try:
-            return self._submit_once(
-                effective_commands,
-                fingerprints,
-                actor,
-                request_id,
-                receipt_context,
-            )
-        except IntegrityError:
-            return self._submit_once(
-                effective_commands,
-                fingerprints,
-                actor,
-                request_id,
-                receipt_context,
-            )
+        for attempt in range(3):
+            try:
+                return self._submit_once(
+                    effective_commands,
+                    fingerprints,
+                    actor,
+                    request_id,
+                    receipt_context,
+                )
+            except IntegrityError:
+                if attempt == 2:
+                    raise
+            except OperationalError as error:
+                if attempt == 2 or not _is_retryable_mysql_lock_error(error):
+                    raise
+        raise RuntimeError("signal_intake_retry_exhausted")
 
     def _apply_source_environments(
         self,
@@ -445,3 +446,8 @@ def _audit_action(outcome: ProjectionOutcome) -> str:
         "stale": "alert.stale_signal_ignored",
         "orphan_resolved": "alert.orphan_resolved_ignored",
     }[outcome]
+
+
+def _is_retryable_mysql_lock_error(error: OperationalError) -> bool:
+    arguments = cast(tuple[object, ...], getattr(error.orig, "args", ()))
+    return bool(arguments) and arguments[0] in {1205, 1213}
