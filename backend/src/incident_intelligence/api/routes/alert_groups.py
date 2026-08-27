@@ -41,6 +41,7 @@ from incident_intelligence.services.alert_group_center import (
     AlertGroupCenterService,
     AlertGroupFilters,
     AlertGroupResourceNotFound,
+    EventView,
     GroupState,
     StormState,
     SummaryWindow,
@@ -72,6 +73,7 @@ def list_groups(
     query: Annotated[str | None, Query(max_length=100)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0, le=10_000)] = 0,
+    view: Annotated[EventView, Query()] = "current",
 ) -> AlertGroupPageResponse:
     del actor
     try:
@@ -87,6 +89,7 @@ def list_groups(
             query=query,
             limit=limit,
             offset=offset,
+            view=view,
         )
     except ValidationError as error:
         raise ApiError(422, "validation_error", "告警组筛选条件不符合约束") from error

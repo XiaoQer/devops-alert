@@ -10,7 +10,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from incident_intelligence.domain.models import Environment, Severity
 from incident_intelligence.persistence.models import (
     AlertEventLifecycleJobRow,
+    AlertEventMembershipDecisionRow,
+    AlertEventProfileRow,
     AlertGroupCorrelationJobRow,
+    AlertGroupDecisionRow,
     AlertGroupingJobRow,
     AlertGroupMemberRow,
     AlertGroupRow,
@@ -23,6 +26,7 @@ from incident_intelligence.persistence.models import (
 GroupState = Literal["FORMING", "ACTIVE", "OBSERVING", "CLOSED"]
 StormState = Literal["NORMAL", "STORM"]
 SummaryWindow = Literal["1h", "24h", "7d"]
+EventView = Literal["current", "pending", "history", "all"]
 
 
 class AlertGroupFilters(BaseModel):
@@ -38,6 +42,7 @@ class AlertGroupFilters(BaseModel):
     query: str | None = Field(default=None, max_length=100)
     limit: int = Field(default=50, ge=1, le=100)
     offset: int = Field(default=0, ge=0, le=10_000)
+    view: EventView = "current"
 
     @model_validator(mode="after")
     def validate_time_range(self) -> AlertGroupFilters:
@@ -91,17 +96,29 @@ class AlertGroupPage(BaseModel):
     offset: int = Field(ge=0, le=10_000)
 
 
-class AlertGroupSummary(BaseModel):
+class CurrentEventSummary(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    active_events: int = Field(ge=0)
+    severe_events: int = Field(ge=0)
+    active_alerts: int = Field(ge=0)
+    storm_events: int = Field(ge=0)
+    pending_jobs: int = Field(ge=0)
+
+
+class WindowEventSummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     window: SummaryWindow
-    active_groups: int = Field(ge=0)
-    severe_active_groups: int = Field(ge=0)
-    active_alerts: int = Field(ge=0)
-    storm_groups: int = Field(ge=0)
-    resolved_groups: int = Field(ge=0)
+    closed_events: int = Field(ge=0)
+    raw_alerts: int = Field(ge=0)
     compression_ratio: float = Field(ge=0)
     peak_rate_per_minute: int = Field(ge=0)
-    pending_group_jobs: int = Field(ge=0)
+
+
+class AlertGroupSummary(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    scope: Literal["CURRENT_AND_WINDOW"] = "CURRENT_AND_WINDOW"
+    current: CurrentEventSummary
+    history: WindowEventSummary
     calculated_at: datetime
 
 
@@ -118,6 +135,64 @@ class ResourceCount(BaseModel):
     count: int = Field(ge=1)
 
 
+class AlertEventProfileView(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    profile_version: int = Field(ge=1)
+    services: tuple[str, ...] = Field(max_length=100)
+    problem_types: tuple[str, ...] = Field(max_length=100)
+    symptoms: tuple[str, ...] = Field(max_length=100)
+    auto_confirmed_count: int = Field(ge=0)
+    manual_confirmed_count: int = Field(ge=0)
+    pending_count: int = Field(ge=0)
+    rule_version: str
+
+
+class ScoreDimensionView(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    name: str
+    label: str
+    score: int = Field(ge=0)
+    maximum: int = Field(ge=0)
+
+
+class AlertEventGroupingExplanation(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    rule_version: str
+    total_score: int = Field(ge=0, le=100)
+    dimensions: tuple[ScoreDimensionView, ...] = Field(max_length=5)
+    reasons: tuple[str, ...] = Field(max_length=10)
+    explanation: str
+
+
+IncidentDecisionStatus = Literal[
+    "NOT_EVALUATED",
+    "PROCESSING",
+    "BELOW_THRESHOLD",
+    "SKIPPED",
+    "INCIDENT_CREATED",
+    "INCIDENT_LINKED",
+    "AMBIGUOUS",
+    "FAILED",
+]
+
+
+class IncidentDecisionView(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    status: IncidentDecisionStatus
+    label: str
+    explanation: str
+    incident_id: str | None
+
+
+class AlertEventTimelineNode(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    occurred_at: datetime
+    kind: str
+    label: str
+    explanation: str
+    alert_id: str | None = None
+
+
 class AlertGroupOverview(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     group: AlertGroupListItem
@@ -125,6 +200,11 @@ class AlertGroupOverview(BaseModel):
     source_distribution: tuple[NamedCount, ...] = Field(max_length=100)
     severity_distribution: tuple[NamedCount, ...] = Field(max_length=10)
     impacted_resources: tuple[ResourceCount, ...] = Field(max_length=20)
+    profile: AlertEventProfileView
+    grouping: AlertEventGroupingExplanation
+    incident_decision: IncidentDecisionView
+    recurrence_count: int = Field(ge=0)
+    timeline: tuple[AlertEventTimelineNode, ...] = Field(max_length=200)
 
 
 class AlertGroupMemberItem(BaseModel):
@@ -248,18 +328,34 @@ class AlertGroupCenterService:
                     AlertEventLifecycleJobRow.state.in_(("PENDING", "LEASED")),
                 )
             )
+            raw_alerts = _count(
+                session,
+                AlertRow,
+                AlertRow.last_observed_at >= cutoff,
+            )
+            window_events = _count(
+                session,
+                AlertGroupRow,
+                AlertGroupRow.first_observed_at >= cutoff,
+                _group_has_members(),
+            )
             return AlertGroupSummary(
-                window=window,
-                active_groups=active_groups,
-                severe_active_groups=severe,
-                active_alerts=active_alerts,
-                storm_groups=storms,
-                resolved_groups=resolved,
-                compression_ratio=(
-                    0.0 if active_groups == 0 else round(active_alerts / active_groups, 2)
+                current=CurrentEventSummary(
+                    active_events=active_groups,
+                    severe_events=severe,
+                    active_alerts=active_alerts,
+                    storm_events=storms,
+                    pending_jobs=pending,
                 ),
-                peak_rate_per_minute=peak,
-                pending_group_jobs=pending,
+                history=WindowEventSummary(
+                    window=window,
+                    closed_events=resolved,
+                    raw_alerts=raw_alerts,
+                    compression_ratio=(
+                        0.0 if window_events == 0 else round(raw_alerts / window_events, 2)
+                    ),
+                    peak_rate_per_minute=peak,
+                ),
                 calculated_at=calculated_at,
             )
 
@@ -300,6 +396,34 @@ class AlertGroupCenterService:
                 .order_by(func.count().desc(), AlertGroupMemberRow.resource_name)
                 .limit(20)
             )
+            profile = session.scalar(
+                select(AlertEventProfileRow)
+                .where(AlertEventProfileRow.alert_group_id == group_id)
+                .order_by(AlertEventProfileRow.profile_version.desc())
+                .limit(1)
+            )
+            if profile is None:
+                raise AlertGroupResourceNotFound()
+            membership_decisions = tuple(
+                session.scalars(
+                    select(AlertEventMembershipDecisionRow)
+                    .where(AlertEventMembershipDecisionRow.selected_group_id == group_id)
+                    .order_by(
+                        AlertEventMembershipDecisionRow.created_at.desc(),
+                        AlertEventMembershipDecisionRow.id.desc(),
+                    )
+                    .limit(200)
+                )
+            )
+            latest_membership = membership_decisions[0] if membership_decisions else None
+            incident_decision = _incident_decision(session, group)
+            recurrence_count = _count(
+                session,
+                AlertGroupRow,
+                AlertGroupRow.problem_key == group.problem_key,
+                AlertGroupRow.id != group.id,
+                _group_has_members(),
+            )
             return AlertGroupOverview(
                 group=_group_item(group, incident),
                 reason_codes=tuple(group.reason_codes),
@@ -313,6 +437,11 @@ class AlertGroupCenterService:
                     ResourceCount(resource_type=kind, resource_name=name, count=count)
                     for kind, name, count in resources
                 ),
+                profile=_profile_view(profile),
+                grouping=_grouping_explanation(latest_membership, group),
+                incident_decision=incident_decision,
+                recurrence_count=recurrence_count,
+                timeline=tuple(_timeline_node(item) for item in reversed(membership_decisions)),
             )
 
     def list_members(self, group_id: str, *, limit: int, offset: int) -> AlertGroupMemberPage:
@@ -372,6 +501,13 @@ class AlertGroupCenterService:
 
 def _group_filters(statement: Any, filters: AlertGroupFilters, query: str | None) -> Any:
     result = statement.where(_group_has_members())
+    if filters.state is None:
+        if filters.view == "current":
+            result = result.where(AlertGroupRow.state != "CLOSED")
+        elif filters.view == "pending":
+            result = result.where(AlertGroupRow.pending_count > 0)
+        elif filters.view == "history":
+            result = result.where(AlertGroupRow.state == "CLOSED")
     values = {
         "state": AlertGroupRow.state,
         "severity": AlertGroupRow.severity,
@@ -468,6 +604,139 @@ def _member_item(
         reason_code=member.reason_code,
         version=member.current_alert_version,
     )
+
+
+def _profile_view(profile: AlertEventProfileRow) -> AlertEventProfileView:
+    return AlertEventProfileView(
+        profile_version=profile.profile_version,
+        services=tuple(profile.services[:100]),
+        problem_types=tuple(profile.problem_types[:100]),
+        symptoms=tuple(profile.symptoms[:100]),
+        auto_confirmed_count=profile.auto_confirmed_count,
+        manual_confirmed_count=profile.manual_confirmed_count,
+        pending_count=profile.pending_count,
+        rule_version=profile.rule_version,
+    )
+
+
+def _grouping_explanation(
+    decision: AlertEventMembershipDecisionRow | None,
+    group: AlertGroupRow,
+) -> AlertEventGroupingExplanation:
+    if decision is None:
+        return AlertEventGroupingExplanation(
+            rule_version=group.rule_version,
+            total_score=0,
+            dimensions=(),
+            reasons=tuple(group.reason_codes[:10]),
+            explanation=group.explanation,
+        )
+    raw = decision.scores.get(group.id)
+    score = raw if isinstance(raw, dict) else {}
+    dimensions = tuple(
+        ScoreDimensionView(
+            name=name,
+            label=label,
+            score=_safe_score(score.get(name)),
+            maximum=maximum,
+        )
+        for name, label, maximum in (
+            ("entity_service_score", "实体与服务", 35),
+            ("topology_score", "调用关系", 25),
+            ("temporal_score", "发生时间", 20),
+            ("semantic_score", "文本语义", 15),
+            ("history_score", "历史反馈", 5),
+        )
+    )
+    return AlertEventGroupingExplanation(
+        rule_version=decision.rule_version,
+        total_score=min(100, sum(item.score for item in dimensions)),
+        dimensions=dimensions,
+        reasons=tuple(decision.reason_codes[:10]),
+        explanation=decision.explanation,
+    )
+
+
+def _safe_score(value: object) -> int:
+    return value if isinstance(value, int) and value >= 0 else 0
+
+
+def _timeline_node(decision: AlertEventMembershipDecisionRow) -> AlertEventTimelineNode:
+    labels = {
+        "AUTO_CONFIRMED": "系统自动归入事件",
+        "MANUAL_CONFIRMED": "人工确认归入事件",
+        "REMOVED": "人工移出事件",
+        "PENDING": "等待人工确认",
+    }
+    return AlertEventTimelineNode(
+        occurred_at=decision.created_at,
+        kind=decision.state,
+        label=labels.get(decision.state, "归组状态发生变化"),
+        explanation=decision.explanation,
+        alert_id=decision.alert_id,
+    )
+
+
+def _incident_decision(session: Session, group: AlertGroupRow) -> IncidentDecisionView:
+    job = session.scalar(
+        select(AlertGroupCorrelationJobRow)
+        .where(AlertGroupCorrelationJobRow.alert_group_id == group.id)
+        .order_by(
+            AlertGroupCorrelationJobRow.target_group_version.desc(),
+            AlertGroupCorrelationJobRow.created_at.desc(),
+        )
+        .limit(1)
+    )
+    if job is None:
+        return IncidentDecisionView(
+            status="NOT_EVALUATED",
+            label="尚未进行事故判定",
+            explanation="该事件还没有进入事故判定流程。",
+            incident_id=None,
+        )
+    if job.state in {"PENDING", "LEASED"}:
+        return IncidentDecisionView(
+            status="PROCESSING",
+            label="正在进行事故判定",
+            explanation="系统正在判断该事件是否需要进入事故中心。",
+            incident_id=group.incident_id,
+        )
+    if job.state == "FAILED":
+        return IncidentDecisionView(
+            status="FAILED",
+            label="事故判定失败",
+            explanation="本次事故判定未完成。可安全重试或人工处理。",
+            incident_id=group.incident_id,
+        )
+    decision = session.scalar(
+        select(AlertGroupDecisionRow).where(AlertGroupDecisionRow.job_id == job.id)
+    )
+    if decision is None:
+        return IncidentDecisionView(
+            status="FAILED",
+            label="事故判定结果缺失",
+            explanation="任务已结束。不过没有找到对应的判定记录。",
+            incident_id=group.incident_id,
+        )
+    status, label = _incident_outcome(decision.outcome, decision.reason_codes)
+    return IncidentDecisionView(
+        status=status,
+        label=label,
+        explanation=decision.explanation,
+        incident_id=decision.incident_id,
+    )
+
+
+def _incident_outcome(outcome: str, reason_codes: list[str]) -> tuple[IncidentDecisionStatus, str]:
+    if outcome == "CREATED_AMBIGUOUS":
+        return "AMBIGUOUS", "已创建事故并保留多个候选关系"
+    if outcome.startswith("CREATED_"):
+        return "INCIDENT_CREATED", "已创建事故"
+    if outcome.startswith("LINKED_"):
+        return "INCIDENT_LINKED", "已关联已有事故"
+    if "severity_below_threshold" in reason_codes:
+        return "BELOW_THRESHOLD", "未达到事故处置门槛"
+    return "SKIPPED", "无需进入事故中心"
 
 
 def _count(session: Session, row_type: type[object], *criteria: Any) -> int:

@@ -85,18 +85,9 @@ def test_empty_group_reads_are_bounded_and_invalid_ids_are_hidden(context: Conte
 
     summary = context.client.get("/api/v1/alert-groups/summary?window=24h", headers=context.headers)
     assert summary.status_code == 200
-    assert set(summary.json()) == {
-        "window",
-        "active_groups",
-        "severe_active_groups",
-        "active_alerts",
-        "storm_groups",
-        "resolved_groups",
-        "compression_ratio",
-        "peak_rate_per_minute",
-        "pending_group_jobs",
-        "calculated_at",
-    }
+    assert set(summary.json()) == {"scope", "current", "history", "calculated_at"}
+    assert summary.json()["scope"] == "CURRENT_AND_WINDOW"
+    assert summary.json()["history"]["window"] == "24h"
 
     for suffix in ("not-an-id/overview", "agr_" + "0" * 32 + "/overview"):
         response = context.client.get(f"/api/v1/alert-groups/{suffix}", headers=context.headers)

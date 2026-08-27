@@ -3,12 +3,17 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from functools import partial
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from incident_intelligence.ids import new_id
-from incident_intelligence.persistence.models import AlertGroupRow, ServiceCatalogEntryRow
+from incident_intelligence.persistence.alert_group_repository import AlertGroupRepository
+from incident_intelligence.persistence.models import (
+    AlertGroupCorrelationJobRow,
+    AlertGroupRow,
+    ServiceCatalogEntryRow,
+)
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.alert_group_center import (
     AlertGroupCenterService,
@@ -79,23 +84,53 @@ def test_group_center_exposes_real_counts_second_member_page_and_incident_groups
     assert page.items[0].incident is None
 
     summary = center.summarize("24h", now=NOW)
-    assert summary.active_groups == 1
-    assert summary.severe_active_groups == 1
-    assert summary.active_alerts == 101
-    assert summary.storm_groups == 1
-    assert summary.compression_ratio == 101.0
-    assert summary.peak_rate_per_minute == 101
-    assert summary.pending_group_jobs == 2
+    assert summary.scope == "CURRENT_AND_WINDOW"
+    assert summary.current.active_events == 1
+    assert summary.current.severe_events == 1
+    assert summary.current.active_alerts == 101
+    assert summary.current.storm_events == 1
+    assert summary.current.pending_jobs == 2
+    assert summary.history.window == "24h"
+    assert summary.history.closed_events == 0
+    assert summary.history.raw_alerts == 101
+    assert summary.history.compression_ratio == 101.0
+    assert summary.history.peak_rate_per_minute == 101
+
+    with session_factory.begin() as session:
+        session.execute(
+            delete(AlertGroupCorrelationJobRow).where(
+                AlertGroupCorrelationJobRow.alert_group_id == group_id
+            )
+        )
 
     overview = center.get_overview(group_id)
     assert overview.group.total_count == 101
     assert overview.source_distribution[0].count == 101
     assert overview.severity_distribution[0].name == "high"
     assert len(overview.impacted_resources) == 20
+    assert overview.profile.auto_confirmed_count == 101
+    assert overview.profile.manual_confirmed_count == 0
+    assert overview.grouping.rule_version == "alert-event-clustering.v1"
+    assert len(overview.grouping.dimensions) <= 5
+    assert overview.source_distribution[0].name == "Alertmanager 兼容接入"
+    assert overview.incident_decision.status == "NOT_EVALUATED"
+    assert overview.incident_decision.label == "尚未进行事故判定"
+    assert overview.incident_decision.incident_id is None
+    assert overview.recurrence_count == 0
+    assert 1 <= len(overview.timeline) <= 200
     assert center.list_members(group_id, limit=100, offset=0).total == 101
     second_page = center.list_members(group_id, limit=100, offset=100)
     assert second_page.total == 101
     assert len(second_page.items) == 1
+
+    with session_factory.begin() as session:
+        group = session.get(AlertGroupRow, group_id)
+        assert group is not None
+        AlertGroupRepository(session).schedule_correlation(
+            group,
+            target_version=group.version,
+            now=NOW,
+        )
 
     correlation_jobs = AlertGroupCorrelationJobService(uow_factory=uow_factory)
     correlation = AlertGroupCorrelationService(uow_factory=uow_factory, clock=lambda: NOW)
@@ -104,6 +139,15 @@ def test_group_center_exposes_real_counts_second_member_page_and_incident_groups
     )
     overview = center.get_overview(group_id)
     assert overview.group.incident is not None
+    assert overview.incident_decision.status == "INCIDENT_CREATED"
+    assert overview.incident_decision.incident_id == overview.group.incident.id
     incident_page = center.list_incident_groups(overview.group.incident.id, limit=20, offset=0)
     assert incident_page.total == 1
     assert incident_page.items[0].id == group_id
+
+    with session_factory.begin() as session:
+        group = session.get(AlertGroupRow, group_id)
+        assert group is not None
+        group.state = "CLOSED"
+    assert center.list_groups(AlertGroupFilters()).total == 0
+    assert center.list_groups(AlertGroupFilters(view="history")).total == 1
