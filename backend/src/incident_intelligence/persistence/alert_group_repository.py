@@ -383,6 +383,27 @@ class AlertGroupRepository:
             for member, alert, signal in rows
         )
 
+    def manual_member_alert_ids(self, group_id: str) -> frozenset[str]:
+        current_member = exists(
+            select(AlertGroupMemberRow.alert_id).where(
+                AlertGroupMemberRow.alert_group_id == group_id,
+                AlertGroupMemberRow.alert_id == AlertEventMembershipDecisionRow.alert_id,
+                AlertGroupMemberRow.alert_cycle == AlertEventMembershipDecisionRow.alert_cycle,
+            )
+        )
+        return frozenset(
+            self._session.scalars(
+                select(AlertEventMembershipDecisionRow.alert_id)
+                .where(
+                    AlertEventMembershipDecisionRow.selected_group_id == group_id,
+                    AlertEventMembershipDecisionRow.state == "MANUAL_CONFIRMED",
+                    current_member,
+                )
+                .distinct()
+                .limit(1_000)
+            )
+        )
+
     def save_profile(
         self,
         profile: AlertEventProfile,

@@ -1,5 +1,11 @@
 from pydantic import BaseModel, ConfigDict, Field
 
+from incident_intelligence.domain.alert_event_operations import (
+    ConfirmAlertEventMemberCommand,
+    MergeAlertEventsCommand,
+    SplitAlertEventMembersCommand,
+)
+from incident_intelligence.services.alert_event_operations import AlertEventOperationResult
 from incident_intelligence.services.alert_group_center import (
     AlertGroupMemberPage,
     AlertGroupOverview,
@@ -15,6 +21,22 @@ class AlertRegroupRequest(BaseModel):
 
 
 class AlertRegroupResponse(AlertRegroupResult):
+    pass
+
+
+class ConfirmAlertEventMemberRequest(ConfirmAlertEventMemberCommand):
+    pass
+
+
+class SplitAlertEventMembersRequest(SplitAlertEventMembersCommand):
+    pass
+
+
+class MergeAlertEventsRequest(MergeAlertEventsCommand):
+    pass
+
+
+class AlertEventOperationResponse(AlertEventOperationResult):
     pass
 
 

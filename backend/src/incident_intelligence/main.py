@@ -16,6 +16,7 @@ from incident_intelligence.services.alert_event_lifecycle_jobs import (
     AlertEventLifecycleJobService,
 )
 from incident_intelligence.services.alert_event_lifecycle_runner import AlertEventLifecycleRunner
+from incident_intelligence.services.alert_event_operations import AlertEventOperationService
 from incident_intelligence.services.alert_group_backfill import AlertGroupBackfillService
 from incident_intelligence.services.alert_group_center import AlertGroupCenterService
 from incident_intelligence.services.alert_group_correlation import AlertGroupCorrelationService
@@ -100,6 +101,9 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
     )
     app.state.alert_center_service = AlertCenterService(session_factory=session_factory)
     app.state.alert_group_center_service = AlertGroupCenterService(session_factory=session_factory)
+    app.state.alert_event_operation_service = AlertEventOperationService(
+        session_factory=session_factory
+    )
     app.state.source_authentication_service = SourceAuthenticationService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )

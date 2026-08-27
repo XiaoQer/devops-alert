@@ -176,7 +176,7 @@ class AlertGroupingService:
                 existing_member.resource_key = identity.resource_key
                 existing_member.updated_at = now
                 repository.flush()
-                _refresh_group(
+                refresh_group_membership(
                     repository,
                     group,
                     reason_codes=list(decision.reason_codes),
@@ -184,8 +184,8 @@ class AlertGroupingService:
                     now=now,
                 )
                 group.profile_version += 1
-                _save_current_profile(repository, group, now=now)
-                _schedule_lifecycle(repository, group, now=now)
+                save_current_event_profile(repository, group, now=now)
+                schedule_event_lifecycle(repository, group, now=now)
             else:
                 candidate_batch = repository.candidate_events(
                     environment=alert.environment,
@@ -261,8 +261,8 @@ class AlertGroupingService:
                 member = _new_member(group.id, alert, identity, decision.reason_codes[0], now)
                 repository.add_member(member)
                 repository.flush()
-                _save_current_profile(repository, group, now=now)
-                _schedule_lifecycle(repository, group, now=now)
+                save_current_event_profile(repository, group, now=now)
+                schedule_event_lifecycle(repository, group, now=now)
                 action = "CREATE_GROUP"
             elif existing_member is None:
                 if decision.selected_group_id is None:
@@ -298,8 +298,8 @@ class AlertGroupingService:
                         _new_member(group.id, alert, identity, decision.reason_codes[0], now)
                     )
                     repository.flush()
-                    _save_current_profile(repository, group, now=now)
-                    _schedule_lifecycle(repository, group, now=now)
+                    save_current_event_profile(repository, group, now=now)
+                    schedule_event_lifecycle(repository, group, now=now)
                     action = "CREATE_GROUP"
                 else:
                     group = selected_group
@@ -313,7 +313,7 @@ class AlertGroupingService:
                         and signal.observed_at <= group.closed_at
                         and signal.received_at <= group.closed_at + timedelta(minutes=5)
                     )
-                    _refresh_group(
+                    refresh_group_membership(
                         repository,
                         group,
                         reason_codes=list(decision.reason_codes),
@@ -322,8 +322,8 @@ class AlertGroupingService:
                         allow_late_correction=late_correction,
                     )
                     group.profile_version += 1
-                    _save_current_profile(repository, group, now=now)
-                    _schedule_lifecycle(repository, group, now=now)
+                    save_current_event_profile(repository, group, now=now)
+                    schedule_event_lifecycle(repository, group, now=now)
                     action = "JOIN_GROUP"
 
             repository.save_membership_decision(
@@ -420,8 +420,18 @@ class AlertGroupingService:
 def _build_profile(
     group: AlertGroupRow,
     member_facts: tuple[AlertEventMemberFact, ...],
+    *,
+    manual_alert_ids: frozenset[str] = frozenset(),
 ) -> AlertEventProfile:
-    members = tuple(_confirmed_member(fact) for fact in member_facts)
+    members = tuple(
+        _confirmed_member(
+            fact,
+            membership_state=(
+                "MANUAL_CONFIRMED" if fact.alert.id in manual_alert_ids else "AUTO_CONFIRMED"
+            ),
+        )
+        for fact in member_facts
+    )
     return build_event_profile(
         group.id,
         members,
@@ -462,12 +472,16 @@ def _late_membership_decision(
     )
 
 
-def _confirmed_member(fact: AlertEventMemberFact) -> ConfirmedEventMember:
+def _confirmed_member(
+    fact: AlertEventMemberFact,
+    *,
+    membership_state: Literal["AUTO_CONFIRMED", "MANUAL_CONFIRMED"] = "AUTO_CONFIRMED",
+) -> ConfirmedEventMember:
     signature = _member_signature(fact)
     symptom = normalize_symptom(fact.signal.facts.get("symptom")) or "unknown"
     return ConfirmedEventMember(
         alert_id=fact.alert.id,
-        membership_state="AUTO_CONFIRMED",
+        membership_state=membership_state,
         environment=fact.alert.environment,
         service=fact.alert.service,
         entity_key=fact.alert.entity_key,
@@ -504,14 +518,18 @@ def _member_signature(fact: AlertEventMemberFact) -> ProblemSignature:
     )
 
 
-def _save_current_profile(
+def save_current_event_profile(
     repository: AlertGroupRepository,
     group: AlertGroupRow,
     *,
     now: datetime,
 ) -> AlertEventProfile:
     repository.flush()
-    profile = _build_profile(group, repository.event_member_facts(group.id))
+    profile = _build_profile(
+        group,
+        repository.event_member_facts(group.id),
+        manual_alert_ids=repository.manual_member_alert_ids(group.id),
+    )
     repository.save_profile(profile, pending_count=group.pending_count, created_at=now)
     return profile
 
@@ -596,7 +614,7 @@ def _new_member(
     )
 
 
-def _refresh_group(
+def refresh_group_membership(
     repository: AlertGroupRepository,
     group: AlertGroupRow,
     *,
@@ -652,7 +670,7 @@ def _refresh_group(
     group.version += 1
 
 
-def _schedule_lifecycle(
+def schedule_event_lifecycle(
     repository: AlertGroupRepository,
     group: AlertGroupRow,
     *,

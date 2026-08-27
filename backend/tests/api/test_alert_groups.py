@@ -8,13 +8,17 @@ from secrets import token_urlsafe
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from incident_intelligence.ids import new_id
 from incident_intelligence.main import create_app
-from incident_intelligence.persistence.models import AlertGroupRow, ServiceCatalogEntryRow
+from incident_intelligence.persistence.models import (
+    AlertEventOperationRow,
+    AlertGroupRow,
+    ServiceCatalogEntryRow,
+)
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.alert_group_correlation import AlertGroupCorrelationService
 from incident_intelligence.services.alert_group_correlation_jobs import (
@@ -202,3 +206,91 @@ def test_real_storm_is_available_through_group_and_incident_pages(
     ).casefold()
     for forbidden in ("scenario_id", "experiment_id", "webhook", "bearer "):
         assert forbidden not in safe_text
+
+
+def test_alert_event_write_routes_require_idempotency_key(context: Context) -> None:
+    group_id = "agr_" + "1" * 32
+    alert_id = "alt_" + "1" * 32
+    requests = (
+        (
+            f"/api/v1/alert-groups/{group_id}/members/{alert_id}/confirm",
+            {"expected_version": 1, "reason": "人工确认归属"},
+        ),
+        (
+            f"/api/v1/alert-groups/{group_id}/members/split",
+            {"expected_version": 1, "alert_ids": [alert_id], "reason": "拆分错误成员"},
+        ),
+        (
+            f"/api/v1/alert-groups/{group_id}/merge",
+            {
+                "expected_version": 1,
+                "source_group_id": "agr_" + "2" * 32,
+                "reason": "合并同一事件",
+            },
+        ),
+    )
+    for path, body in requests:
+        response = context.client.post(
+            path,
+            headers={**context.headers, "X-Request-ID": "req-missing-key"},
+            json=body,
+        )
+        assert response.status_code == 400
+        assert response.json()["code"] == "invalid_idempotency_key"
+
+
+def test_merge_api_rejects_cross_environment_events(migrated_engine: Engine) -> None:
+    session_factory = sessionmaker(bind=migrated_engine, expire_on_commit=False)
+    uow_factory = partial(SqlAlchemyUnitOfWork, session_factory)
+    development_command = command(2).model_copy(update={"environment": "development"})
+    SignalIntakeService(uow_factory=uow_factory, clock=lambda: NOW).submit_batch(
+        [command(1), development_command],
+        "alertmanager-adapter",
+        "req-cross-env-groups",
+    )
+    grouping_jobs = AlertGroupingJobService(uow_factory=uow_factory)
+    grouping = AlertGroupingService(uow_factory=uow_factory, clock=lambda: NOW)
+    while leases := grouping_jobs.claim_batch("grouping", NOW, limit=50, lease_seconds=30):
+        for lease in leases:
+            grouping.process(lease)
+    with session_factory() as session:
+        production = session.scalar(
+            select(AlertGroupRow).where(AlertGroupRow.environment == "production")
+        )
+        development = session.scalar(
+            select(AlertGroupRow).where(AlertGroupRow.environment == "development")
+        )
+        assert production is not None and development is not None
+
+    token = token_urlsafe(32)
+    app = create_app(
+        Settings(
+            database_url="mysql+pymysql://test-client@127.0.0.1/unused",
+            api_token=SecretStr(token),
+            alertmanager_token=SecretStr(token_urlsafe(32)),
+            cloudevents_token=SecretStr(token_urlsafe(32)),
+            correlation_runner_enabled=False,
+            alert_grouping_runner_enabled=False,
+            alert_event_lifecycle_runner_enabled=False,
+        ),
+        engine=migrated_engine,
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/v1/alert-groups/{production.id}/merge",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "merge-cross-env",
+                "X-Request-ID": "req-cross-env",
+            },
+            json={
+                "expected_version": production.version,
+                "source_group_id": development.id,
+                "reason": "错误的跨环境合并",
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "alert_event_environment_conflict"
+    with session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(AlertEventOperationRow)) == 0
