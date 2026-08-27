@@ -236,7 +236,7 @@ def _new_group(
     active_count = 1 if alert.state == "ACTIVE" else 0
     return AlertGroupRow(
         id=group_id,
-        state="ACTIVE" if active_count else "RESOLVED",
+        state="ACTIVE" if active_count else "CLOSED",
         storm_state="NORMAL",
         rule_version=GROUPING_RULE_VERSION,
         service=alert.service,
@@ -311,7 +311,7 @@ def _refresh_group(
         raise RuntimeError("alert_grouping_group_has_no_members")
 
     previous_state = group.state
-    group.state = "ACTIVE" if aggregate.active_count else "RESOLVED"
+    group.state = "ACTIVE" if aggregate.active_count else "CLOSED"
     if group.state != previous_state:
         group.state_changed_at = now
     group.active_count = aggregate.active_count

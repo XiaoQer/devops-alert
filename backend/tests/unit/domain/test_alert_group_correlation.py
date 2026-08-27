@@ -39,7 +39,7 @@ def test_superseded_group_version_does_not_create_incident() -> None:
 
 def test_existing_incident_is_kept_even_after_group_resolution() -> None:
     decision = decide_alert_group_correlation(
-        context(group_state="RESOLVED", existing_incident_id=INCIDENT_ID)
+        context(group_state="CLOSED", existing_incident_id=INCIDENT_ID)
     )
 
     assert decision.action == "NONE"

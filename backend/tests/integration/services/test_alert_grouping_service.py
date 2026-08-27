@@ -230,7 +230,7 @@ def test_superseded_job_is_safe_and_resolution_updates_group_without_closing_inc
     with session_factory() as session:
         group = session.scalar(select(AlertGroupRow))
         assert group is not None
-        assert group.state == "RESOLVED"
+        assert group.state == "CLOSED"
         assert group.active_count == 0
         assert group.total_count == 1
         assert (

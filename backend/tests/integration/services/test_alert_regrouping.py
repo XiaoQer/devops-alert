@@ -118,7 +118,7 @@ def test_legacy_unlinked_groups_are_consolidated_without_deleting_history(
     with session_factory.begin() as session:
         groups = list(session.scalars(select(AlertGroupRow).order_by(AlertGroupRow.id)))
         active = [group for group in groups if group.state == "ACTIVE"]
-        resolved = [group for group in groups if group.state == "RESOLVED"]
+        resolved = [group for group in groups if group.state == "CLOSED"]
         assert len(active) == 1
         assert len(resolved) == 2
         assert active[0].total_count == 3

@@ -8,8 +8,17 @@ class AlertState(StrEnum):
 
 
 class AlertGroupState(StrEnum):
+    FORMING = "FORMING"
     ACTIVE = "ACTIVE"
-    RESOLVED = "RESOLVED"
+    OBSERVING = "OBSERVING"
+    CLOSED = "CLOSED"
+
+
+class AlertGroupMembershipState(StrEnum):
+    AUTO_CONFIRMED = "AUTO_CONFIRMED"
+    MANUAL_CONFIRMED = "MANUAL_CONFIRMED"
+    PENDING = "PENDING"
+    REMOVED = "REMOVED"
 
 
 class StormState(StrEnum):

@@ -24,7 +24,10 @@ PROJECTION_OUTCOME_VALUES = (
 )
 CATALOG_STATE_VALUES = "'ACTIVE', 'INACTIVE'"
 CORRELATION_JOB_STATE_VALUES = "'PENDING', 'LEASED', 'SUCCEEDED', 'FAILED'"
-ALERT_GROUP_STATE_VALUES = "'ACTIVE', 'RESOLVED'"
+ALERT_GROUP_STATE_VALUES = "'FORMING', 'ACTIVE', 'OBSERVING', 'CLOSED'"
+ALERT_GROUP_MEMBERSHIP_STATE_VALUES = "'AUTO_CONFIRMED', 'MANUAL_CONFIRMED', 'PENDING', 'REMOVED'"
+ALERT_EVENT_OPERATION_KIND_VALUES = "'CONFIRM', 'SPLIT', 'MERGE'"
+ALERT_EVENT_LIFECYCLE_ACTION_VALUES = "'FORMING_COMPLETE', 'OBSERVATION_COMPLETE'"
 STORM_STATE_VALUES = "'NORMAL', 'STORM'"
 CORRELATION_OUTCOME_VALUES = (
     "'SKIPPED_SERVICE_MISSING', 'CREATED_NO_MATCH', "
@@ -368,6 +371,11 @@ class AlertGroupRow(Base):
             name="alert_group_counts",
         ),
         CheckConstraint("desired_correlation_version >= 0", name="alert_group_target_version"),
+        CheckConstraint(
+            "profile_version >= 1 AND member_limit BETWEEN 1 AND 1000 "
+            "AND pending_count BETWEEN 0 AND member_limit",
+            name="alert_group_event_bounds",
+        ),
         CheckConstraint("version >= 1", name="alert_group_version"),
         CheckConstraint(
             "JSON_TYPE(reason_codes) = 'ARRAY' AND JSON_LENGTH(reason_codes) BETWEEN 1 AND 10",
@@ -416,6 +424,15 @@ class AlertGroupRow(Base):
     total_count: Mapped[int] = mapped_column(nullable=False)
     impacted_resource_count: Mapped[int] = mapped_column(nullable=False)
     desired_correlation_version: Mapped[int] = mapped_column(nullable=False)
+    profile_version: Mapped[int] = mapped_column(nullable=False, default=1, server_default="1")
+    forming_until: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    observing_until: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    member_limit: Mapped[int] = mapped_column(nullable=False, default=1000, server_default="1000")
+    continuation_group_id: Mapped[str | None] = mapped_column(
+        ForeignKey("alert_groups.id", ondelete="RESTRICT"), nullable=True
+    )
+    pending_count: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
     reason_codes: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     explanation: Mapped[str] = mapped_column(String(500), nullable=False)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
@@ -466,6 +483,158 @@ class AlertGroupMemberRow(Base):
     resource_key: Mapped[str] = mapped_column(String(64), nullable=False)
     reason_code: Mapped[str] = mapped_column(String(64), nullable=False)
     joined_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class AlertEventProfileRow(Base):
+    __tablename__ = "alert_event_profiles"
+    __table_args__ = (
+        CheckConstraint("profile_version >= 1", name="profile_version"),
+        CheckConstraint("JSON_TYPE(services) = 'ARRAY'", name="services_array"),
+        CheckConstraint("JSON_TYPE(entity_keys) = 'ARRAY'", name="entity_keys_array"),
+        CheckConstraint("JSON_TYPE(scope_types) = 'ARRAY'", name="scope_types_array"),
+        CheckConstraint("JSON_TYPE(topology_edges) = 'ARRAY'", name="topology_edges_array"),
+        CheckConstraint("JSON_TYPE(problem_types) = 'ARRAY'", name="problem_types_array"),
+        CheckConstraint("JSON_TYPE(symptoms) = 'ARRAY'", name="symptoms_array"),
+        CheckConstraint(
+            "auto_confirmed_count >= 0 AND manual_confirmed_count >= 0 AND pending_count >= 0",
+            name="member_counts",
+        ),
+        Index("ix_alert_event_profiles_group_created", "alert_group_id", "created_at"),
+        _mysql_table_options(),
+    )
+
+    alert_group_id: Mapped[str] = mapped_column(
+        ForeignKey("alert_groups.id", ondelete="RESTRICT"), primary_key=True
+    )
+    profile_version: Mapped[int] = mapped_column(primary_key=True)
+    environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    services: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    entity_keys: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    scope_types: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    topology_edges: Mapped[list[dict[str, str]]] = mapped_column(JSON, nullable=False)
+    problem_types: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    symptoms: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    normalized_text: Mapped[str] = mapped_column(String(2048), nullable=False)
+    first_observed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    last_observed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    auto_confirmed_count: Mapped[int] = mapped_column(nullable=False)
+    manual_confirmed_count: Mapped[int] = mapped_column(nullable=False)
+    pending_count: Mapped[int] = mapped_column(nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class AlertEventMembershipDecisionRow(Base):
+    __tablename__ = "alert_event_membership_decisions"
+    __table_args__ = (
+        CheckConstraint("alert_cycle >= 1 AND alert_version >= 1", name="alert_version"),
+        CheckConstraint(f"state IN ({ALERT_GROUP_MEMBERSHIP_STATE_VALUES})", name="state"),
+        CheckConstraint(
+            "(state = 'PENDING' AND selected_group_id IS NULL AND selected_group_version IS NULL) "
+            "OR (state IN ('AUTO_CONFIRMED', 'MANUAL_CONFIRMED', 'REMOVED') "
+            "AND selected_group_id IS NOT NULL AND selected_group_version IS NOT NULL)",
+            name="selection_pair",
+        ),
+        CheckConstraint("JSON_TYPE(candidate_group_ids) = 'ARRAY'", name="candidates_array"),
+        CheckConstraint("JSON_TYPE(scores) = 'OBJECT'", name="scores_object"),
+        CheckConstraint("JSON_TYPE(reason_codes) = 'ARRAY'", name="reasons_array"),
+        Index("ix_alert_event_membership_alert", "alert_id", "alert_cycle", "created_at"),
+        Index("ix_alert_event_membership_selected", "selected_group_id", "created_at"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    alert_id: Mapped[str] = mapped_column(
+        ForeignKey("alerts.id", ondelete="RESTRICT"), nullable=False
+    )
+    alert_cycle: Mapped[int] = mapped_column(nullable=False)
+    alert_version: Mapped[int] = mapped_column(nullable=False)
+    state: Mapped[str] = mapped_column(String(24), nullable=False)
+    candidate_group_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    selected_group_id: Mapped[str | None] = mapped_column(
+        ForeignKey("alert_groups.id", ondelete="RESTRICT"), nullable=True
+    )
+    selected_group_version: Mapped[int | None] = mapped_column(nullable=True)
+    rule_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    scores: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    reason_codes: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    explanation: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class AlertEventOperationRow(Base):
+    __tablename__ = "alert_event_operations"
+    __table_args__ = (
+        UniqueConstraint("scope", "idempotency_key_hash", name="alert_event_operation_key"),
+        CheckConstraint(f"kind IN ({ALERT_EVENT_OPERATION_KIND_VALUES})", name="kind"),
+        CheckConstraint(
+            "char_length(idempotency_key_hash) = 64 AND char_length(command_fingerprint) = 64",
+            name="fingerprints",
+        ),
+        CheckConstraint("JSON_TYPE(before_versions) = 'OBJECT'", name="before_versions_object"),
+        CheckConstraint("JSON_TYPE(after_versions) = 'OBJECT'", name="after_versions_object"),
+        CheckConstraint("JSON_TYPE(result) = 'OBJECT'", name="result_object"),
+        Index("ix_alert_event_operations_source", "source_group_id", "created_at"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    scope: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    command_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_group_id: Mapped[str] = mapped_column(
+        ForeignKey("alert_groups.id", ondelete="RESTRICT"), nullable=False
+    )
+    target_group_id: Mapped[str | None] = mapped_column(
+        ForeignKey("alert_groups.id", ondelete="RESTRICT"), nullable=True
+    )
+    before_versions: Mapped[dict[str, int]] = mapped_column(JSON, nullable=False)
+    after_versions: Mapped[dict[str, int]] = mapped_column(JSON, nullable=False)
+    result: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class AlertEventLifecycleJobRow(Base):
+    __tablename__ = "alert_event_lifecycle_jobs"
+    __table_args__ = (
+        UniqueConstraint(
+            "alert_group_id", "action", "active_slot", name="alert_event_lifecycle_active"
+        ),
+        CheckConstraint(f"action IN ({ALERT_EVENT_LIFECYCLE_ACTION_VALUES})", name="action"),
+        CheckConstraint(f"state IN ({CORRELATION_JOB_STATE_VALUES})", name="state"),
+        CheckConstraint("target_group_version >= 1", name="target_version"),
+        CheckConstraint("attempts BETWEEN 0 AND 5", name="attempts"),
+        CheckConstraint(
+            "(state IN ('PENDING', 'LEASED') AND active_slot = 1) OR "
+            "(state IN ('SUCCEEDED', 'FAILED') AND active_slot IS NULL)",
+            name="active_slot",
+        ),
+        CheckConstraint(
+            "(state = 'LEASED' AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL) OR "
+            "(state <> 'LEASED' AND lease_owner IS NULL AND lease_expires_at IS NULL)",
+            name="lease",
+        ),
+        Index("ix_alert_event_lifecycle_claim", "state", "available_at", "created_at"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    alert_group_id: Mapped[str] = mapped_column(
+        ForeignKey("alert_groups.id", ondelete="RESTRICT"), nullable=False
+    )
+    target_group_version: Mapped[int] = mapped_column(nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    active_slot: Mapped[int | None] = mapped_column(nullable=True)
+    attempts: Mapped[int] = mapped_column(nullable=False)
+    available_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 

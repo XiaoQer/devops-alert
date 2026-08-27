@@ -14,6 +14,10 @@ from incident_intelligence.domain.alert_sources import (
 )
 from incident_intelligence.ids import new_id
 from incident_intelligence.persistence.models import (
+    AlertEventLifecycleJobRow,
+    AlertEventMembershipDecisionRow,
+    AlertEventOperationRow,
+    AlertEventProfileRow,
     AlertGroupCorrelationJobRow,
     AlertGroupMemberRow,
     AlertGroupRow,
@@ -476,6 +480,127 @@ def test_alert_cycle_can_only_belong_to_one_group(migrated_engine: Engine) -> No
             [
                 AlertGroupMemberRow(alert_group_id=first_group.id, **member_values),
                 AlertGroupMemberRow(alert_group_id=second_group.id, **member_values),
+            ]
+        )
+
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def test_pending_membership_cannot_select_an_active_group(migrated_engine: Engine) -> None:
+    with Session(migrated_engine) as session:
+        alert = seed_alert(session)
+        group = make_alert_group(alert.id)
+        session.add(group)
+        session.flush()
+        session.add(
+            AlertEventMembershipDecisionRow(
+                id=new_id("amd"),
+                alert_id=alert.id,
+                alert_cycle=1,
+                alert_version=1,
+                state="PENDING",
+                candidate_group_ids=[group.id],
+                selected_group_id=group.id,
+                selected_group_version=group.version,
+                rule_version="alert-event-clustering.v1",
+                scores={"total": 65},
+                reason_codes=["medium_confidence_pending"],
+                explanation="候选得分未达到自动归集阈值。",
+                created_at=NOW,
+            )
+        )
+
+        with pytest.raises(OperationalError):
+            session.commit()
+
+
+def test_alert_event_profile_requires_bounded_array_facts(migrated_engine: Engine) -> None:
+    with Session(migrated_engine) as session:
+        alert = seed_alert(session)
+        group = make_alert_group(alert.id)
+        session.add(group)
+        session.flush()
+        session.add(
+            AlertEventProfileRow(
+                alert_group_id=group.id,
+                profile_version=1,
+                environment="production",
+                services={},
+                entity_keys=[],
+                scope_types=["SERVICE"],
+                topology_edges=[],
+                problem_types=["PaymentHighErrorRate"],
+                symptoms=["errors"],
+                normalized_text="支付接口错误率升高",
+                first_observed_at=NOW,
+                last_observed_at=NOW,
+                auto_confirmed_count=1,
+                manual_confirmed_count=0,
+                pending_count=0,
+                rule_version="alert-event-clustering.v1",
+                created_at=NOW,
+            )
+        )
+
+        with pytest.raises(OperationalError):
+            session.commit()
+
+
+def test_alert_event_has_one_active_lifecycle_job_per_action(migrated_engine: Engine) -> None:
+    with Session(migrated_engine) as session:
+        alert = seed_alert(session)
+        group = make_alert_group(alert.id)
+        session.add(group)
+        session.flush()
+        values = {
+            "alert_group_id": group.id,
+            "target_group_version": 1,
+            "action": "FORMING_COMPLETE",
+            "state": "PENDING",
+            "active_slot": 1,
+            "attempts": 0,
+            "available_at": NOW,
+            "lease_owner": None,
+            "lease_expires_at": None,
+            "last_error_code": None,
+            "created_at": NOW,
+            "updated_at": NOW,
+        }
+        session.add_all(
+            [
+                AlertEventLifecycleJobRow(id=new_id("alj"), **values),
+                AlertEventLifecycleJobRow(id=new_id("alj"), **values),
+            ]
+        )
+
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def test_alert_event_operations_are_idempotent_per_scope(migrated_engine: Engine) -> None:
+    with Session(migrated_engine) as session:
+        alert = seed_alert(session)
+        group = make_alert_group(alert.id)
+        session.add(group)
+        session.flush()
+        values = {
+            "scope": f"alert-event:{group.id}",
+            "idempotency_key_hash": "a" * 64,
+            "command_fingerprint": "b" * 64,
+            "kind": "CONFIRM",
+            "actor": "operator@example.com",
+            "source_group_id": group.id,
+            "target_group_id": None,
+            "before_versions": {group.id: 1},
+            "after_versions": {group.id: 2},
+            "result": {"status": "confirmed"},
+            "created_at": NOW,
+        }
+        session.add_all(
+            [
+                AlertEventOperationRow(id=new_id("aeo"), **values),
+                AlertEventOperationRow(id=new_id("aeo"), **values),
             ]
         )
 

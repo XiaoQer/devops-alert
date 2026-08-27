@@ -38,7 +38,9 @@ def decide_alert_group_correlation(
                 "alert_version": context.target_group_version,
                 "current_alert_version": context.current_group_version,
                 "alert_state": (
-                    "ACTIVE" if context.group_state is AlertGroupState.ACTIVE else "RESOLVED"
+                    "ACTIVE"
+                    if context.group_state in {AlertGroupState.FORMING, AlertGroupState.ACTIVE}
+                    else "RESOLVED"
                 ),
                 "severity": context.severity,
                 "environment": context.environment,

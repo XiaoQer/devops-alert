@@ -19,7 +19,7 @@ from incident_intelligence.persistence.models import (
     IncidentRow,
 )
 
-GroupState = Literal["ACTIVE", "RESOLVED"]
+GroupState = Literal["FORMING", "ACTIVE", "OBSERVING", "CLOSED"]
 StormState = Literal["NORMAL", "STORM"]
 SummaryWindow = Literal["1h", "24h", "7d"]
 
@@ -218,7 +218,7 @@ class AlertGroupCenterService:
             resolved = _count(
                 session,
                 AlertGroupRow,
-                AlertGroupRow.state == "RESOLVED",
+                AlertGroupRow.state == "CLOSED",
                 AlertGroupRow.state_changed_at >= cutoff,
                 _group_has_members(),
             )

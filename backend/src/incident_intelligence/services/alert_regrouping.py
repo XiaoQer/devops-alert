@@ -119,7 +119,7 @@ def _bounded_candidates(repository: AlertGroupRepository, limit: int) -> tuple[A
 
 
 def _resolve_source(group: AlertGroupRow, target_group_id: str, now: datetime) -> None:
-    group.state = "RESOLVED"
+    group.state = "CLOSED"
     group.storm_state = "NORMAL"
     group.rule_version = CURRENT_GROUPING_RULE_VERSION
     group.active_count = 0
@@ -140,7 +140,7 @@ def _refresh_canonical(
     if aggregate is None:
         raise RuntimeError("alert_regroup_canonical_has_no_members")
     group.rule_version = CURRENT_GROUPING_RULE_VERSION
-    group.state = "ACTIVE" if aggregate.active_count else "RESOLVED"
+    group.state = "ACTIVE" if aggregate.active_count else "CLOSED"
     group.storm_state = "STORM" if aggregate.recent_member_count >= 20 else "NORMAL"
     group.title = aggregate.representative_title
     group.severity = aggregate.representative_severity
