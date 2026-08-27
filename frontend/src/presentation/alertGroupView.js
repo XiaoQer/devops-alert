@@ -39,6 +39,7 @@ function baseGroup(group) {
   const scopeDisplayName = group.scope_display_name || "未识别";
   return {
     id: group.id, title: group.problem_type || group.title, rawTitle: group.title,
+    version: group.version,
     problemType: group.problem_type || group.title, severity, severityTone, state, stateTone,
     service: group.service || "服务未提供", serviceMissing,
     scopeText: `${scopeName} · ${scopeDisplayName}`,

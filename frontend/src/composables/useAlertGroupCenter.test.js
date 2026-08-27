@@ -2,11 +2,13 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { defineComponent } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { fetchAlertGroupMembers, fetchAlertGroupOverview, fetchAlertGroups, fetchAlertGroupSummary } from "../api/alertGroups";
+import { confirmAlertGroupMember, fetchAlertGroupMembers, fetchAlertGroupOverview, fetchAlertGroupPendingMembers, fetchAlertGroups, fetchAlertGroupSummary, mergeAlertGroups, splitAlertGroupMembers } from "../api/alertGroups";
 import { useAlertGroupCenter } from "./useAlertGroupCenter";
 
 vi.mock("../api/alertGroups", () => ({
   fetchAlertGroupMembers: vi.fn(), fetchAlertGroupOverview: vi.fn(),
+  fetchAlertGroupPendingMembers: vi.fn(), confirmAlertGroupMember: vi.fn(),
+  splitAlertGroupMembers: vi.fn(), mergeAlertGroups: vi.fn(),
   fetchAlertGroups: vi.fn(), fetchAlertGroupSummary: vi.fn(),
 }));
 
@@ -15,6 +17,7 @@ const group = {
   service: "payment-api", environment: "production", symptom: "errors", active_count: 101,
   total_count: 101, impacted_resource_count: 101, first_observed_at: "2026-08-26T08:00:00Z",
   last_observed_at: "2026-08-26T08:01:00Z", explanation: "归组原因", incident: null,
+  version: 1,
 };
 const overview = { group, reason_codes: [], source_distribution: [], severity_distribution: [], impacted_resources: [], incident_decision: { status: "NOT_EVALUATED", label: "尚未进行事故判定", explanation: "尚未进入流程", incident_id: null }, timeline: [] };
 const summary = { scope: "CURRENT_AND_WINDOW", current: { active_events: 1, severe_events: 1, active_alerts: 101, storm_events: 1, pending_jobs: 0 }, history: { window: "24h", closed_events: 0, raw_alerts: 101, compression_ratio: 101, peak_rate_per_minute: 101 } };
@@ -26,6 +29,10 @@ beforeEach(() => {
   fetchAlertGroups.mockResolvedValue({ items: [group], total: 1, limit: 50, offset: 0 });
   fetchAlertGroupOverview.mockResolvedValue(overview);
   fetchAlertGroupMembers.mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
+  fetchAlertGroupPendingMembers.mockResolvedValue({ items: [{ id: "alt_pending", title: "数据库锁等待", total_score: 65, reason: "需要人工确认", source_name: "生产告警" }], total: 1, limit: 50, offset: 0 });
+  confirmAlertGroupMember.mockResolvedValue({ operation_id: "aeo_1" });
+  splitAlertGroupMembers.mockResolvedValue({ operation_id: "aeo_2" });
+  mergeAlertGroups.mockResolvedValue({ operation_id: "aeo_3" });
 });
 
 describe("告警组中心状态", () => {
@@ -52,5 +59,35 @@ describe("告警组中心状态", () => {
     wrapper.vm.view = "pending";
     await new Promise((resolve) => setTimeout(resolve, 300)); await flushPromises();
     expect(fetchAlertGroups.mock.calls.at(-1)[0].view).toBe("pending");
+  });
+
+  it("确认待确认成员后重新读取真实事件", async () => {
+    const wrapper = mount(Harness); await flushPromises();
+    const loadedBefore = fetchAlertGroupOverview.mock.calls.length;
+    await wrapper.vm.confirmPending("alt_pending", "已核对调用链");
+    await flushPromises();
+    expect(confirmAlertGroupMember).toHaveBeenCalledWith(
+      "agr_1",
+      "alt_pending",
+      { expected_version: 1, reason: "已核对调用链" },
+      expect.any(String),
+    );
+    expect(fetchAlertGroupOverview.mock.calls.length).toBeGreaterThan(loadedBefore);
+  });
+
+  it("拆分成员和合并事件均使用当前版本并刷新事实", async () => {
+    const wrapper = mount(Harness); await flushPromises();
+    await wrapper.vm.splitMembers(["alt_1"], "属于独立故障");
+    expect(splitAlertGroupMembers).toHaveBeenCalledWith(
+      "agr_1",
+      { expected_version: 1, alert_ids: ["alt_1"], reason: "属于独立故障" },
+      expect.any(String),
+    );
+    await wrapper.vm.mergeGroup("agr_2", "属于同一次故障");
+    expect(mergeAlertGroups).toHaveBeenCalledWith(
+      "agr_1",
+      { expected_version: 1, source_group_id: "agr_2", reason: "属于同一次故障" },
+      expect.any(String),
+    );
   });
 });

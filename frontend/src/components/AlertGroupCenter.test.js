@@ -1,11 +1,13 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
 
-import { fetchAlertGroupMembers, fetchAlertGroupOverview, fetchAlertGroups, fetchAlertGroupSummary } from "../api/alertGroups";
+import { confirmAlertGroupMember, fetchAlertGroupMembers, fetchAlertGroupOverview, fetchAlertGroupPendingMembers, fetchAlertGroups, fetchAlertGroupSummary, mergeAlertGroups, splitAlertGroupMembers } from "../api/alertGroups";
 import AlertGroupCenter from "./AlertGroupCenter.vue";
 
 vi.mock("../api/alertGroups", () => ({
   fetchAlertGroupMembers: vi.fn(), fetchAlertGroupOverview: vi.fn(),
+  fetchAlertGroupPendingMembers: vi.fn(), confirmAlertGroupMember: vi.fn(),
+  splitAlertGroupMembers: vi.fn(), mergeAlertGroups: vi.fn(),
   fetchAlertGroups: vi.fn(), fetchAlertGroupSummary: vi.fn(),
 }));
 
@@ -24,6 +26,7 @@ describe("组优先告警中心", () => {
     fetchAlertGroupSummary.mockResolvedValue({ scope: "CURRENT_AND_WINDOW", current: { active_events: 1, severe_events: 1, active_alerts: 101, storm_events: 1, pending_jobs: 0 }, history: { window: "24h", closed_events: 0, raw_alerts: 101, compression_ratio: 101, peak_rate_per_minute: 101 }, calculated_at: "2026-08-26T08:02:00Z" });
     fetchAlertGroupOverview.mockResolvedValue({ group, reason_codes: [], source_distribution: [{ name: "生产 Alertmanager", count: 101 }], severity_distribution: [{ name: "high", count: 101 }], impacted_resources: [], incident_decision: { status: "INCIDENT_CREATED", label: "已创建事故", explanation: "严重生产事件需要处置", incident_id: "inc_1" }, grouping: { total_score: 92, reasons: ["same_service"], explanation: "服务、时间和文本均高度相似", dimensions: [] }, timeline: [] });
     fetchAlertGroupMembers.mockResolvedValueOnce({ items: [{ id: "alt_1", title: "实例 1", state: "ACTIVE", severity: "high", source_name: "生产 Alertmanager", last_observed_at: "2026-08-26T08:01:00Z", reason_code: "same", version: 1 }], total: 101, limit: 100, offset: 0 }).mockResolvedValueOnce({ items: [{ id: "alt_101", title: "实例 101", state: "ACTIVE", severity: "high", source_name: "生产 Alertmanager", last_observed_at: "2026-08-26T08:01:00Z", reason_code: "same", version: 1 }], total: 101, limit: 100, offset: 100 });
+    fetchAlertGroupPendingMembers.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
 
     const wrapper = mount(AlertGroupCenter); await flushPromises();
     expect(wrapper.get('[role="tab"][aria-selected="true"]').text()).toBe("当前事件");

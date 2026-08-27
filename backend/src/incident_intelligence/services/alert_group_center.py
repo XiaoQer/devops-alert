@@ -232,6 +232,29 @@ class AlertGroupMemberPage(BaseModel):
     offset: int = Field(ge=0, le=10_000)
 
 
+class PendingAlertEventMemberItem(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    id: str
+    alert_cycle: int = Field(ge=1)
+    title: str
+    severity: Severity
+    source_name: str
+    service: str | None
+    environment: Environment
+    observed_at: datetime
+    total_score: int = Field(ge=0, le=100)
+    reason: str
+    reason_codes: tuple[str, ...] = Field(max_length=10)
+
+
+class PendingAlertEventMemberPage(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    items: tuple[PendingAlertEventMemberItem, ...]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1, le=100)
+    offset: int = Field(ge=0, le=10_000)
+
+
 class AlertGroupResourceNotFound(Exception):
     pass
 
@@ -478,6 +501,48 @@ class AlertGroupCenterService:
                 offset=offset,
             )
 
+    def list_pending_members(
+        self, group_id: str, *, limit: int, offset: int
+    ) -> PendingAlertEventMemberPage:
+        with self._session_factory() as session:
+            if session.get(AlertGroupRow, group_id) is None:
+                raise AlertGroupResourceNotFound()
+            candidate = _pending_candidate_for(group_id)
+            total = _count(
+                session,
+                AlertEventMembershipDecisionRow,
+                AlertEventMembershipDecisionRow.state == "PENDING",
+                candidate,
+            )
+            rows = session.execute(
+                select(
+                    AlertEventMembershipDecisionRow,
+                    AlertRow,
+                    AlertSourceRow,
+                )
+                .join(AlertRow, AlertRow.id == AlertEventMembershipDecisionRow.alert_id)
+                .join(AlertSourceRow, AlertSourceRow.id == AlertRow.alert_source_id)
+                .where(
+                    AlertEventMembershipDecisionRow.state == "PENDING",
+                    candidate,
+                )
+                .order_by(
+                    AlertEventMembershipDecisionRow.created_at.desc(),
+                    AlertEventMembershipDecisionRow.id.desc(),
+                )
+                .limit(limit)
+                .offset(offset)
+            )
+            return PendingAlertEventMemberPage(
+                items=tuple(
+                    _pending_member_item(decision, alert, source, group_id)
+                    for decision, alert, source in rows
+                ),
+                total=total,
+                limit=limit,
+                offset=offset,
+            )
+
     def list_incident_groups(self, incident_id: str, *, limit: int, offset: int) -> AlertGroupPage:
         with self._session_factory() as session:
             if session.get(IncidentRow, incident_id) is None:
@@ -505,7 +570,18 @@ def _group_filters(statement: Any, filters: AlertGroupFilters, query: str | None
         if filters.view == "current":
             result = result.where(AlertGroupRow.state != "CLOSED")
         elif filters.view == "pending":
-            result = result.where(AlertGroupRow.pending_count > 0)
+            result = result.where(
+                exists(
+                    select(AlertEventMembershipDecisionRow.id).where(
+                        AlertEventMembershipDecisionRow.state == "PENDING",
+                        func.json_contains(
+                            AlertEventMembershipDecisionRow.candidate_group_ids,
+                            func.json_quote(AlertGroupRow.id),
+                        )
+                        == 1,
+                    )
+                )
+            )
         elif filters.view == "history":
             result = result.where(AlertGroupRow.state == "CLOSED")
     values = {
@@ -603,6 +679,39 @@ def _member_item(
         incident_id=incident_id,
         reason_code=member.reason_code,
         version=member.current_alert_version,
+    )
+
+
+def _pending_candidate_for(group_id: str) -> Any:
+    return (
+        func.json_contains(
+            AlertEventMembershipDecisionRow.candidate_group_ids,
+            func.json_quote(group_id),
+        )
+        == 1
+    )
+
+
+def _pending_member_item(
+    decision: AlertEventMembershipDecisionRow,
+    alert: AlertRow,
+    source: AlertSourceRow,
+    group_id: str,
+) -> PendingAlertEventMemberItem:
+    raw = decision.scores.get(group_id)
+    score = raw if isinstance(raw, dict) else {}
+    return PendingAlertEventMemberItem(
+        id=alert.id,
+        alert_cycle=alert.cycle,
+        title=alert.title,
+        severity=cast(Severity, alert.severity),
+        source_name=source.name,
+        service=alert.service,
+        environment=alert.environment,
+        observed_at=alert.last_observed_at,
+        total_score=min(100, _safe_score(score.get("total_score"))),
+        reason=decision.explanation,
+        reason_codes=tuple(decision.reason_codes[:10]),
     )
 
 

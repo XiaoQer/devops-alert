@@ -10,8 +10,10 @@ from sqlalchemy.orm import sessionmaker
 from incident_intelligence.ids import new_id
 from incident_intelligence.persistence.alert_group_repository import AlertGroupRepository
 from incident_intelligence.persistence.models import (
+    AlertEventMembershipDecisionRow,
     AlertGroupCorrelationJobRow,
     AlertGroupRow,
+    AlertRow,
     ServiceCatalogEntryRow,
 )
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
@@ -151,3 +153,61 @@ def test_group_center_exposes_real_counts_second_member_page_and_incident_groups
         group.state = "CLOSED"
     assert center.list_groups(AlertGroupFilters()).total == 0
     assert center.list_groups(AlertGroupFilters(view="history")).total == 1
+
+
+def test_pending_view_reads_candidate_alerts_without_trusting_cached_count(
+    migrated_engine: Engine,
+) -> None:
+    session_factory = sessionmaker(bind=migrated_engine, expire_on_commit=False)
+    uow_factory = partial(SqlAlchemyUnitOfWork, session_factory)
+    intake = SignalIntakeService(uow_factory=uow_factory, clock=lambda: NOW)
+    grouping_jobs = AlertGroupingJobService(uow_factory=uow_factory)
+    grouping = AlertGroupingService(uow_factory=uow_factory, clock=lambda: NOW)
+    intake.submit_batch([command(1)], "alertmanager-adapter", "req-event")
+    while leases := grouping_jobs.claim_batch("grouping", NOW, limit=10, lease_seconds=30):
+        for lease in leases:
+            grouping.process(lease)
+    intake.submit_batch([command(2)], "alertmanager-adapter", "req-pending")
+    with session_factory.begin() as session:
+        group = session.scalar(select(AlertGroupRow))
+        pending_alert = session.scalar(
+            select(AlertRow).where(AlertRow.source_alert_key == "payment-error-2")
+        )
+        assert group is not None and pending_alert is not None
+        session.add(
+            AlertEventMembershipDecisionRow(
+                id=new_id("amd"),
+                alert_id=pending_alert.id,
+                alert_cycle=pending_alert.cycle,
+                alert_version=pending_alert.version,
+                state="PENDING",
+                candidate_group_ids=[group.id],
+                selected_group_id=None,
+                selected_group_version=None,
+                rule_version="alert-event-clustering.v1",
+                scores={
+                    group.id: {
+                        "entity_service_score": 35,
+                        "topology_score": 0,
+                        "temporal_score": 20,
+                        "semantic_score": 10,
+                        "history_score": 0,
+                        "total_score": 65,
+                    }
+                },
+                reason_codes=["medium_confidence_event_match"],
+                explanation="候选得分处于中置信区间。需要人工确认归属。",
+                created_at=NOW,
+            )
+        )
+        group_id = group.id
+        alert_id = pending_alert.id
+
+    center = AlertGroupCenterService(session_factory=session_factory)
+    assert center.list_groups(AlertGroupFilters(view="pending")).total == 1
+    page = center.list_pending_members(group_id, limit=20, offset=0)
+    assert page.total == 1
+    assert page.items[0].id == alert_id
+    assert page.items[0].source_name == "Alertmanager 兼容接入"
+    assert page.items[0].total_score == 65
+    assert page.items[0].reason == "候选得分处于中置信区间。需要人工确认归属。"

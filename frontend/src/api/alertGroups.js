@@ -40,6 +40,12 @@ export function fetchAlertGroupMembers(groupId, filters = {}, options = {}) {
   return requestJson(`/api/v1/alert-groups/${encodeURIComponent(groupId)}/alerts?${params.toString()}`, { signal: options.signal }, messages);
 }
 
+export function fetchAlertGroupPendingMembers(groupId, filters = {}, options = {}) {
+  const params = pageParams(filters, []);
+  params.delete("query");
+  return requestJson(`/api/v1/alert-groups/${encodeURIComponent(groupId)}/pending-members?${params.toString()}`, { signal: options.signal }, messages);
+}
+
 export function fetchIncidentAlertGroups(incidentId, filters = {}, options = {}) {
   const params = pageParams(filters, []);
   params.delete("query");

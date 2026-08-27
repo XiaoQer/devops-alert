@@ -11,6 +11,7 @@ from incident_intelligence.services.alert_group_center import (
     AlertGroupOverview,
     AlertGroupPage,
     AlertGroupSummary,
+    PendingAlertEventMemberPage,
 )
 from incident_intelligence.services.alert_regrouping import AlertRegroupResult
 
@@ -53,4 +54,8 @@ class AlertGroupOverviewResponse(AlertGroupOverview):
 
 
 class AlertGroupMemberPageResponse(AlertGroupMemberPage):
+    pass
+
+
+class PendingAlertEventMemberPageResponse(PendingAlertEventMemberPage):
     pass

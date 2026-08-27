@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchAlertGroupMembers, fetchAlertGroups, fetchAlertGroupSummary, fetchIncidentAlertGroups, splitAlertGroupMembers } from "./alertGroups";
+import { confirmAlertGroupMember, fetchAlertGroupMembers, fetchAlertGroupPendingMembers, fetchAlertGroups, fetchAlertGroupSummary, fetchIncidentAlertGroups, splitAlertGroupMembers } from "./alertGroups";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -22,6 +22,15 @@ describe("告警组 API", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/alert-groups/agr_1/members/split");
     expect(fetchMock.mock.calls[0][1].headers["Idempotency-Key"]).toBe("split-1");
     expect(fetchMock.mock.calls[0][1].body).toContain('"expected_version":3');
+  });
+
+  it("待确认成员独立分页且确认使用安全重试标识", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    vi.stubGlobal("fetch", fetchMock);
+    await fetchAlertGroupPendingMembers("agr_1", { limit: 50, offset: 0 });
+    await confirmAlertGroupMember("agr_1", "alt_1", { expected_version: 4, reason: "已核对上下游影响" }, "confirm-1");
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/alert-groups/agr_1/pending-members?limit=50&offset=0");
+    expect(fetchMock.mock.calls[1][1].headers["Idempotency-Key"]).toBe("confirm-1");
   });
 
   it("成员第二页和概况使用独立地址", async () => {

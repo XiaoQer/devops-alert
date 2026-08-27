@@ -25,6 +25,7 @@ from incident_intelligence.api.schemas.alert_groups import (
     AlertRegroupResponse,
     ConfirmAlertEventMemberRequest,
     MergeAlertEventsRequest,
+    PendingAlertEventMemberPageResponse,
     SplitAlertEventMembersRequest,
 )
 from incident_intelligence.domain.models import Environment, Severity
@@ -227,6 +228,26 @@ def list_group_alerts(
         )
     except AlertGroupResourceNotFound as error:
         raise _not_found() from error
+
+
+@router.get(
+    "/{group_id}/pending-members",
+    response_model=PendingAlertEventMemberPageResponse,
+)
+def list_pending_group_members(
+    group_id: str,
+    actor: ManualActor,
+    center: GroupService,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0, le=10_000)] = 0,
+) -> PendingAlertEventMemberPageResponse:
+    del actor
+    _require_group_id(group_id)
+    try:
+        result = center.list_pending_members(group_id, limit=limit, offset=offset)
+    except AlertGroupResourceNotFound as error:
+        raise _not_found() from error
+    return PendingAlertEventMemberPageResponse.model_validate(result.model_dump())
 
 
 def _require_group_id(group_id: str) -> None:

@@ -259,6 +259,14 @@ h1 { font-size: 24px; line-height: 1.2; letter-spacing: -0.02em; }
 .alert-group-page .group-detail-body h3 { font-size: 15px; }
 .incident-decision-card { border-left: 3px solid #6ea8fe; }
 .incident-decision-card header strong { color: #b8d4ff; font-size: 14px; }
+.pending-member-list { display: grid; gap: 10px; padding: 14px 17px; }
+.pending-member-card { display: grid; grid-template-columns: minmax(0, 1fr) 260px auto; align-items: center; gap: 12px; padding: 13px; border: 1px solid var(--border-soft); border-radius: 8px; }
+.pending-member-card > div { display: grid; gap: 5px; min-width: 0; }
+.pending-member-card span, .pending-member-card p { color: #8f9cad; font-size: 13px; }
+.pending-member-card input { min-height: 36px; padding: 0 10px; border: 1px solid #304054; border-radius: 6px; color: #dce4ee; background: #0c141d; font-size: 14px; }
+.event-operation-bar { display: flex; align-items: center; gap: 10px; padding: 12px 17px; border-top: 1px solid var(--border-soft); }
+.event-operation-bar input, .event-operation-bar select { flex: 1; min-height: 36px; padding: 0 10px; border: 1px solid #304054; border-radius: 6px; color: #dce4ee; background: #0c141d; font-size: 14px; }
+.group-member-row strong { display: flex; align-items: center; gap: 8px; }
 .operation-dialog input { width: 100%; height: 36px; padding: 0 10px; border: 1px solid #304054; border-radius: 6px; outline: 0; color: #dce4ee; background: #0c141d; font-size: 12px; }
 .token-dialog > p { color: #aeb9c7; font-size: 12px; line-height: 1.6; }
 .token-dialog > code { display: block; padding: 13px; overflow-wrap: anywhere; border: 1px solid #3b4d63; border-radius: 6px; color: #dceaff; background: #09121b; font-size: 11px; line-height: 1.55; }

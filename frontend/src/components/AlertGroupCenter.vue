@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import { PhArrowRight, PhBell, PhCheckCircle, PhCircle, PhQuestion, PhSiren, PhStack } from "@phosphor-icons/vue";
 
 import { useAlertGroupCenter } from "../composables/useAlertGroupCenter";
@@ -9,11 +9,35 @@ defineEmits(["open-incident"]);
 const mode = ref("events");
 const {
   view, state, severity, environment, storm, linked, search, groups, summary, selectedId, detail, members,
+  pendingMembers, pendingTotal, pendingState, operationState, operationError, confirmPending,
+  splitMembers, mergeGroup,
   total, memberTotal, listState, summaryState, detailState, memberState, listError, summaryError,
   detailError, memberError, hasPrevious, hasNext, rangeStart, rangeEnd, memberHasPrevious,
   memberHasNext, memberRangeStart, memberRangeEnd, loadList, loadSummary, loadDetail, loadMembers,
   goPrevious, goNext, goMemberPrevious, goMemberNext,
 } = useAlertGroupCenter();
+const pendingReasons = reactive({});
+const selectedMemberIds = ref([]);
+const splitReason = ref("");
+const mergeSourceId = ref("");
+const mergeReason = ref("");
+const mergeCandidates = computed(() => groups.value.filter((item) => item.id !== detail.value?.id && item.environment === detail.value?.environment));
+
+function confirmMember(alertId) {
+  return confirmPending(alertId, pendingReasons[alertId] || "人工确认属于当前事件");
+}
+
+async function splitSelected() {
+  if (await splitMembers(selectedMemberIds.value, splitReason.value)) {
+    selectedMemberIds.value = []; splitReason.value = "";
+  }
+}
+
+async function mergeSelected() {
+  if (await mergeGroup(mergeSourceId.value, mergeReason.value)) {
+    mergeSourceId.value = ""; mergeReason.value = "";
+  }
+}
 
 function selectEventView(next) {
   mode.value = "events";
@@ -83,15 +107,30 @@ function selectEventView(next) {
               <section class="group-explanation incident-decision-card"><header><h3>是否需要事故处置</h3><strong>{{ detail.incidentDecision.label }}</strong></header><p>{{ detail.incidentDecision.explanation }}</p></section>
               <section class="group-explanation"><header><h3>为什么归到一起</h3><span v-if="detail.grouping.dimensions.length">匹配度 {{ detail.grouping.totalScore }} 分</span></header><p>{{ detail.grouping.explanation }}</p><div v-if="detail.grouping.dimensions.length" class="group-impact-facts"><span v-for="item in detail.grouping.dimensions" :key="item.label"><strong>{{ item.score }}/{{ item.maximum }}</strong> {{ item.label }}</span></div></section>
               <section v-if="detail.timeline.length" class="group-resources"><h3>事件传播时间线</h3><ul><li v-for="item in detail.timeline" :key="`${item.alert_id}-${item.occurred_at}-${item.kind}`"><span>{{ item.occurredAt }}</span><strong>{{ item.label }}</strong><small>{{ item.explanation }}</small></li></ul></section>
+              <section class="group-members pending-members"><div class="content-heading"><div><h3>待确认成员</h3><span>系统没有足够把握时由你决定是否归入</span></div><strong>{{ pendingTotal }} 条</strong></div>
+                <div v-if="pendingState === 'loading'" class="compact-empty">正在读取待确认成员</div>
+                <div v-else-if="pendingState === 'error'" class="compact-empty error-state">待确认成员暂时不可用</div>
+                <div v-else-if="pendingState === 'empty'" class="compact-empty">当前没有需要人工确认的告警</div>
+                <div v-else class="pending-member-list">
+                  <article v-for="item in pendingMembers" :key="item.id" class="pending-member-card">
+                    <div><strong>{{ item.title }}</strong><span>{{ item.source_name }} · 匹配度 {{ item.total_score }} 分</span><p>{{ item.reason }}</p></div>
+                    <input v-model="pendingReasons[item.id]" :aria-label="`确认理由：${item.title}`" maxlength="500" placeholder="补充确认理由（可选）" />
+                    <button class="button primary" type="button" :disabled="operationState === 'pending'" @click="confirmMember(item.id)">确认归入</button>
+                  </article>
+                </div>
+                <p v-if="operationError" class="operation-error-banner" role="alert">{{ operationError }}</p>
+              </section>
               <section class="group-distributions"><article><h3>告警来源</h3><ul><li v-for="source in detail.sources" :key="source.name"><span>{{ source.name }}</span><strong>{{ source.count }} 条</strong></li></ul></article><article><h3>严重程度</h3><ul><li v-for="item in detail.severities" :key="item.name"><span>{{ item.name }}</span><strong>{{ item.count }} 条</strong></li></ul></article></section>
               <section class="group-resources"><h3>主要影响资源</h3><p v-if="!detail.resources.length">暂未识别到具体资源</p><ul v-else><li v-for="resource in detail.resources" :key="`${resource.type}-${resource.name}`"><span>{{ resource.type }}</span><strong>{{ resource.name }}</strong><small>{{ resource.count }} 条告警</small></li></ul></section>
               <section class="group-members"><div class="content-heading"><div><h3>原始告警明细</h3><span>每条告警仍然保留，可独立审计</span></div><strong>{{ memberTotal }} 条</strong></div>
                 <div v-if="memberState === 'loading'" class="compact-empty">正在读取原始告警</div>
                 <div v-else-if="memberState === 'error'" class="compact-empty error-state">{{ memberError }} <button type="button" class="link-button" @click="loadMembers">重试</button></div>
                 <div v-else-if="memberState === 'empty'" class="compact-empty">当前组内没有原始告警</div>
-                <div v-else class="group-member-table"><div class="group-member-head"><span>告警名称</span><span>状态</span><span>级别</span><span>来源</span><span>最后出现</span></div><div v-for="member in members" :key="member.id" class="group-member-row"><strong>{{ member.title }}</strong><span :class="['badge', `badge-${member.stateTone}`]">{{ member.state }}</span><span>{{ member.severity }}</span><span>{{ member.sourceName }}</span><time>{{ member.lastObservedAt }}</time></div></div>
+                <div v-else class="group-member-table"><div class="group-member-head"><span>选择 / 告警名称</span><span>状态</span><span>级别</span><span>来源</span><span>最后出现</span></div><div v-for="member in members" :key="member.id" class="group-member-row"><strong><input v-model="selectedMemberIds" type="checkbox" :value="member.id" :aria-label="`选择拆分：${member.title}`" />{{ member.title }}</strong><span :class="['badge', `badge-${member.stateTone}`]">{{ member.state }}</span><span>{{ member.severity }}</span><span>{{ member.sourceName }}</span><time>{{ member.lastObservedAt }}</time></div></div>
+                <div v-if="selectedMemberIds.length" class="event-operation-bar"><input v-model="splitReason" aria-label="拆分原因" maxlength="500" placeholder="说明为什么这些告警属于独立事件" /><button class="button secondary" type="button" :disabled="operationState === 'pending' || !splitReason.trim()" @click="splitSelected">拆分为新事件</button></div>
                 <footer v-if="memberState === 'ready'" class="alert-pagination member-pagination"><span>第 {{ memberRangeStart }}–{{ memberRangeEnd }} 条，共 {{ memberTotal }} 条</span><div><button type="button" class="link-button" :disabled="!memberHasPrevious" @click="goMemberPrevious">上一页</button><button type="button" data-testid="member-next-page" class="link-button" :disabled="!memberHasNext" @click="goMemberNext">下一页</button></div></footer>
               </section>
+              <section v-if="mergeCandidates.length" class="group-members"><div class="content-heading"><div><h3>合并事件</h3><span>只显示当前列表中同环境的兼容候选</span></div></div><div class="event-operation-bar"><select v-model="mergeSourceId" aria-label="选择待合并事件"><option value="">选择另一个事件</option><option v-for="item in mergeCandidates" :key="item.id" :value="item.id">{{ item.title }} · {{ item.service }}</option></select><input v-model="mergeReason" aria-label="合并原因" maxlength="500" placeholder="说明为什么属于同一次故障" /><button class="button secondary" type="button" :disabled="operationState === 'pending' || !mergeSourceId || !mergeReason.trim()" @click="mergeSelected">合并事件</button></div></section>
             </div>
           </template>
         </section>
