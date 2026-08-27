@@ -102,14 +102,17 @@ def score_candidate(
     ):
         hard_exclusions.append("edge_member_only")
 
-    entity_service_score = 35 if same_entity else 25 if same_service else 0
+    direct_service_relation = context.topology_distance == 1
+    entity_service_score = (
+        35 if same_entity or same_service or same_problem else 25 if direct_service_relation else 0
+    )
     topology_score = _topology_score(context.topology_distance)
     temporal_score = _temporal_score(context, profile)
     semantic_score = min(
         15,
-        (7 if context.problem_type in profile.problem_types else 0)
-        + (4 if context.symptom in profile.symptoms else 0)
-        + round(context.text_similarity.score * 4),
+        (9 if context.problem_type in profile.problem_types else 0)
+        + (9 if context.symptom in profile.symptoms else 0)
+        + round(context.text_similarity.score * 7),
     )
     history_score = 5 if context.history_signal == "POSITIVE" else 0
     strong_anchor = (
@@ -145,10 +148,14 @@ def score_candidate(
     )
 
 
-def decide_membership(scores: tuple[CandidateScore, ...]) -> MembershipDecision:
+def decide_membership(
+    scores: tuple[CandidateScore, ...], *, candidates_truncated: bool = False
+) -> MembershipDecision:
     eligible = tuple(item for item in scores if not item.hard_exclusions)
     ranked = tuple(sorted(eligible, key=lambda item: (-item.total_score, item.group_id)))
     candidate_ids = tuple(item.group_id for item in ranked[:50])
+    if candidates_truncated:
+        return _decision("PENDING_CONFIRMATION", None, candidate_ids, "candidate_limit_exceeded")
     if not ranked:
         return _decision("CREATE_EVENT", None, (), "no_eligible_event")
     best = ranked[0]
@@ -197,6 +204,7 @@ def _decision(
         "score_below_create_threshold": "最高候选得分低于五十分，保持为独立告警事件。",
         "strong_anchor_missing": "候选缺少实体、服务、问题签名或直接拓扑强锚点，不能自动归集。",
         "candidate_scores_too_close": "最高两个候选得分差不足十分，需要人工确认归属。",
+        "candidate_limit_exceeded": "候选事件超过单次安全比较上限，需要人工确认归属。",
         "medium_confidence_event_match": "候选得分处于中置信区间，需要人工确认归属。",
         "high_confidence_event_match": "候选具有强锚点且得分达到自动归集阈值。",
     }

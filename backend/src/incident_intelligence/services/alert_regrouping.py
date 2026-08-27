@@ -14,7 +14,7 @@ from incident_intelligence.persistence.models import AlertGroupRow
 from incident_intelligence.persistence.repositories import RecordRepositories
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 
-CURRENT_GROUPING_RULE_VERSION = "alert-grouping.v2"
+CURRENT_GROUPING_RULE_VERSION = "alert-event-clustering.v1"
 REGROUP_REASON = "regrouped_into_problem_signature"
 
 

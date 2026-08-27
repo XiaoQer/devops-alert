@@ -274,7 +274,7 @@ def test_one_hundred_one_members_create_one_incident_and_one_active_task(
         )
 
 
-def test_three_symptom_groups_for_same_service_converge_to_one_incident(
+def test_three_symptoms_for_same_service_converge_before_incident_correlation(
     migrated_engine: Engine,
 ) -> None:
     session_factory = sessionmaker(bind=migrated_engine, expire_on_commit=False)
@@ -314,7 +314,9 @@ def test_three_symptom_groups_for_same_service_converge_to_one_incident(
 
     with session_factory() as session:
         outcomes = set(session.scalars(select(AlertGroupDecisionRow.outcome)))
-        assert session.scalar(select(func.count()).select_from(AlertGroupRow)) == 3
+        group = session.scalar(select(AlertGroupRow))
+        assert group is not None
+        assert group.total_count == 3
         assert session.scalar(select(func.count()).select_from(IncidentRow)) == 1
         assert session.scalar(select(func.count()).select_from(IncidentAlertLinkRow)) == 3
-    assert outcomes == {"CREATED_NO_MATCH", "LINKED_EXACT_SERVICE"}
+    assert outcomes == {"CREATED_NO_MATCH"}

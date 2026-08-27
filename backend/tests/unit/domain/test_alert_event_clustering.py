@@ -118,6 +118,14 @@ def test_close_top_two_candidates_require_confirmation_with_stable_order() -> No
     assert decision.reason_codes == ("candidate_scores_too_close",)
 
 
+def test_truncated_candidate_set_never_auto_selects() -> None:
+    decision = decide_membership((candidate(GROUP_A, 95),), candidates_truncated=True)
+
+    assert decision.outcome == "PENDING_CONFIRMATION"
+    assert decision.selected_group_id is None
+    assert decision.reason_codes == ("candidate_limit_exceeded",)
+
+
 def test_text_only_similarity_never_auto_joins() -> None:
     score = score_candidate(
         context(
@@ -135,6 +143,28 @@ def test_text_only_similarity_never_auto_joins() -> None:
 
     assert score.strong_anchor is False
     assert decide_membership((score,)).outcome == "CREATE_EVENT"
+
+
+def test_direct_service_dependency_can_reach_auto_join_threshold() -> None:
+    score = score_candidate(
+        context(
+            service="payment-api",
+            entity_key="d" * 64,
+            problem_key="c" * 64,
+            problem_type="PaymentLatencyHigh",
+            symptom="latency",
+            topology_distance=1,
+            matched_member_ids=(ALERT_A,),
+            text_similarity=text_score(0.0),
+        ),
+        profile(services=("business-mysql",), core_services=("business-mysql",)),
+    )
+
+    assert score.entity_service_score == 25
+    assert score.topology_score == 25
+    assert score.temporal_score == 20
+    assert score.total_score == 70
+    assert decide_membership((score,)).outcome == "AUTO_JOIN"
 
 
 def test_cross_environment_and_topology_over_two_hops_are_hard_exclusions() -> None:

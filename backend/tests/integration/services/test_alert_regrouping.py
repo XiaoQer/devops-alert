@@ -123,7 +123,7 @@ def test_legacy_unlinked_groups_are_consolidated_without_deleting_history(
         assert len(resolved) == 2
         assert active[0].total_count == 3
         assert active[0].impacted_resource_count == 3
-        assert active[0].rule_version == "alert-grouping.v2"
+        assert active[0].rule_version == "alert-event-clustering.v1"
         assert all(group.reason_codes == ["regrouped_into_problem_signature"] for group in resolved)
         assert session.scalar(select(func.count()).select_from(AlertGroupMemberRow)) == 3
         assert session.scalar(select(func.count()).select_from(AuditEventRow)) == 3

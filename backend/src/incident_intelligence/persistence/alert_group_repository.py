@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import cast
 
 from sqlalchemy import and_, case, exists, func, or_, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
+from incident_intelligence.domain.alert_event_clustering import (
+    CandidateScore,
+    MembershipDecision,
+)
+from incident_intelligence.domain.alert_event_profiles import AlertEventProfile
 from incident_intelligence.ids import new_id
 from incident_intelligence.persistence.models import (
+    AlertEventMembershipDecisionRow,
+    AlertEventProfileRow,
     AlertGroupCorrelationJobRow,
     AlertGroupDecisionRow,
     AlertGroupingJobRow,
@@ -19,6 +26,8 @@ from incident_intelligence.persistence.models import (
     CorrelationJobRow,
     IncidentAlertLinkRow,
     IncidentRow,
+    ServiceCatalogEntryRow,
+    ServiceDependencyRow,
     SignalEventRow,
 )
 
@@ -35,6 +44,25 @@ class AlertGroupAggregate:
     representative_alert_id: str
     representative_title: str
     representative_severity: str
+
+
+@dataclass(frozen=True, slots=True)
+class AlertEventCandidateRecord:
+    group: AlertGroupRow
+    topology_distance: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class AlertEventCandidateBatch:
+    items: tuple[AlertEventCandidateRecord, ...]
+    truncated: bool
+
+
+@dataclass(frozen=True, slots=True)
+class AlertEventMemberFact:
+    member: AlertGroupMemberRow
+    alert: AlertRow
+    signal: SignalEventRow
 
 
 class AlertGroupRepository:
@@ -179,6 +207,246 @@ class AlertGroupRepository:
             )
         )
 
+    def candidate_events(
+        self,
+        *,
+        environment: str,
+        observed_at: datetime,
+        entity_key: str,
+        service: str | None,
+        problem_key: str,
+        alert_source_id: str | None = None,
+        limit: int = 50,
+    ) -> AlertEventCandidateBatch:
+        if not 1 <= limit <= 50:
+            raise ValueError("alert_event_candidate_limit_out_of_range")
+        topology_distances = self._topology_distances(service, environment)
+        anchors = [
+            AlertGroupRow.entity_key == entity_key,
+            AlertGroupRow.problem_key == problem_key,
+        ]
+        if service is not None:
+            anchors.append(AlertGroupRow.service == service)
+        if topology_distances:
+            anchors.append(AlertGroupRow.service.in_(tuple(topology_distances)))
+        safety_filters = []
+        if environment == "unknown" and alert_source_id is not None:
+            safety_filters.append(
+                exists(
+                    select(AlertGroupMemberRow.alert_id)
+                    .join(AlertRow, AlertRow.id == AlertGroupMemberRow.alert_id)
+                    .where(
+                        AlertGroupMemberRow.alert_group_id == AlertGroupRow.id,
+                        AlertRow.alert_source_id == alert_source_id,
+                    )
+                )
+            )
+        rows = tuple(
+            self._session.scalars(
+                select(AlertGroupRow)
+                .where(
+                    AlertGroupRow.state.in_(("FORMING", "ACTIVE", "OBSERVING")),
+                    AlertGroupRow.environment == environment,
+                    AlertGroupRow.last_observed_at >= observed_at - timedelta(minutes=15),
+                    AlertGroupRow.last_observed_at <= observed_at + timedelta(minutes=5),
+                    or_(*anchors),
+                    *safety_filters,
+                )
+                .order_by(AlertGroupRow.last_observed_at.desc(), AlertGroupRow.id)
+                .limit(limit + 1)
+                .with_for_update()
+            )
+        )
+        return AlertEventCandidateBatch(
+            items=tuple(
+                AlertEventCandidateRecord(
+                    group=row,
+                    topology_distance=(
+                        None if row.service is None else topology_distances.get(row.service)
+                    ),
+                )
+                for row in rows[:limit]
+            ),
+            truncated=len(rows) > limit,
+        )
+
+    def event_member_facts(self, group_id: str) -> tuple[AlertEventMemberFact, ...]:
+        rows = self._session.execute(
+            select(AlertGroupMemberRow, AlertRow, SignalEventRow)
+            .join(AlertRow, AlertRow.id == AlertGroupMemberRow.alert_id)
+            .join(SignalEventRow, SignalEventRow.id == AlertRow.signal_event_id)
+            .where(AlertGroupMemberRow.alert_group_id == group_id)
+            .order_by(AlertGroupMemberRow.alert_id, AlertGroupMemberRow.alert_cycle)
+            .limit(1_000)
+        )
+        return tuple(
+            AlertEventMemberFact(member=member, alert=alert, signal=signal)
+            for member, alert, signal in rows
+        )
+
+    def save_profile(
+        self,
+        profile: AlertEventProfile,
+        *,
+        pending_count: int,
+        created_at: datetime,
+    ) -> AlertEventProfileRow:
+        row = AlertEventProfileRow(
+            alert_group_id=profile.group_id,
+            profile_version=profile.profile_version,
+            environment=profile.environment,
+            services=list(profile.services),
+            entity_keys=list(profile.entity_keys),
+            scope_types=list(profile.scope_types),
+            topology_edges=self._profile_topology_edges(profile),
+            problem_types=list(profile.problem_types),
+            symptoms=list(profile.symptoms),
+            normalized_text=profile.normalized_text.normalized,
+            first_observed_at=profile.first_observed_at,
+            last_observed_at=profile.last_observed_at,
+            auto_confirmed_count=profile.auto_confirmed_count,
+            manual_confirmed_count=profile.manual_confirmed_count,
+            pending_count=pending_count,
+            rule_version=profile.rule_version,
+            created_at=created_at,
+        )
+        self._session.add(row)
+        self._session.flush()
+        return row
+
+    def _profile_topology_edges(self, profile: AlertEventProfile) -> list[dict[str, str]]:
+        if len(profile.services) < 2:
+            return []
+        entries = tuple(
+            self._session.scalars(
+                select(ServiceCatalogEntryRow).where(
+                    ServiceCatalogEntryRow.environment == profile.environment,
+                    ServiceCatalogEntryRow.state == "ACTIVE",
+                    ServiceCatalogEntryRow.service.in_(profile.services),
+                )
+            )
+        )
+        names = {row.id: row.service for row in entries}
+        if len(names) < 2:
+            return []
+        edges = self._session.scalars(
+            select(ServiceDependencyRow)
+            .where(
+                ServiceDependencyRow.state == "ACTIVE",
+                ServiceDependencyRow.caller_service_id.in_(tuple(names)),
+                ServiceDependencyRow.dependency_service_id.in_(tuple(names)),
+            )
+            .order_by(
+                ServiceDependencyRow.caller_service_id,
+                ServiceDependencyRow.dependency_service_id,
+                ServiceDependencyRow.id,
+            )
+            .limit(2_000)
+        )
+        return [
+            {
+                "caller": names[row.caller_service_id],
+                "dependency": names[row.dependency_service_id],
+            }
+            for row in edges
+        ]
+
+    def save_membership_decision(
+        self,
+        *,
+        decision_id: str,
+        alert: AlertRow,
+        state: str,
+        decision: MembershipDecision,
+        scores: tuple[CandidateScore, ...],
+        selected_group_id: str | None,
+        selected_group_version: int | None,
+        created_at: datetime,
+    ) -> AlertEventMembershipDecisionRow:
+        row = AlertEventMembershipDecisionRow(
+            id=decision_id,
+            alert_id=alert.id,
+            alert_cycle=alert.cycle,
+            alert_version=alert.version,
+            state=state,
+            candidate_group_ids=list(decision.candidate_group_ids),
+            selected_group_id=selected_group_id,
+            selected_group_version=selected_group_version,
+            rule_version="alert-event-clustering.v1",
+            scores={item.group_id: item.model_dump(mode="json") for item in scores},
+            reason_codes=list(decision.reason_codes),
+            explanation=decision.explanation,
+            created_at=created_at,
+        )
+        self._session.add(row)
+        self._session.flush()
+        return row
+
+    def _topology_distances(self, service: str | None, environment: str) -> dict[str, int]:
+        if service is None:
+            return {}
+        root = self._session.scalar(
+            select(ServiceCatalogEntryRow).where(
+                ServiceCatalogEntryRow.service == service,
+                ServiceCatalogEntryRow.environment == environment,
+                ServiceCatalogEntryRow.state == "ACTIVE",
+            )
+        )
+        if root is None:
+            return {}
+        direct_edges = tuple(
+            self._session.scalars(
+                select(ServiceDependencyRow)
+                .where(
+                    ServiceDependencyRow.state == "ACTIVE",
+                    or_(
+                        ServiceDependencyRow.caller_service_id == root.id,
+                        ServiceDependencyRow.dependency_service_id == root.id,
+                    ),
+                )
+                .order_by(ServiceDependencyRow.id)
+                .limit(100)
+            )
+        )
+        direct_ids = {
+            edge.dependency_service_id
+            if edge.caller_service_id == root.id
+            else edge.caller_service_id
+            for edge in direct_edges
+        }
+        two_hop_ids: set[str] = set()
+        if direct_ids:
+            second_edges = tuple(
+                self._session.scalars(
+                    select(ServiceDependencyRow)
+                    .where(
+                        ServiceDependencyRow.state == "ACTIVE",
+                        or_(
+                            ServiceDependencyRow.caller_service_id.in_(direct_ids),
+                            ServiceDependencyRow.dependency_service_id.in_(direct_ids),
+                        ),
+                    )
+                    .order_by(ServiceDependencyRow.id)
+                    .limit(500)
+                )
+            )
+            for edge in second_edges:
+                two_hop_ids.add(edge.caller_service_id)
+                two_hop_ids.add(edge.dependency_service_id)
+            two_hop_ids.difference_update(direct_ids | {root.id})
+        distance_by_id = {item: 1 for item in direct_ids}
+        distance_by_id.update({item: 2 for item in two_hop_ids})
+        if not distance_by_id:
+            return {}
+        entries = self._session.scalars(
+            select(ServiceCatalogEntryRow).where(
+                ServiceCatalogEntryRow.id.in_(tuple(distance_by_id)),
+                ServiceCatalogEntryRow.environment == environment,
+                ServiceCatalogEntryRow.state == "ACTIVE",
+            )
+        )
+        return {row.service: distance_by_id[row.id] for row in entries}
+
     def legacy_regroup_candidates(self, *, limit: int) -> tuple[AlertGroupRow, ...]:
         return tuple(
             self._session.scalars(
@@ -187,7 +455,7 @@ class AlertGroupRepository:
                     AlertGroupRow.state == "ACTIVE",
                     AlertGroupRow.service.is_(None),
                     AlertGroupRow.incident_id.is_(None),
-                    AlertGroupRow.rule_version != "alert-grouping.v2",
+                    AlertGroupRow.rule_version != "alert-event-clustering.v1",
                 )
                 .order_by(AlertGroupRow.problem_key, AlertGroupRow.created_at, AlertGroupRow.id)
                 .limit(limit)

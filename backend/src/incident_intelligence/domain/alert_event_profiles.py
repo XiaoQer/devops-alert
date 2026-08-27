@@ -74,7 +74,7 @@ def build_event_profile(
     if len(environments) != 1:
         raise ValueError("event_profile_environment_mismatch")
 
-    threshold = 1 if len(members) == 1 else max(2, (len(members) + 1) // 2)
+    threshold = 1 if len(members) <= 2 else max(2, (len(members) + 1) // 2)
     service_counts = Counter(item.service for item in members if item.service is not None)
     problem_counts = Counter(item.problem_type for item in members)
     entity_counts = Counter(item.entity_key for item in members)
@@ -122,14 +122,16 @@ def build_event_profile(
 
 
 def _text_center(members: tuple[ConfirmedEventMember, ...]) -> NormalizedAlertText:
+    sample = members if len(members) <= 50 else members[:25] + members[-25:]
+
     def distance_key(member: ConfirmedEventMember) -> tuple[float, str]:
         similarity = sum(
             deterministic_similarity(member.normalized_text, other.normalized_text)
-            for other in members
+            for other in sample
         )
         return (-similarity, member.alert_id)
 
-    return min(members, key=distance_key).normalized_text
+    return min(sample, key=distance_key).normalized_text
 
 
 def _bounded_unique[BoundedValue: str](

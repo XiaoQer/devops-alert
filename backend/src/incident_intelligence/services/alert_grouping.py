@@ -6,27 +6,41 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from incident_intelligence.domain.alert_event_clustering import (
+    CandidateContext,
+    CandidateScore,
+    MembershipDecision,
+    decide_membership,
+    score_candidate,
+)
+from incident_intelligence.domain.alert_event_profiles import (
+    AlertEventProfile,
+    ConfirmedEventMember,
+    build_event_profile,
+)
 from incident_intelligence.domain.alert_grouping import (
-    AlertGroupCandidate,
-    GroupingContext,
     ResourceIdentity,
-    decide_alert_group,
     derive_resource_identity,
 )
+from incident_intelligence.domain.alert_text_similarity import normalize_alert_text
 from incident_intelligence.domain.catalog import normalize_symptom
-from incident_intelligence.domain.enums import CatalogState
 from incident_intelligence.domain.problem_signatures import (
     ProblemSignature,
     derive_problem_signature,
 )
 from incident_intelligence.ids import IdPrefix, new_id
-from incident_intelligence.persistence.alert_group_repository import AlertGroupRepository
+from incident_intelligence.persistence.alert_group_repository import (
+    AlertEventCandidateRecord,
+    AlertEventMemberFact,
+    AlertGroupRepository,
+)
 from incident_intelligence.persistence.catalog_repository import ServiceCatalogRepository
 from incident_intelligence.persistence.models import (
     AlertGroupingJobRow,
     AlertGroupMemberRow,
     AlertGroupRow,
     AlertRow,
+    SignalEventRow,
 )
 from incident_intelligence.persistence.repositories import RecordRepositories
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
@@ -34,13 +48,20 @@ from incident_intelligence.services.alert_grouping_jobs import (
     AlertGroupingJobLease,
     AlertGroupingJobNotRetryable,
 )
+from incident_intelligence.services.text_similarity import TextSimilarityService
 
-GROUPING_RULE_VERSION = "alert-grouping.v2"
-GROUPING_CANDIDATE_LIMIT = 21
+GROUPING_RULE_VERSION = "alert-event-clustering.v1"
+GROUPING_CANDIDATE_LIMIT = 50
 STORM_MEMBER_THRESHOLD = 20
 STORM_WINDOW_SECONDS = 60
 STORM_CLEAR_SECONDS = 300
-GroupingResultAction = Literal["CREATE_GROUP", "JOIN_GROUP", "KEEP_GROUP", "SUPERSEDED"]
+GroupingResultAction = Literal[
+    "CREATE_GROUP",
+    "JOIN_GROUP",
+    "KEEP_GROUP",
+    "PENDING_CONFIRMATION",
+    "SUPERSEDED",
+]
 
 
 class AlertGroupingResult(BaseModel):
@@ -61,10 +82,12 @@ class AlertGroupingService:
         uow_factory: Callable[[], SqlAlchemyUnitOfWork],
         clock: Callable[[], datetime] | None = None,
         id_factory: Callable[[IdPrefix], str] = new_id,
+        text_similarity: TextSimilarityService | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._clock = clock or (lambda: datetime.now(UTC))
         self._id_factory = id_factory
+        self._text_similarity = text_similarity or TextSimilarityService()
 
     def process(self, lease: AlertGroupingJobLease) -> AlertGroupingResult:
         now = self._clock().astimezone(UTC)
@@ -120,36 +143,97 @@ class AlertGroupingService:
             )
             existing_member = repository.find_member(alert.id, alert.cycle, for_update=True)
             existing_link = repository.find_incident_link(alert.id)
-            candidates = repository.active_candidates(
-                problem_key=signature.problem_key,
-                limit=GROUPING_CANDIDATE_LIMIT,
-            )
-            decision = decide_alert_group(
-                GroupingContext.model_validate(
-                    {
-                        "alert_id": alert.id,
-                        "service": alert.service,
-                        "problem_key": signature.problem_key,
-                        "window_seconds": signature.window_seconds,
-                        "environment": alert.environment,
-                        "symptom": symptom,
-                        "observed_at": alert.last_observed_at,
-                        "catalog_state": (
-                            None if catalog_entry is None else CatalogState(catalog_entry.state)
-                        ),
-                        "existing_group_id": (
-                            None if existing_member is None else existing_member.alert_group_id
-                        ),
-                        "alert_incident_id": (
-                            None if existing_link is None else existing_link.incident_id
-                        ),
-                        "candidates": tuple(_candidate(row) for row in candidates),
-                    }
-                )
-            )
             identity = derive_resource_identity(signal.facts, alert.id)
+            scores: tuple[CandidateScore, ...] = ()
+            group: AlertGroupRow
+            action: GroupingResultAction
 
-            if decision.action == "CREATE_GROUP":
+            if existing_member is not None:
+                existing_group = repository.find_group(
+                    existing_member.alert_group_id, for_update=True
+                )
+                if existing_group is None:
+                    raise RuntimeError("alert_grouping_candidate_not_found")
+                group = existing_group
+                decision = MembershipDecision(
+                    outcome="AUTO_JOIN",
+                    selected_group_id=group.id,
+                    candidate_group_ids=(group.id,),
+                    reason_codes=("alert_already_grouped",),
+                    explanation="该告警轮次已经属于现有告警事件, 保持原成员关系。",
+                )
+                action = "KEEP_GROUP"
+                existing_member.current_alert_version = alert.version
+                existing_member.current_state = alert.state
+                existing_member.current_severity = alert.severity
+                existing_member.resource_type = identity.resource_type
+                existing_member.resource_name = identity.resource_name
+                existing_member.resource_key = identity.resource_key
+                existing_member.updated_at = now
+                repository.flush()
+                _refresh_group(
+                    repository,
+                    group,
+                    reason_codes=list(decision.reason_codes),
+                    explanation=decision.explanation,
+                    now=now,
+                )
+                group.profile_version += 1
+                _save_current_profile(repository, group, now=now)
+            else:
+                candidate_batch = repository.candidate_events(
+                    environment=alert.environment,
+                    observed_at=alert.last_observed_at,
+                    entity_key=alert.entity_key,
+                    service=alert.service,
+                    problem_key=signature.problem_key,
+                    alert_source_id=alert.alert_source_id,
+                    limit=GROUPING_CANDIDATE_LIMIT,
+                )
+                scores = tuple(
+                    self._score_candidate(
+                        alert=alert,
+                        signal=signal,
+                        symptom=symptom,
+                        signature=signature,
+                        identity=identity,
+                        candidate=candidate,
+                        repository=repository,
+                    )
+                    for candidate in candidate_batch.items
+                )
+                decision = decide_membership(scores, candidates_truncated=candidate_batch.truncated)
+                if decision.outcome == "PENDING_CONFIRMATION":
+                    repository.save_membership_decision(
+                        decision_id=self._id_factory("amd"),
+                        alert=alert,
+                        state="PENDING",
+                        decision=decision,
+                        scores=scores,
+                        selected_group_id=None,
+                        selected_group_version=None,
+                        created_at=now,
+                    )
+                    _append_pending_audit(
+                        _records(uow),
+                        audit_id=self._id_factory("aud"),
+                        alert=alert,
+                        reason_code=decision.reason_codes[0],
+                        now=now,
+                    )
+                    _complete_job(job, now)
+                    repository.flush()
+                    uow.commit()
+                    return AlertGroupingResult(
+                        job_id=job.id,
+                        alert_id=alert.id,
+                        alert_cycle=alert.cycle,
+                        group_id=None,
+                        action="PENDING_CONFIRMATION",
+                        reason_code=decision.reason_codes[0],
+                    )
+
+            if existing_member is None and decision.outcome == "CREATE_EVENT":
                 group = _new_group(
                     group_id=self._id_factory("agr"),
                     alert=alert,
@@ -163,7 +247,10 @@ class AlertGroupingService:
                 repository.add_group(group)
                 member = _new_member(group.id, alert, identity, decision.reason_codes[0], now)
                 repository.add_member(member)
-            else:
+                repository.flush()
+                _save_current_profile(repository, group, now=now)
+                action = "CREATE_GROUP"
+            elif existing_member is None:
                 if decision.selected_group_id is None:
                     raise RuntimeError("alert_grouping_selected_group_missing")
                 selected_group = repository.find_group(decision.selected_group_id, for_update=True)
@@ -172,19 +259,8 @@ class AlertGroupingService:
                 group = selected_group
                 if existing_link is not None and group.incident_id is None:
                     group.incident_id = existing_link.incident_id
-                if existing_member is None:
-                    member = _new_member(group.id, alert, identity, decision.reason_codes[0], now)
-                    repository.add_member(member)
-                else:
-                    member = existing_member
-                    member.current_alert_version = alert.version
-                    member.current_state = alert.state
-                    member.current_severity = alert.severity
-                    member.resource_type = identity.resource_type
-                    member.resource_name = identity.resource_name
-                    member.resource_key = identity.resource_key
-                    member.updated_at = now
-                    repository.flush()
+                member = _new_member(group.id, alert, identity, decision.reason_codes[0], now)
+                repository.add_member(member)
                 _refresh_group(
                     repository,
                     group,
@@ -192,6 +268,20 @@ class AlertGroupingService:
                     explanation=decision.explanation,
                     now=now,
                 )
+                group.profile_version += 1
+                _save_current_profile(repository, group, now=now)
+                action = "JOIN_GROUP"
+
+            repository.save_membership_decision(
+                decision_id=self._id_factory("amd"),
+                alert=alert,
+                state="AUTO_CONFIRMED",
+                decision=decision,
+                scores=scores,
+                selected_group_id=group.id,
+                selected_group_version=group.version,
+                created_at=now,
+            )
 
             if _requires_correlation(group, catalog_entry):
                 repository.schedule_correlation(
@@ -206,7 +296,7 @@ class AlertGroupingService:
                 group=group,
                 alert=alert,
                 reason_code=decision.reason_codes[0],
-                action=decision.action,
+                action=action,
                 now=now,
             )
             _complete_job(job, now)
@@ -217,9 +307,126 @@ class AlertGroupingService:
                 alert_id=alert.id,
                 alert_cycle=alert.cycle,
                 group_id=group.id,
-                action=decision.action,
+                action=action,
                 reason_code=decision.reason_codes[0],
             )
+
+    def _score_candidate(
+        self,
+        *,
+        alert: AlertRow,
+        signal: SignalEventRow,
+        symptom: str,
+        signature: ProblemSignature,
+        identity: ResourceIdentity,
+        candidate: AlertEventCandidateRecord,
+        repository: AlertGroupRepository,
+    ) -> CandidateScore:
+        member_facts = repository.event_member_facts(candidate.group.id)
+        profile = _build_profile(candidate.group, member_facts)
+        incoming_text = normalize_alert_text(
+            alert.title,
+            signal.summary,
+            signal.facts.get("alertname") or alert.title,
+            symptom,
+        )
+        matched_member_ids = tuple(
+            fact.alert.id
+            for fact in member_facts
+            if fact.alert.entity_key == alert.entity_key
+            or (alert.service is not None and fact.alert.service == alert.service)
+            or _member_problem_key(fact) == signature.problem_key
+            or (
+                candidate.topology_distance is not None
+                and fact.alert.service == candidate.group.service
+            )
+        )[:50]
+        return score_candidate(
+            CandidateContext(
+                alert_id=alert.id,
+                environment=alert.environment,
+                service=alert.service,
+                entity_key=alert.entity_key,
+                scope_type=signature.scope_type,
+                problem_key=signature.problem_key,
+                problem_type=signature.problem_type,
+                symptom=symptom,
+                observed_at=alert.last_observed_at,
+                topology_distance=candidate.topology_distance,
+                matched_member_ids=matched_member_ids,
+                text_similarity=self._text_similarity.compare(
+                    incoming_text, profile.normalized_text
+                ),
+                history_signal="NONE",
+            ),
+            profile,
+        )
+
+
+def _build_profile(
+    group: AlertGroupRow,
+    member_facts: tuple[AlertEventMemberFact, ...],
+) -> AlertEventProfile:
+    members = tuple(_confirmed_member(fact) for fact in member_facts)
+    return build_event_profile(
+        group.id,
+        members,
+        profile_version=group.profile_version,
+    )
+
+
+def _confirmed_member(fact: AlertEventMemberFact) -> ConfirmedEventMember:
+    signature = _member_signature(fact)
+    symptom = normalize_symptom(fact.signal.facts.get("symptom")) or "unknown"
+    return ConfirmedEventMember(
+        alert_id=fact.alert.id,
+        membership_state="AUTO_CONFIRMED",
+        environment=fact.alert.environment,
+        service=fact.alert.service,
+        entity_key=fact.alert.entity_key,
+        scope_type=signature.scope_type,
+        problem_key=signature.problem_key,
+        problem_type=signature.problem_type,
+        symptom=symptom,
+        topology_nodes=(() if fact.alert.service is None else (fact.alert.service,)),
+        normalized_text=normalize_alert_text(
+            fact.alert.title,
+            fact.signal.summary,
+            fact.signal.facts.get("alertname") or fact.alert.title,
+            symptom,
+        ),
+        observed_at=fact.alert.last_observed_at,
+    )
+
+
+def _member_problem_key(fact: AlertEventMemberFact) -> str:
+    return _member_signature(fact).problem_key
+
+
+def _member_signature(fact: AlertEventMemberFact) -> ProblemSignature:
+    symptom = normalize_symptom(fact.signal.facts.get("symptom")) or "unknown"
+    signature_facts = dict(fact.signal.facts)
+    if fact.alert.service is not None:
+        signature_facts["service"] = fact.alert.service
+    return derive_problem_signature(
+        alert_source_id=fact.alert.alert_source_id,
+        problem_type=fact.signal.facts.get("alertname") or fact.alert.title,
+        symptom=symptom,
+        environment=fact.alert.environment,
+        facts=signature_facts,
+    )
+
+
+def _save_current_profile(
+    repository: AlertGroupRepository,
+    group: AlertGroupRow,
+    *,
+    now: datetime,
+) -> AlertEventProfile:
+    repository.flush()
+    profile = _build_profile(group, repository.event_member_facts(group.id))
+    repository.save_profile(profile, pending_count=group.pending_count, created_at=now)
+    return profile
 
 
 def _new_group(
@@ -336,20 +543,6 @@ def _refresh_group(
     group.version += 1
 
 
-def _candidate(row: AlertGroupRow) -> AlertGroupCandidate:
-    return AlertGroupCandidate.model_validate(
-        {
-            "id": row.id,
-            "service": row.service,
-            "problem_key": row.problem_key,
-            "environment": row.environment,
-            "symptom": row.symptom,
-            "last_observed_at": row.last_observed_at,
-            "incident_id": row.incident_id,
-        }
-    )
-
-
 def _append_audit(
     records: RecordRepositories,
     *,
@@ -371,6 +564,30 @@ def _append_audit(
             "reason_code": reason_code,
             "rule_version": GROUPING_RULE_VERSION,
             "grouping_action": action,
+            "alert_id": alert.id,
+        },
+        created_at=now,
+    )
+
+
+def _append_pending_audit(
+    records: RecordRepositories,
+    *,
+    audit_id: str,
+    alert: AlertRow,
+    reason_code: str,
+    now: datetime,
+) -> None:
+    records.add_audit(
+        audit_id=audit_id,
+        actor="alert-grouping-worker",
+        action="alert.grouping_pending",
+        resource_type="alert",
+        resource_id=alert.id,
+        request_id=alert.id,
+        details={
+            "reason_code": reason_code,
+            "rule_version": GROUPING_RULE_VERSION,
             "alert_id": alert.id,
         },
         created_at=now,
