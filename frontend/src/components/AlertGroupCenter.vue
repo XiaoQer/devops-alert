@@ -6,22 +6,29 @@ import { useAlertGroupCenter } from "../composables/useAlertGroupCenter";
 import AlertCenter from "./AlertCenter.vue";
 
 defineEmits(["open-incident"]);
-const mode = ref("groups");
+const mode = ref("events");
 const {
-  state, severity, environment, storm, linked, search, groups, summary, selectedId, detail, members,
+  view, state, severity, environment, storm, linked, search, groups, summary, selectedId, detail, members,
   total, memberTotal, listState, summaryState, detailState, memberState, listError, summaryError,
   detailError, memberError, hasPrevious, hasNext, rangeStart, rangeEnd, memberHasPrevious,
   memberHasNext, memberRangeStart, memberRangeEnd, loadList, loadSummary, loadDetail, loadMembers,
   goPrevious, goNext, goMemberPrevious, goMemberNext,
 } = useAlertGroupCenter();
+
+function selectEventView(next) {
+  mode.value = "events";
+  view.value = next;
+}
 </script>
 
 <template>
   <div class="alert-group-shell">
     <header class="alert-view-switcher">
-      <div><strong>告警归集视图</strong><span>先看发生了几类问题，再按需展开原始告警</span></div>
+      <div><strong>告警中心</strong><span>把大量原始告警收敛成少量可理解的事件</span></div>
       <div role="tablist" aria-label="告警视图">
-        <button type="button" :class="{ active: mode === 'groups' }" role="tab" :aria-selected="mode === 'groups'" @click="mode = 'groups'">告警组</button>
+        <button type="button" :class="{ active: mode === 'events' && view === 'current' }" role="tab" :aria-selected="mode === 'events' && view === 'current'" @click="selectEventView('current')">当前事件</button>
+        <button type="button" :class="{ active: mode === 'events' && view === 'pending' }" role="tab" :aria-selected="mode === 'events' && view === 'pending'" @click="selectEventView('pending')">待确认</button>
+        <button type="button" :class="{ active: mode === 'events' && view === 'history' }" role="tab" :aria-selected="mode === 'events' && view === 'history'" @click="selectEventView('history')">历史事件</button>
         <button type="button" :class="{ active: mode === 'raw' }" role="tab" :aria-selected="mode === 'raw'" @click="mode = 'raw'">原始告警</button>
       </div>
     </header>
@@ -31,12 +38,12 @@ const {
       <section class="alert-summary-strip group-summary-strip" aria-label="24 小时告警归集概况">
         <div v-if="summaryState === 'error'" class="summary-error"><span>{{ summaryError }}</span><button class="link-button" type="button" @click="loadSummary">重试</button></div>
         <template v-else>
-          <article><span>进行中问题</span><strong>{{ summary?.activeGroups ?? "—" }}</strong></article>
-          <article><span>严重与重要问题</span><strong>{{ summary?.severeActiveGroups ?? "—" }}</strong></article>
-          <article><span>原始告警</span><strong>{{ summary?.activeAlerts ?? "—" }}</strong></article>
-          <article><span>告警风暴</span><strong>{{ summary?.stormGroups ?? "—" }}</strong></article>
-          <article><span>归集压缩</span><strong>{{ summary?.compressionText ?? "—" }}</strong></article>
-          <article><span>峰值流量</span><strong>{{ summary?.peakText ?? "—" }}</strong></article>
+          <article><span>当前活跃事件</span><strong>{{ summary?.activeGroups ?? "—" }}</strong></article>
+          <article><span>当前严重事件</span><strong>{{ summary?.severeActiveGroups ?? "—" }}</strong></article>
+          <article><span>当前活动告警</span><strong>{{ summary?.activeAlerts ?? "—" }}</strong></article>
+          <article><span>{{ summary?.windowText ?? "近 24 小时" }}已恢复</span><strong>{{ summary?.resolvedGroups ?? "—" }}</strong></article>
+          <article><span>{{ summary?.windowText ?? "近 24 小时" }}降噪率</span><strong>{{ summary?.compressionText ?? "—" }}</strong></article>
+          <article><span>当前告警风暴</span><strong>{{ summary?.stormGroups ?? "—" }}</strong></article>
         </template>
       </section>
 
@@ -46,14 +53,14 @@ const {
         <select v-model="severity" aria-label="告警组级别"><option value="">全部级别</option><option value="critical">严重</option><option value="high">重要</option><option value="medium">一般</option><option value="low">提示</option></select>
         <select v-model="environment" aria-label="告警组环境"><option value="">全部环境</option><option value="production">生产环境</option><option value="staging">预发环境</option><option value="development">开发环境</option></select>
         <select v-model="storm" aria-label="告警风暴"><option value="">全部流量</option><option value="STORM">仅告警风暴</option><option value="NORMAL">正常流量</option></select>
-        <select v-model="linked" aria-label="事故关联"><option value="">全部关联状态</option><option value="true">已关联事故</option><option value="false">待关联事故</option></select>
+        <select v-model="linked" aria-label="事故关联"><option value="">全部判定状态</option><option value="true">已形成事故</option><option value="false">尚未形成事故</option></select>
       </section>
 
       <div class="alert-workspace group-workspace">
         <section class="alert-list-panel group-list-panel" aria-label="告警组列表">
           <div v-if="listState === 'loading'" class="empty-state"><PhStack :size="24" /><strong>正在归集告警</strong></div>
           <div v-else-if="listState === 'error'" class="empty-state error-state"><PhQuestion :size="24" /><strong>{{ listError }}</strong><button type="button" class="button secondary" @click="loadList">重新加载</button></div>
-          <div v-else-if="listState === 'empty'" class="empty-state"><PhCheckCircle :size="24" /><strong>当前没有符合条件的告警组</strong><span>这里不会使用演示数据填充</span></div>
+          <div v-else-if="listState === 'empty'" class="empty-state"><PhCheckCircle :size="24" /><strong>当前没有符合条件的告警事件</strong><span>这里不会使用演示数据填充</span></div>
           <template v-else>
             <button v-for="group in groups" :key="group.id" type="button" :class="['alert-list-item', 'group-list-item', { selected: selectedId === group.id }]" @click="loadDetail(group.id)">
               <span class="alert-item-title"><PhCircle :size="8" weight="fill" :class="`dot-${group.severityTone}`" /><strong>{{ group.title }}</strong></span>
@@ -68,11 +75,14 @@ const {
         <section class="alert-detail-panel" aria-live="polite">
           <div v-if="detailState === 'loading'" class="detail-placeholder"><PhStack :size="28" /><strong>正在读取告警组详情</strong></div>
           <div v-else-if="detailState === 'error'" class="detail-placeholder error-state"><PhQuestion :size="28" /><strong>{{ detailError }}</strong><button type="button" class="button secondary" @click="loadDetail(selectedId)">重新加载详情</button></div>
-          <div v-else-if="!detail" class="detail-placeholder"><PhStack :size="28" /><strong>选择告警组后查看归集结果</strong></div>
+          <div v-else-if="!detail" class="detail-placeholder"><PhStack :size="28" /><strong>选择事件后查看归集结果</strong></div>
           <template v-else>
             <header class="alert-detail-header group-detail-header"><div><div class="detail-title-line"><h2>{{ detail.title }}</h2><span :class="['badge', `badge-${detail.severityTone}`]">{{ detail.severity }}</span><span v-if="detail.storm" class="badge badge-storm"><PhSiren :size="13" />{{ detail.stormText }}</span></div><p>{{ detail.scopeText }} · {{ detail.service }} · {{ detail.environment }} · {{ detail.symptom }}</p></div><button v-if="detail.incident" data-testid="open-group-incident" type="button" class="button primary" @click="$emit('open-incident', detail.incident.id)">进入关联事故<PhArrowRight :size="16" /></button></header>
             <div class="group-detail-body">
-              <section class="group-explanation"><header><h3>为什么归为一组</h3><span>{{ detail.memberText }}</span></header><p>{{ detail.reason }}</p><div class="group-impact-facts"><span><strong>{{ detail.activeCount }}</strong> 条仍在告警</span><span><strong>{{ detail.resourceCount }}</strong> 个影响资源</span><span><strong>{{ detail.sources.length }}</strong> 个告警来源</span><span><strong>{{ detail.duration.replace('持续 ', '') }}</strong> 已持续</span></div></section>
+              <section class="group-explanation"><header><h3>发生了什么</h3><span>{{ detail.memberText }}</span></header><p>{{ detail.reason }}</p><div class="group-impact-facts"><span><strong>{{ detail.activeCount }}</strong> 条仍在告警</span><span><strong>{{ detail.resourceCount }}</strong> 个影响资源</span><span><strong>{{ detail.sources.length }}</strong> 个告警来源</span><span><strong>{{ detail.duration.replace('持续 ', '') }}</strong> 已持续</span></div></section>
+              <section class="group-explanation incident-decision-card"><header><h3>是否需要事故处置</h3><strong>{{ detail.incidentDecision.label }}</strong></header><p>{{ detail.incidentDecision.explanation }}</p></section>
+              <section class="group-explanation"><header><h3>为什么归到一起</h3><span v-if="detail.grouping.dimensions.length">匹配度 {{ detail.grouping.totalScore }} 分</span></header><p>{{ detail.grouping.explanation }}</p><div v-if="detail.grouping.dimensions.length" class="group-impact-facts"><span v-for="item in detail.grouping.dimensions" :key="item.label"><strong>{{ item.score }}/{{ item.maximum }}</strong> {{ item.label }}</span></div></section>
+              <section v-if="detail.timeline.length" class="group-resources"><h3>事件传播时间线</h3><ul><li v-for="item in detail.timeline" :key="`${item.alert_id}-${item.occurred_at}-${item.kind}`"><span>{{ item.occurredAt }}</span><strong>{{ item.label }}</strong><small>{{ item.explanation }}</small></li></ul></section>
               <section class="group-distributions"><article><h3>告警来源</h3><ul><li v-for="source in detail.sources" :key="source.name"><span>{{ source.name }}</span><strong>{{ source.count }} 条</strong></li></ul></article><article><h3>严重程度</h3><ul><li v-for="item in detail.severities" :key="item.name"><span>{{ item.name }}</span><strong>{{ item.count }} 条</strong></li></ul></article></section>
               <section class="group-resources"><h3>主要影响资源</h3><p v-if="!detail.resources.length">暂未识别到具体资源</p><ul v-else><li v-for="resource in detail.resources" :key="`${resource.type}-${resource.name}`"><span>{{ resource.type }}</span><strong>{{ resource.name }}</strong><small>{{ resource.count }} 条告警</small></li></ul></section>
               <section class="group-members"><div class="content-heading"><div><h3>原始告警明细</h3><span>每条告警仍然保留，可独立审计</span></div><strong>{{ memberTotal }} 条</strong></div>

@@ -21,7 +21,7 @@ function pageParams(filters, keys) {
 export function fetchAlertGroups(filters = {}, options = {}) {
   const params = pageParams(filters, [
     "state", "severity", "service", "environment", "storm_state", "incident_linked",
-    "observed_from", "observed_to",
+    "observed_from", "observed_to", "view",
   ]);
   return requestJson(`/api/v1/alert-groups?${params.toString()}`, { signal: options.signal }, messages);
 }
@@ -44,4 +44,25 @@ export function fetchIncidentAlertGroups(incidentId, filters = {}, options = {})
   const params = pageParams(filters, []);
   params.delete("query");
   return requestJson(`/api/v1/incidents/${encodeURIComponent(incidentId)}/alert-groups?${params.toString()}`, { signal: options.signal }, messages);
+}
+
+function write(path, body, idempotencyKey, options = {}) {
+  return requestJson(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify(body),
+    signal: options.signal,
+  }, { ...messages, unavailable: "事件操作结果暂时未知，请使用原操作重试" });
+}
+
+export function confirmAlertGroupMember(groupId, alertId, command, key, options = {}) {
+  return write(`/api/v1/alert-groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(alertId)}/confirm`, command, key, options);
+}
+
+export function splitAlertGroupMembers(groupId, command, key, options = {}) {
+  return write(`/api/v1/alert-groups/${encodeURIComponent(groupId)}/members/split`, command, key, options);
+}
+
+export function mergeAlertGroups(groupId, command, key, options = {}) {
+  return write(`/api/v1/alert-groups/${encodeURIComponent(groupId)}/merge`, command, key, options);
 }

@@ -6,6 +6,7 @@ import { toAlertGroupDetail, toAlertGroupListItem, toAlertGroupMember, toAlertGr
 const safeMessage = (error, fallback) => typeof error?.userMessage === "string" ? error.userMessage : fallback;
 
 export function useAlertGroupCenter() {
+  const view = ref("current");
   const state = ref(""); const severity = ref(""); const environment = ref(""); const storm = ref(""); const linked = ref(""); const search = ref("");
   const groups = ref([]); const summary = ref(null); const selectedId = ref(null); const detail = ref(null); const members = ref([]);
   const total = ref(0); const limit = ref(50); const offset = ref(0);
@@ -53,7 +54,7 @@ export function useAlertGroupCenter() {
   async function loadList() {
     listController?.abort(); listController = new AbortController(); const sequence = ++listSequence; listState.value = "loading"; listError.value = "";
     try {
-      const response = await fetchAlertGroups({ state: state.value, severity: severity.value, environment: environment.value, storm_state: storm.value, incident_linked: linked.value, query: search.value, limit: limit.value, offset: offset.value }, { signal: listController.signal });
+      const response = await fetchAlertGroups({ view: view.value, state: state.value, severity: severity.value, environment: environment.value, storm_state: storm.value, incident_linked: linked.value, query: search.value, limit: limit.value, offset: offset.value }, { signal: listController.signal });
       if (sequence !== listSequence) return;
       groups.value = response.items.map(toAlertGroupListItem); total.value = response.total; listState.value = groups.value.length ? "ready" : "empty";
       if (!groups.value.length) { selectedId.value = null; detail.value = null; members.value = []; detailState.value = "idle"; memberState.value = "idle"; return; }
@@ -73,8 +74,8 @@ export function useAlertGroupCenter() {
   async function goNext() { if (!hasNext.value) return; offset.value += limit.value; await loadList(); }
   async function goMemberPrevious() { if (!memberHasPrevious.value) return; memberOffset.value = Math.max(0, memberOffset.value - memberLimit.value); await loadMembers(); }
   async function goMemberNext() { if (!memberHasNext.value) return; memberOffset.value += memberLimit.value; await loadMembers(); }
-  watch([state, severity, environment, storm, linked, search], () => { offset.value = 0; window.clearTimeout(debounceTimer); debounceTimer = window.setTimeout(loadList, 250); });
+  watch([view, state, severity, environment, storm, linked, search], () => { offset.value = 0; window.clearTimeout(debounceTimer); debounceTimer = window.setTimeout(loadList, 250); });
   onMounted(() => { loadSummary(); loadList(); });
   onBeforeUnmount(() => { window.clearTimeout(debounceTimer); listController?.abort(); summaryController?.abort(); detailController?.abort(); memberController?.abort(); });
-  return { state, severity, environment, storm, linked, search, groups, summary, selectedId, detail, members, total, memberTotal, listState, summaryState, detailState, memberState, listError, summaryError, detailError, memberError, hasPrevious, hasNext, rangeStart, rangeEnd, memberHasPrevious, memberHasNext, memberRangeStart, memberRangeEnd, loadList, loadSummary, loadDetail, loadMembers, goPrevious, goNext, goMemberPrevious, goMemberNext };
+  return { view, state, severity, environment, storm, linked, search, groups, summary, selectedId, detail, members, total, memberTotal, listState, summaryState, detailState, memberState, listError, summaryError, detailError, memberError, hasPrevious, hasNext, rangeStart, rangeEnd, memberHasPrevious, memberHasNext, memberRangeStart, memberRangeEnd, loadList, loadSummary, loadDetail, loadMembers, goPrevious, goNext, goMemberPrevious, goMemberNext };
 }

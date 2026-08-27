@@ -16,8 +16,8 @@ const group = {
   total_count: 101, impacted_resource_count: 101, first_observed_at: "2026-08-26T08:00:00Z",
   last_observed_at: "2026-08-26T08:01:00Z", explanation: "归组原因", incident: null,
 };
-const overview = { group, reason_codes: [], source_distribution: [], severity_distribution: [], impacted_resources: [] };
-const summary = { active_groups: 1, severe_active_groups: 1, active_alerts: 101, storm_groups: 1, resolved_groups: 0, compression_ratio: 101, peak_rate_per_minute: 101, pending_group_jobs: 0 };
+const overview = { group, reason_codes: [], source_distribution: [], severity_distribution: [], impacted_resources: [], incident_decision: { status: "NOT_EVALUATED", label: "尚未进行事故判定", explanation: "尚未进入流程", incident_id: null }, timeline: [] };
+const summary = { scope: "CURRENT_AND_WINDOW", current: { active_events: 1, severe_events: 1, active_alerts: 101, storm_events: 1, pending_jobs: 0 }, history: { window: "24h", closed_events: 0, raw_alerts: 101, compression_ratio: 101, peak_rate_per_minute: 101 } };
 const Harness = defineComponent({ setup: () => useAlertGroupCenter(), template: "<div />" });
 
 beforeEach(() => {
@@ -44,5 +44,13 @@ describe("告警组中心状态", () => {
     expect(wrapper.vm.memberRangeStart).toBe(101);
     expect(wrapper.vm.rangeStart).toBe(1);
     expect(fetchAlertGroupMembers.mock.calls[1][1]).toEqual({ limit: 100, offset: 100 });
+  });
+
+  it("默认读取当前事件并可切换到待确认事件", async () => {
+    const wrapper = mount(Harness); await flushPromises();
+    expect(fetchAlertGroups.mock.calls[0][0].view).toBe("current");
+    wrapper.vm.view = "pending";
+    await new Promise((resolve) => setTimeout(resolve, 300)); await flushPromises();
+    expect(fetchAlertGroups.mock.calls.at(-1)[0].view).toBe("pending");
   });
 });

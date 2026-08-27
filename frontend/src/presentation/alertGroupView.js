@@ -52,9 +52,7 @@ function baseGroup(group) {
     storm: group.storm_state === "STORM",
     stormText: group.storm_state === "STORM" ? "告警风暴" : "正常流量",
     incident: group.incident ?? null,
-    incidentText: group.incident
-      ? "已关联事故"
-      : serviceMissing ? "未创建事故（服务未提供）" : "待关联事故",
+    incidentText: group.incident ? "已关联事故" : "尚未形成事故",
     firstObservedAt: formatDateTime(group.first_observed_at),
     lastObservedAt: formatDateTime(group.last_observed_at),
     duration: formatDuration(group.first_observed_at, group.last_observed_at),
@@ -65,12 +63,16 @@ function baseGroup(group) {
 export function toAlertGroupListItem(group) { return baseGroup(group); }
 
 export function toAlertGroupSummary(summary) {
+  const current = summary.current ?? {};
+  const history = summary.history ?? {};
   return {
-    activeGroups: summary.active_groups, severeActiveGroups: summary.severe_active_groups,
-    activeAlerts: summary.active_alerts, stormGroups: summary.storm_groups,
-    resolvedGroups: summary.resolved_groups, pendingJobs: summary.pending_group_jobs,
-    compressionText: `${Number(summary.compression_ratio ?? 0).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}:1`,
-    peakText: `${summary.peak_rate_per_minute ?? 0} 条/分钟`,
+    activeGroups: current.active_events, severeActiveGroups: current.severe_events,
+    activeAlerts: current.active_alerts, stormGroups: current.storm_events,
+    resolvedGroups: history.closed_events, pendingJobs: current.pending_jobs,
+    rawAlerts: history.raw_alerts,
+    compressionText: `${Number(history.compression_ratio ?? 0).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}:1`,
+    peakText: `${history.peak_rate_per_minute ?? 0} 条/分钟`,
+    windowText: history.window === "24h" ? "近 24 小时" : history.window,
     calculatedAt: formatDateTime(summary.calculated_at),
   };
 }
@@ -85,6 +87,23 @@ export function toAlertGroupDetail(overview) {
     })),
     resources: (overview.impacted_resources ?? []).map((item) => ({
       type: item.resource_type, name: item.resource_name, count: item.count,
+    })),
+    incidentDecision: overview.incident_decision ?? {
+      status: "NOT_EVALUATED", label: "尚未进行事故判定",
+      explanation: "该事件还没有进入事故判定流程。", incident_id: null,
+    },
+    grouping: {
+      totalScore: overview.grouping?.total_score ?? 0,
+      reasons: overview.grouping?.reasons ?? [],
+      explanation: overview.grouping?.explanation ?? overview.group?.explanation ?? "暂无归集说明",
+      dimensions: (overview.grouping?.dimensions ?? []).map((item) => ({
+        label: item.label, score: item.score, maximum: item.maximum,
+      })),
+    },
+    profile: overview.profile ?? { auto_confirmed_count: 0, manual_confirmed_count: 0, pending_count: 0 },
+    recurrenceCount: overview.recurrence_count ?? 0,
+    timeline: (overview.timeline ?? []).map((item) => ({
+      ...item, occurredAt: formatDateTime(item.occurred_at),
     })),
   };
 }
