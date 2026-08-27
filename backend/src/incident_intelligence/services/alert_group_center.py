@@ -425,8 +425,11 @@ class AlertGroupCenterService:
                 .order_by(AlertEventProfileRow.profile_version.desc())
                 .limit(1)
             )
-            if profile is None:
-                raise AlertGroupResourceNotFound()
+            profile_view = (
+                _profile_view(profile)
+                if profile is not None
+                else _legacy_profile_view(session, group)
+            )
             membership_decisions = tuple(
                 session.scalars(
                     select(AlertEventMembershipDecisionRow)
@@ -460,7 +463,7 @@ class AlertGroupCenterService:
                     ResourceCount(resource_type=kind, resource_name=name, count=count)
                     for kind, name, count in resources
                 ),
-                profile=_profile_view(profile),
+                profile=profile_view,
                 grouping=_grouping_explanation(latest_membership, group),
                 incident_decision=incident_decision,
                 recurrence_count=recurrence_count,
@@ -725,6 +728,36 @@ def _profile_view(profile: AlertEventProfileRow) -> AlertEventProfileView:
         manual_confirmed_count=profile.manual_confirmed_count,
         pending_count=profile.pending_count,
         rule_version=profile.rule_version,
+    )
+
+
+def _legacy_profile_view(session: Session, group: AlertGroupRow) -> AlertEventProfileView:
+    manual_confirmed = _count(
+        session,
+        AlertEventMembershipDecisionRow,
+        AlertEventMembershipDecisionRow.selected_group_id == group.id,
+        AlertEventMembershipDecisionRow.state == "MANUAL_CONFIRMED",
+    )
+    member_count = _count(
+        session,
+        AlertGroupMemberRow,
+        AlertGroupMemberRow.alert_group_id == group.id,
+    )
+    pending = _count(
+        session,
+        AlertEventMembershipDecisionRow,
+        AlertEventMembershipDecisionRow.state == "PENDING",
+        _pending_candidate_for(group.id),
+    )
+    return AlertEventProfileView(
+        profile_version=group.profile_version,
+        services=(() if group.service is None else (group.service,)),
+        problem_types=(group.problem_type,),
+        symptoms=(group.symptom,),
+        auto_confirmed_count=max(0, member_count - manual_confirmed),
+        manual_confirmed_count=manual_confirmed,
+        pending_count=pending,
+        rule_version=group.rule_version,
     )
 
 

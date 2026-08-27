@@ -39,4 +39,16 @@ describe("组优先告警中心", () => {
     await wrapper.get('[data-testid="open-group-incident"]').trigger("click");
     expect(wrapper.emitted("open-incident")[0]).toEqual(["inc_1"]);
   });
+
+  it("状态筛选使用事件生命周期而不是旧告警组状态", async () => {
+    fetchAlertGroups.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+    fetchAlertGroupSummary.mockResolvedValue({ scope: "CURRENT_AND_WINDOW", current: {}, history: {}, calculated_at: "2026-08-26T08:02:00Z" });
+
+    const wrapper = mount(AlertGroupCenter); await flushPromises();
+    const options = wrapper.get('[aria-label="告警组状态"]').findAll("option").map((item) => [item.attributes("value"), item.text()]);
+    expect(options).toEqual([
+      ["", "全部状态"], ["FORMING", "聚合中"], ["ACTIVE", "告警中"],
+      ["OBSERVING", "恢复观察"], ["CLOSED", "已关闭"],
+    ]);
+  });
 });

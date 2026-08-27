@@ -11,6 +11,7 @@ from incident_intelligence.ids import new_id
 from incident_intelligence.persistence.alert_group_repository import AlertGroupRepository
 from incident_intelligence.persistence.models import (
     AlertEventMembershipDecisionRow,
+    AlertEventProfileRow,
     AlertGroupCorrelationJobRow,
     AlertGroupRow,
     AlertRow,
@@ -211,3 +212,38 @@ def test_pending_view_reads_candidate_alerts_without_trusting_cached_count(
     assert page.items[0].source_name == "Alertmanager 兼容接入"
     assert page.items[0].total_score == 65
     assert page.items[0].reason == "候选得分处于中置信区间。需要人工确认归属。"
+
+
+def test_legacy_group_without_event_profile_still_has_readable_overview(
+    migrated_engine: Engine,
+) -> None:
+    session_factory = sessionmaker(bind=migrated_engine, expire_on_commit=False)
+    uow_factory = partial(SqlAlchemyUnitOfWork, session_factory)
+    SignalIntakeService(uow_factory=uow_factory, clock=lambda: NOW).submit_batch(
+        [command(1)],
+        "alertmanager-adapter",
+        "req-legacy-group",
+    )
+    jobs = AlertGroupingJobService(uow_factory=uow_factory)
+    grouping = AlertGroupingService(uow_factory=uow_factory, clock=lambda: NOW)
+    while leases := jobs.claim_batch("grouping", NOW, limit=10, lease_seconds=30):
+        for lease in leases:
+            grouping.process(lease)
+
+    with session_factory.begin() as session:
+        group = session.scalar(select(AlertGroupRow))
+        assert group is not None
+        group.state = "CLOSED"
+        session.execute(
+            delete(AlertEventProfileRow).where(AlertEventProfileRow.alert_group_id == group.id)
+        )
+        group_id = group.id
+
+    overview = AlertGroupCenterService(session_factory=session_factory).get_overview(group_id)
+
+    assert overview.group.state == "CLOSED"
+    assert overview.grouping.total_score == 0
+    assert overview.profile.services == ("payment-api",)
+    assert overview.profile.auto_confirmed_count == 1
+    assert overview.profile.manual_confirmed_count == 0
+    assert overview.profile.pending_count == 0

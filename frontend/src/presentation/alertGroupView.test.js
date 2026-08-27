@@ -21,6 +21,15 @@ describe("告警组展示转换", () => {
     expect(view.incidentText).toBe("已关联事故");
   });
 
+  it.each([
+    ["FORMING", "聚合中"],
+    ["ACTIVE", "告警中"],
+    ["OBSERVING", "恢复观察"],
+    ["CLOSED", "已关闭"],
+  ])("把事件生命周期 %s 显示为明确中文", (state, expected) => {
+    expect(toAlertGroupListItem({ ...group, state }).state).toBe(expected);
+  });
+
   it("无服务告警使用问题类型和影响范围表达归集结果", () => {
     const view = toAlertGroupListItem({
       ...group,

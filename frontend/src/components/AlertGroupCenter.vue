@@ -73,7 +73,7 @@ function selectEventView(next) {
 
       <section class="alert-filter-bar group-filter-bar">
         <input v-model="search" aria-label="搜索告警组或服务" placeholder="搜索问题、服务或异常类型" />
-        <select v-model="state" aria-label="告警组状态"><option value="">全部状态</option><option value="ACTIVE">告警中</option><option value="RESOLVED">已恢复</option></select>
+        <select v-model="state" aria-label="告警组状态"><option value="">全部状态</option><option value="FORMING">聚合中</option><option value="ACTIVE">告警中</option><option value="OBSERVING">恢复观察</option><option value="CLOSED">已关闭</option></select>
         <select v-model="severity" aria-label="告警组级别"><option value="">全部级别</option><option value="critical">严重</option><option value="high">重要</option><option value="medium">一般</option><option value="low">提示</option></select>
         <select v-model="environment" aria-label="告警组环境"><option value="">全部环境</option><option value="production">生产环境</option><option value="staging">预发环境</option><option value="development">开发环境</option></select>
         <select v-model="storm" aria-label="告警风暴"><option value="">全部流量</option><option value="STORM">仅告警风暴</option><option value="NORMAL">正常流量</option></select>

@@ -2,7 +2,11 @@ const severityMap = {
   critical: ["严重", "critical"], high: ["重要", "high"],
   medium: ["一般", "medium"], low: ["提示", "medium"],
 };
-const stateMap = { ACTIVE: ["告警中", "active"], RESOLVED: ["已恢复", "resolved"] };
+const stateMap = {
+  FORMING: ["聚合中", "active"], ACTIVE: ["告警中", "active"],
+  OBSERVING: ["恢复观察", "medium"], CLOSED: ["已关闭", "resolved"],
+  RESOLVED: ["已恢复", "resolved"],
+};
 const environmentMap = { production: "生产环境", staging: "预发环境", development: "开发环境" };
 const symptomMap = {
   errors: "错误异常", latency: "响应延迟", availability: "可用性下降",
