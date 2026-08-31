@@ -1,275 +1,95 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import App from "./IncidentCenterApp.vue";
-import { fetchAlertGroupMembers, fetchAlertGroupOverview, fetchAlertGroups, fetchAlertGroupSummary, fetchIncidentAlertGroups } from "./api/alertGroups";
-import {
-  executeIncidentAction,
-  fetchIncidentOverview,
-  fetchIncidents,
-} from "./api/incidents";
+import App from "./App.vue";
+import { fetchAlert, fetchAlerts, fetchAlertTrend } from "./api/alerts";
+import { fetchAlertSources } from "./api/alertSources";
+import { fetchIncidentRules } from "./api/incidentRules";
+import styles from "./styles.css?inline";
 
-vi.mock("./api/incidents", () => ({
-  executeIncidentAction: vi.fn(),
-  fetchIncidentOverview: vi.fn(),
-  fetchIncidents: vi.fn(),
+vi.mock("./api/alerts", () => ({ fetchAlert: vi.fn(), fetchAlerts: vi.fn(), fetchAlertTrend: vi.fn() }));
+vi.mock("./api/alertSources", async (importOriginal) => ({
+  ...(await importOriginal()),
+  fetchAlertSources: vi.fn(),
 }));
-vi.mock("./api/alertGroups", () => ({
-  fetchAlertGroupMembers: vi.fn(), fetchAlertGroupOverview: vi.fn(),
-  fetchAlertGroups: vi.fn(), fetchAlertGroupSummary: vi.fn(), fetchIncidentAlertGroups: vi.fn(),
+vi.mock("./api/incidentRules", async (importOriginal) => ({
+  ...(await importOriginal()),
+  fetchIncidentRules: vi.fn(),
 }));
 
-const alertGroup = {
-  id: "agr_real_1", title: "支付服务错误率升高", state: "ACTIVE", storm_state: "STORM",
-  severity: "critical", service: "payment-api", environment: "production", symptom: "errors",
-  active_count: 101, total_count: 101, impacted_resource_count: 101,
-  first_observed_at: "2026-08-25T02:06:18Z", last_observed_at: "2026-08-25T02:09:45Z",
-  explanation: "服务、环境和异常类型一致，已收敛为同一问题。", incident: null,
+const alert = {
+  id: "alt_1", alert_name: "MySQLRowLockWaitActive", summary: "当前检测到活跃行锁等待",
+  state: "ACTIVE", severity: "high", service: null,
+  environment: "production", entity_type: "INSTANCE", entity_display_name: "mysql:3306",
+  source: { id: "src_1", name: "生产 Prometheus", source_type: "ALERTMANAGER", management_type: "USER_MANAGED" },
+  episode_started_at: "2026-08-28T08:00:00Z", first_received_at: "2026-08-28T08:00:01Z",
+  last_received_at: "2026-08-28T08:00:01Z", resolved_at: null, duration_seconds: null,
 };
 
-const listItem = (overrides = {}) => ({
-  id: "inc_real_1", title: "支付服务错误率升高", severity: "critical", state: "INVESTIGATING",
-  service: "payment-api", environment: "production", assignee: null, owner_team: "支付平台组",
-  detected_at: "2026-08-25T02:06:18Z", last_activity_at: "2026-08-25T02:09:45Z",
-  alert_count: 2, version: 1, ...overrides,
-});
-
-const overview = (overrides = {}) => ({
-  ...listItem(), claimed_at: null, created_at: "2026-08-25T02:06:20Z",
-  state_changed_at: "2026-08-25T02:06:20Z", resolved_at: null, closed_at: null,
-  alerts_truncated: false, activities: [], activities_truncated: false,
-  allowed_actions: ["CLAIM", "TRANSITION", "ADD_NOTE", "RESOLVE"],
-  allowed_transitions: ["MITIGATING", "MONITORING_RECOVERY"],
-  primary_action: { action: "TRANSITION", target_state: "MITIGATING" },
-  alerts: [
-    { id: "alt_1", title: "支付接口 5xx 错误率升高", state: "ACTIVE", severity: "critical", source: "alertmanager", first_observed_at: "2026-08-25T02:06:18Z", last_observed_at: "2026-08-25T02:09:45Z", version: 1 },
-    { id: "alt_2", title: "支付成功率下降", state: "ACTIVE", severity: "high", source: "cloudevents", first_observed_at: "2026-08-25T02:07:12Z", last_observed_at: "2026-08-25T02:09:45Z", version: 1 },
-  ],
-  correlation: { outcome: "LINKED", rule_version: "correlation.v1", reason_codes: ["same_service"], explanation: "两条告警属于同一生产服务且时间相近。", created_at: "2026-08-25T02:07:13Z" },
-  timeline: [
-    { id: "created", kind: "incident_created", occurred_at: "2026-08-25T02:06:20Z", title: "创建事故", detail: "系统根据已持久化告警创建事故" },
-    { id: "linked", kind: "alert_linked", occurred_at: "2026-08-25T02:07:12Z", title: "关联告警", detail: "支付成功率下降" },
-  ], ...overrides,
-});
-
 beforeEach(() => {
-  fetchIncidents.mockResolvedValue({ items: [listItem()], total: 1, limit: 100, offset: 0 });
-  fetchIncidentOverview.mockResolvedValue(overview());
-  executeIncidentAction.mockResolvedValue({
-    id: "inc_real_1", action: "CLAIM", state: "INVESTIGATING",
-    assignee: "manual-api-client", version: 2,
+  fetchAlerts.mockResolvedValue({ items: [alert], total: 1, limit: 50, offset: 0 });
+  fetchAlert.mockResolvedValue({ ...alert, description: "当前检测到活跃行锁等待" });
+  fetchAlertTrend.mockResolvedValue({
+    range: "1h", basis: "first_received_at", bucket_seconds: 300,
+    window_start: "2026-08-28T07:00:00Z", window_end: "2026-08-28T08:00:00Z",
+    series: [{ source: alert.source, points: [{ timestamp: "2026-08-28T07:00:00Z", count: 1 }] }],
   });
-  fetchAlertGroups.mockResolvedValue({ items: [alertGroup], total: 1, limit: 50, offset: 0 });
-  fetchAlertGroupSummary.mockResolvedValue({ active_groups: 1, severe_active_groups: 1, active_alerts: 101, storm_groups: 1, resolved_groups: 0, compression_ratio: 101, peak_rate_per_minute: 101, pending_group_jobs: 0 });
-  fetchAlertGroupOverview.mockResolvedValue({ group: alertGroup, reason_codes: [], source_distribution: [], severity_distribution: [], impacted_resources: [] });
-  fetchAlertGroupMembers.mockResolvedValue({ items: [], total: 101, limit: 100, offset: 0 });
-  fetchIncidentAlertGroups.mockResolvedValue({ items: [alertGroup], total: 1, limit: 50, offset: 0 });
+  fetchAlertSources.mockResolvedValue({ items: [], total: 0 });
+  fetchIncidentRules.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
 });
-afterEach(() => { vi.clearAllMocks(); vi.useRealTimers(); });
 
-describe("事故中心真实联调", () => {
-  it("导航可切换到真实告警和告警源页面挂载点", async () => {
-    const wrapper = mount(App); await flushPromises();
-
-    await wrapper.get('[data-testid="nav-alerts"]').trigger("click");
-    await flushPromises();
-    expect(wrapper.get('[data-testid="alert-group-center"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain("101 条原始告警");
-    expect(wrapper.get('[data-testid="nav-alerts"]').attributes("aria-current")).toBe("page");
-
-    await wrapper.get('[data-testid="nav-alert-sources"]').trigger("click");
-    expect(wrapper.get('[data-testid="alert-source-center"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="nav-alert-sources"]').attributes("aria-current")).toBe("page");
-  });
-
-  it("启动后展示后端事故、关联原因和关联告警", async () => {
-    const wrapper = mount(App); await flushPromises();
-    expect(wrapper.text()).toContain("支付服务错误率升高");
-    expect(wrapper.text()).toContain("两条告警属于同一生产服务且时间相近。");
-    expect(wrapper.findAll('[data-testid="related-alert-row"]')).toHaveLength(2);
-  });
-
-  it("列表失败时只展示安全错误并可重试", async () => {
-    fetchIncidents.mockRejectedValueOnce({ userMessage: "事故数据暂时不可用，请稍后重试" });
-    const wrapper = mount(App); await flushPromises();
-    expect(wrapper.text()).toContain("事故数据暂时不可用，请稍后重试");
-    expect(wrapper.text()).not.toContain("支付服务错误率升高");
-    await wrapper.get('[data-testid="retry-list"]').trigger("click"); await flushPromises();
-    expect(wrapper.text()).toContain("支付服务错误率升高");
-  });
-
-  it("后端无事故时展示真实空状态", async () => {
-    fetchIncidents.mockResolvedValueOnce({ items: [], total: 0, limit: 100, offset: 0 });
-    const wrapper = mount(App); await flushPromises();
-    expect(wrapper.text()).toContain("当前没有事故");
-    expect(fetchIncidentOverview).not.toHaveBeenCalled();
-  });
-
-  it("选择事故后读取对应详情", async () => {
-    fetchIncidents.mockResolvedValueOnce({ items: [listItem(), listItem({ id: "inc_real_2", title: "库存服务延迟升高", service: "inventory-api" })], total: 2, limit: 100, offset: 0 });
-    fetchIncidentOverview.mockResolvedValueOnce(overview()).mockResolvedValueOnce(overview({ id: "inc_real_2", title: "库存服务延迟升高", service: "inventory-api", alerts: [] }));
-    const wrapper = mount(App); await flushPromises();
-    await wrapper.get('[data-testid="incident-inc_real_2"] button').trigger("click"); await flushPromises();
-    expect(fetchIncidentOverview).toHaveBeenLastCalledWith("inc_real_2", expect.any(Object));
-    expect(wrapper.get('[data-testid="incident-title"]').text()).toContain("库存服务延迟升高");
-  });
-
-  it("认领通过后端保存并刷新真实数据", async () => {
-    fetchIncidents.mockResolvedValueOnce({ items: [listItem()], total: 1, limit: 100, offset: 0 }).mockResolvedValueOnce({ items: [listItem({ assignee: "manual-api-client", version: 2 })], total: 1, limit: 100, offset: 0 });
-    fetchIncidentOverview.mockResolvedValueOnce(overview()).mockResolvedValueOnce(overview({ assignee: "manual-api-client", claimed_at: "2026-08-25T02:12:00Z", version: 2, allowed_actions: ["RELEASE", "TRANSITION", "ADD_NOTE", "RESOLVE"] }));
-    const wrapper = mount(App); await flushPromises();
-    await wrapper.get('[data-testid="claim-incident"]').trigger("click"); await flushPromises();
-    expect(executeIncidentAction).toHaveBeenCalledWith(
-      "inc_real_1",
-      "claim",
-      { expected_version: 1 },
-      expect.any(String),
-      expect.any(Object),
-    );
-    expect(wrapper.get('[data-testid="incident-owner"]').text()).toContain("当前操作员");
-    expect(wrapper.get('[data-testid="claim-incident"]').text()).toContain("已认领");
-  });
-
-  it("搜索时丢弃晚到的旧列表结果", async () => {
-    vi.useFakeTimers();
-    let resolveOld;
-    fetchIncidents
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }))
-      .mockResolvedValueOnce({ items: [listItem({ id: "inc_new", title: "最新搜索结果" })], total: 1, limit: 100, offset: 0 });
-    fetchIncidentOverview.mockResolvedValueOnce(overview({ id: "inc_new", title: "最新搜索结果" }));
+describe("最小告警接入平台", () => {
+  it("展示告警中心、Incident 规则和接入源管理三个入口", async () => {
     const wrapper = mount(App);
-    await wrapper.get('[aria-label="搜索事故、服务或团队"]').setValue("最新");
-    await vi.advanceTimersByTimeAsync(250); await flushPromises();
-    expect(wrapper.text()).toContain("最新搜索结果");
-    resolveOld({ items: [listItem({ id: "inc_old", title: "过期搜索结果" })], total: 1, limit: 100, offset: 0 });
     await flushPromises();
-    expect(wrapper.text()).toContain("最新搜索结果");
-    expect(wrapper.text()).not.toContain("过期搜索结果");
+    const navigation = wrapper.get('[aria-label="主导航"]');
+    expect(navigation.findAll("button")).toHaveLength(3);
+    expect(navigation.text()).toContain("告警中心");
+    expect(navigation.text()).toContain("Incident 规则");
+    expect(navigation.text()).toContain("接入源管理");
+    for (const removed of ["事故中心", "批次", "关联任务", "服务目录", "AI"])
+      expect(navigation.text()).not.toContain(removed);
   });
 
-  it("按后端允许操作展示调查阶段、主推进和解除认领", async () => {
-    fetchIncidentOverview.mockResolvedValueOnce(overview({
-      assignee: "manual-api-client",
-      claimed_at: "2026-08-25T02:12:00Z",
-      allowed_actions: ["RELEASE", "TRANSITION", "ADD_NOTE", "RESOLVE"],
-    }));
-
-    const wrapper = mount(App); await flushPromises();
-
-    expect(wrapper.get('[data-testid="incident-stage-bar"]').text()).toContain("调查中");
-    expect(wrapper.get('[data-testid="primary-operation"]').text()).toBe("推进到缓解中");
-    expect(wrapper.find('[data-testid="release-incident"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="reopen-incident"]').exists()).toBe(false);
-  });
-
-  it("快速记录提交固定分类和真实版本", async () => {
-    const wrapper = mount(App); await flushPromises();
-
-    await wrapper.get('[aria-label="处置记录分类"]').setValue("CURRENT_FINDING");
-    await wrapper.get('[aria-label="处置记录内容"]').setValue("错误集中在两个实例");
-    await wrapper.get('[data-testid="save-note"]').trigger("click");
+  it("默认展示真实告警并可切换到接入源管理", async () => {
+    const wrapper = mount(App);
     await flushPromises();
-
-    expect(executeIncidentAction).toHaveBeenCalledWith(
-      "inc_real_1",
-      "notes",
-      {
-        expected_version: 1,
-        category: "CURRENT_FINDING",
-        message: "错误集中在两个实例",
-      },
-      expect.any(String),
-      expect.any(Object),
-    );
-  });
-
-  it("解决事故要求分类、说明和措施，根因允许为空", async () => {
-    const wrapper = mount(App); await flushPromises();
-    await wrapper.get('[data-testid="resolve-incident"]').trigger("click");
-
-    expect(wrapper.get('[data-testid="confirm-resolve"]').attributes("disabled")).toBeDefined();
-    await wrapper.get('[aria-label="解决分类"]').setValue("RECOVERED");
-    await wrapper.get('[aria-label="解决说明"]').setValue("错误率已经恢复");
-    await wrapper.get('[aria-label="采取措施"]').setValue("隔离异常实例并扩容");
-    expect(wrapper.get('[data-testid="confirm-resolve"]').attributes("disabled")).toBeUndefined();
-    await wrapper.get('[data-testid="confirm-resolve"]').trigger("click");
+    expect(wrapper.get('[data-testid="alert-center"]').text()).toContain("MySQLRowLockWaitActive");
+    await wrapper.get('[data-testid="nav-alert-sources"]').trigger("click");
     await flushPromises();
-
-    expect(executeIncidentAction).toHaveBeenCalledWith(
-      "inc_real_1",
-      "resolve",
-      expect.objectContaining({
-        expected_version: 1,
-        category: "RECOVERED",
-        root_cause: null,
-      }),
-      expect.any(String),
-      expect.any(Object),
-    );
+    expect(wrapper.get('[data-testid="alert-source-center"]').exists()).toBe(true);
   });
 
-  it("已解决只展示重新打开和关闭，已关闭保持只读", async () => {
-    fetchIncidentOverview
-      .mockResolvedValueOnce(overview({
-        state: "RESOLVED",
-        allowed_actions: ["REOPEN", "CLOSE"],
-        allowed_transitions: [],
-        primary_action: { action: "CLOSE", target_state: null },
-      }))
-      .mockResolvedValueOnce(overview({
-        state: "CLOSED",
-        allowed_actions: [],
-        allowed_transitions: [],
-        primary_action: null,
-      }));
-    const wrapper = mount(App); await flushPromises();
-
-    expect(wrapper.find('[data-testid="reopen-incident"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="close-incident"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="quick-note"]').exists()).toBe(false);
-
-    await wrapper.vm.$.setupState.loadDetail("inc_real_1");
+  it("告警页面只展示一个页面标题", async () => {
+    const wrapper = mount(App);
     await flushPromises();
-    expect(wrapper.find('[data-testid="incident-write-actions"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="quick-note"]').exists()).toBe(false);
+    expect(wrapper.findAll("h1")).toHaveLength(1);
+    expect(wrapper.findAll("h2")).toHaveLength(0);
+    expect(wrapper.get("h1").text()).toBe("告警中心");
   });
 
-  it("活动时间线只显示中文业务内容和安全操作者", async () => {
-    fetchIncidentOverview.mockResolvedValueOnce(overview({
-      activities: [{
-        id: "iact_1", kind: "NOTE_ADDED", actor: "manual-api-client",
-        from_state: null, to_state: null, note_category: "CURRENT_FINDING",
-        message: "错误集中在两个实例", resolution_category: null,
-        resolution_actions: null, root_cause: null, incident_version: 2,
-        created_at: "2026-08-25T02:10:00Z",
-      }],
-    }));
-
-    const wrapper = mount(App); await flushPromises();
-    const timeline = wrapper.get('[data-testid="activity-timeline"]');
-
-    expect(timeline.text()).toContain("添加处置记录");
-    expect(timeline.text()).toContain("当前发现");
-    expect(timeline.text()).toContain("操作员");
-    expect(timeline.text()).not.toContain("NOTE_ADDED");
-    expect(timeline.text()).not.toContain("manual-api-client");
-  });
-
-  it("版本冲突显示刷新入口且不伪造成功", async () => {
-    executeIncidentAction.mockRejectedValueOnce({
-      code: "incident_version_conflict",
-      userMessage: "事故已被其他操作更新，请刷新后重试",
-      status: 409,
-    });
-    const wrapper = mount(App); await flushPromises();
-
-    await wrapper.get('[data-testid="claim-incident"]').trigger("click");
+  it("告警列表被约束在主区域内并独立滚动", async () => {
+    const wrapper = mount(App, { attachTo: document.body });
     await flushPromises();
+    const style = document.createElement("style");
+    style.textContent = styles;
+    document.head.append(style);
 
-    expect(wrapper.get('[data-testid="operation-error"]').text()).toContain(
-      "事故已被其他操作更新",
-    );
-    expect(wrapper.find('[data-testid="refresh-conflict"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="incident-owner"]').text()).toContain("未认领");
+    const pageStyle = getComputedStyle(wrapper.get('[data-testid="alert-center"]').element);
+    const workspaceStyle = getComputedStyle(wrapper.get(".raw-alert-workspace").element);
+    const listStyle = getComputedStyle(wrapper.get('[aria-label="告警列表"]').element);
+    const scrollStyle = getComputedStyle(wrapper.get(".raw-alert-scroll").element);
+    const pagerStyle = getComputedStyle(wrapper.get(".raw-alert-pagination").element);
+
+    expect(pageStyle.height).toBe("100%");
+    expect(pageStyle.overflow).toBe("hidden");
+    expect(workspaceStyle.minHeight).toBe("0");
+    expect(listStyle.overflow).toBe("hidden");
+    expect(scrollStyle.overflow).toBe("auto");
+    expect(pagerStyle.position).toBe("static");
+    expect(getComputedStyle(wrapper.get(".minimal-topbar h1").element).fontSize).toBe("16px");
+    expect(getComputedStyle(wrapper.get(".trend-range-select select").element).height).toBe("40px");
+    style.remove();
+    wrapper.unmount();
   });
 });

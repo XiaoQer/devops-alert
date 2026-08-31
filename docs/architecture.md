@@ -1,104 +1,94 @@
-# 架构意图
+# 当前架构
 
-> 状态：总体设计、多源信号接入、MySQL 8.4 持久化、可解释告警事件聚类和事故人工处置已验收。
+## 运行组件
 
-## 项目边界
+- 一个 Python/FastAPI 后端；
+- 一个 Vue 3 前端；
+- 一个 MySQL 8.4 数据库。
 
-本仓库是独立的生产事故智能平台。故障注入平台位于其他仓库，拥有独立 Git 历史、构建、数据库、权限和部署。两个平台不共享源码模块、数据库或运行时开关，只能通过正式版本化 API、Webhook 和事件契约联调。
+当前没有关联 Worker、诊断 Worker或 AI Worker。
 
-非生产故障实验制造真实业务异常后，监控系统像生产环境一样独立产生信号。本平台不知道注入动作。报告封存后，故障平台一侧的隔离评测器可以通过只读公开接口评分，但不得回写事故事实或 AI 报告。
+## 数据流
 
-## 默认部署
-
-一个统一 UI 与一个逻辑核心控制器构成默认安装。核心控制器内置：
-
-- Signal Ingestion Gateway；
-- Adapter Registry；
-- Signal/Alert Store；
-- Service Catalog；
-- Correlation Engine；
-- Incident Manager；
-- Diagnosis Orchestrator；
-- Capability Resolver。
-
-按需注册的独立 Worker 包括：
-
-- Diagnosis Worker；
-- Analysis Worker；
-- 后续 Notification/Collaboration Worker；
-- 后续 Correlation Learning Worker。
-
-注册只声明能力、依赖和健康状态；异步任务使用持久任务、租约和过期接管，不通过注册回调传递业务任务。
+```text
+Alertmanager / CloudEvents
+          ↓
+来源认证、容量限制与安全规范化
+          ↓
+Alertmanager Watchdog 心跳忽略
+          ↓
+来源事件身份幂等检查
+          ↓
+同一 MySQL 事务
+  ├─ 不可变 SignalEvent + 接入结果 + 回执 + 有界审计
+  └─ Alert 生命周期新建或更新
+          ↓
+告警列表、详情和按首次接收时间统计的趋势
+          ↓
+用户定义 Incident 规则草稿
+          ↓
+有界只读历史试运行（最多扫描 10,000 条 Alert）
+          ↓
+发布或停用规则（当前不创建 Incident）
+```
 
 ## 领域边界
 
-- `SignalEvent`：外部系统发生的一次不可变事实；
-- `Alert`：相同来源条件的去重和当前状态投影；
-- `AlertGroup`：一次实际发生的告警事件投影；由环境、实体与服务、拓扑、时间、问题语义和已确认历史进行版本化聚类，并作为事故关联调度单位；
-- `Incident`：需要协调、调查、缓解或恢复验证的运营对象；
-- `DiagnosisRun`：事故某一上下文版本的一次自动诊断尝试。
+### AlertSource
 
-三套状态机独立：
+描述谁可以向平台发送数据，包括来源类型、可信环境、启停状态、凭据和接收统计。来源停用后可以修改环境；已有 Alert 保存的是接收时环境快照，不随来源配置变化。
 
-- 告警：`ACTIVE → RESOLVED`，或 `SUPPRESSED`；
-- 事故：`DETECTED → TRIAGING → INVESTIGATING → MITIGATING → MONITORING_RECOVERY → RESOLVED → CLOSED`；
-- 诊断：`QUEUED → COLLECTING → NORMALIZING → SNAPSHOT_READY → ANALYZING → REPORT_READY`，并有部分、失败和人工复核分支。
+### SignalEvent
 
-## 主数据流
+描述平台首次收到的一次规范化外部告警事实。firing 与 resolved 分别保存，用于传输幂等、冲突保护、审计和回放，不直接作为用户侧告警数量。
 
-1. 来源适配器认证、校验并输出统一 SignalEvent；
-2. 平台按来源稳定身份幂等保存事件；
-3. 适配器去重键把触发、更新和恢复聚合为 Alert；
-4. 事件聚类先以环境、时间和强锚点有界召回候选，再按实体与服务、拓扑、时间、问题语义和已确认历史进行可解释评分，把相关 Alert 投影为 AlertGroup；
-5. 服务目录补充实体、环境、所有者和一跳依赖；
-6. 事故候选规则过滤维护窗口、噪声和不可行动告警；
-7. 关联引擎以 AlertGroup 为调度单位，依据实体、时间、拓扑、症状和变更选择已有事故或创建新事故；
-8. 诊断编排器组合通用基础包、实体包、症状增强包和受控服务扩展；
-9. Diagnosis Worker 执行版本化预定义只读查询并生成确定性中文结果；
-10. 系统封存不可变证据快照；
-11. Analysis Worker 生成报告并通过 Schema、证据引用和事实一致性校验；
-12. 操作员认领、调查、缓解、恢复验证、解决和关闭事故；
-13. 新信号或延迟证据只产生新版本，不覆盖历史事件、快照和报告。
+### Alert
 
-当前已实现 SignalEvent、Alert、AlertGroup、服务目录、事件生命周期、人工纠错、组级持久关联任务和 Incident 的首版确定性链路。新 Alert 先异步聚类，高置信结果自动加入，中置信结果进入待确认，低置信结果保持独立；事件通过持久任务在 FORMING、ACTIVE、OBSERVING 和 CLOSED 之间转换，再由可合并的组级任务关联事故。人工确认、拆分和合并使用版本检查、幂等键、单事务与不可变审计；事故人工处置已经实现，核心告警识别、自动取证、DiagnosisRun 自动创建和 AI 尚未实现。
+描述一次告警周期。周期身份为：
 
-问题签名与资源实体严格分离：Pod、Node、Instance 和 Container 是影响对象，不直接充当问题主键。范围按 SERVICE、WORKLOAD、NAMESPACE、CLUSTER、JOB、SOURCE 的固定优先级推导；service 缺失时允许形成可运营告警组，但事故关联保存明确跳过决策，不虚构服务或事故。
+```text
+(alert_source_id, source_alert_key, episode_started_at)
+```
 
-## 关联策略
+首期只有 `ACTIVE` 和 `RESOLVED` 两种状态。同一周期重复 firing 只更新最近时间；resolved 更新原 Alert；resolved 先到时创建不完整的已恢复 Alert，晚到 firing 只补全事实而不重新打开。
 
-已实现的首版只使用可审核的确定性规则：
+### SignalIntakeResult
 
-- 已有关联保持不变，恢复只记录事实而不自动关闭事故；
-- 同一服务、同一环境、15 分钟窗口内唯一活动候选自动关联；
-- 多个同服务候选创建独立事故并记录歧义；
-- 服务目录一跳双向邻接且症状标准化结果相同时，只创建独立事故并提示候选；
-- 跨环境、窗口外、终态事故、未知症状和不满足运营门槛的告警不参与自动合并。
+保存来源事件身份、内容指纹、SignalEvent ID 和 Alert ID，用于精确重放和内容冲突保护。
 
-每次自动关联必须保存规则版本、事实、固定原因码和中文解释。高可信规则才能自动合并；中低可信候选创建独立事故并提示可能相关。关联引擎异常时安全退化为独立事故。
+### IncidentRule
 
-## 诊断策略
+描述用户定义的 Incident 识别条件，与 Incident 实例相互独立。规则状态为 `DRAFT`、`PUBLISHED` 或 `DISABLED`；发布版本不可直接修改，只能复制为新草稿。环境是强制隔离边界，来源和服务是可选过滤条件，分组只支持同一服务或同一实体，全部条件使用 AND。
 
-每次 DiagnosisRun 组合：
+### IncidentRuleDryRun
 
-1. 通用基础包；
-2. Kubernetes、JVM、Node.js、MySQL、外部 HTTP 等实体类型包；
-3. CPU、内存/OOM、延迟/错误率、Pod 重启、数据库连接/锁等待等症状增强包；
-4. 通过 Schema、安全审核和回放测试的服务专用扩展。
+保存某一规则版本在指定历史范围上的只读评估结果，包括扫描数量、命中窗口、示例 Alert 和是否达到安全上限。只有当前版本存在成功且未截断的试运行结果时才允许发布。试运行不写入 Incident。
 
-每项排查必须预先声明查询、参数、超时、容量、脱敏、结果转换、证据角色和失败语义。AI 只接收封存后的事故事实、拓扑摘要、排查结果和代表性证据。
+## 事务与并发
 
-## 技术约束
+- SignalEvent、Alert 投影、接入结果和审计在同一事务提交或回滚；
+- Alert 周期唯一约束是并发收敛的最终防线；
+- 更新使用行锁和乐观版本条件；
+- 精确重放返回原 SignalEvent ID 与 Alert ID，不重复更新 Alert 版本；
+- 历史回填按稳定顺序和有界批次执行，可重复运行。
+- 规则修改、发布、停用、复制和删除草稿使用版本号与幂等键，避免并发页面互相覆盖；
+- 规则试运行最多读取 10,001 条记录以识别截断，最多返回 100 个命中和每个命中 10 个示例 Alert。
 
-- 后端统一采用 Python，HTTP API 使用 FastAPI，输入输出模型使用 Pydantic；
-- 数据访问使用 SQLAlchemy，数据库迁移使用 Alembic，主数据库使用 MySQL 8.4、InnoDB、utf8mb4 和 READ COMMITTED；
-- 前端采用 Vue 3、TypeScript 和 Vite，页面状态使用 Pinia；
-- 后端发布 OpenAPI 契约，前端从契约生成接口类型，不手工维护重复 DTO；
-- Diagnosis Worker 和 Analysis Worker 继续采用 Python，通过版本化任务契约按能力注册，不直接依赖前端；
-- 首期异步任务使用 MySQL 持久任务、租约、心跳和超时接管，暂不引入 Kafka；
-- 信号接入在 MySQL 1205/1213 锁冲突时最多使用三次全新事务重试，其他数据库错误直接失败并保留可观测错误语义；
-- 后端测试使用 Pytest，前端单元测试使用 Vitest，关键业务旅程使用 Playwright；
-- 前后端形成独立构建制品，默认作为一套平台部署；可选 Worker 独立部署和扩缩容；
-- 首版不使用 Kafka、图数据库或完整 Backstage；
-- 外部事件契约参考 CloudEvents 1.0；
-- 服务与资源身份优先采用 OpenTelemetry Resource/Semantic Conventions；
-- 具体运行时版本、依赖版本、目录结构和本地启动方式由阶段 1 实施计划锁定。
+## API 边界
+
+保留：
+
+- `/api/v1/alert-sources`
+- `/api/v1/intake/alertmanager`
+- `/api/v1/intake/cloudevents`
+- `/api/v1/alerts`
+- `/api/v1/alerts/timeseries`
+- `/api/v1/incident-rules`
+- `/health/live`
+- `/health/ready`
+
+`/api/v1/alerts` 与详情按 Alert ID 读取生命周期；趋势按 `first_received_at` 统计新建 Alert。`/api/v1/incident-rules` 提供规则管理、历史试运行、发布、停用和复制；它不创建 Incident。旧告警汇总、告警组、目录、关联、事故、人工事故报告和诊断 API 不注册。
+
+## 历史兼容
+
+仓库保留已有 Alembic 历史迁移，避免破坏已安装数据库。旧复杂业务表不再由运行时读写；新物理表使用 `alert_lifecycles`，避免复用带旧事故外键的历史 `alerts` 表。

@@ -9,16 +9,8 @@ from pydantic import SecretStr
 
 from incident_intelligence.api.errors import ApiError
 from incident_intelligence.services.alert_center import AlertCenterService
-from incident_intelligence.services.alert_event_operations import AlertEventOperationService
-from incident_intelligence.services.alert_group_center import AlertGroupCenterService
-from incident_intelligence.services.alert_regrouping import AlertRegroupingService
 from incident_intelligence.services.alert_sources import AlertSourceService
-from incident_intelligence.services.catalog import ServiceCatalogService
-from incident_intelligence.services.correlation import CorrelationReadService
-from incident_intelligence.services.correlation_jobs import CorrelationJobService
-from incident_intelligence.services.incident_center import IncidentCenterService
-from incident_intelligence.services.incident_operations import IncidentOperationService
-from incident_intelligence.services.manual_intake import ManualIntakeService
+from incident_intelligence.services.incident_rules import IncidentRuleService
 from incident_intelligence.services.signal_intake import SignalIntakeService
 from incident_intelligence.services.source_authentication import SourceAuthenticationService
 from incident_intelligence.services.source_receipts import SourceReceiptService
@@ -74,10 +66,6 @@ def require_idempotency_key(
     return normalized
 
 
-def get_manual_intake_service(request: Request) -> ManualIntakeService:
-    return cast(ManualIntakeService, request.app.state.manual_intake_service)
-
-
 def get_alert_source_service(request: Request) -> AlertSourceService:
     return cast(AlertSourceService, request.app.state.alert_source_service)
 
@@ -86,16 +74,8 @@ def get_alert_center_service(request: Request) -> AlertCenterService:
     return cast(AlertCenterService, request.app.state.alert_center_service)
 
 
-def get_alert_group_center_service(request: Request) -> AlertGroupCenterService:
-    return cast(AlertGroupCenterService, request.app.state.alert_group_center_service)
-
-
-def get_alert_event_operation_service(request: Request) -> AlertEventOperationService:
-    return cast(AlertEventOperationService, request.app.state.alert_event_operation_service)
-
-
-def get_alert_regrouping_service(request: Request) -> AlertRegroupingService:
-    return cast(AlertRegroupingService, request.app.state.alert_regrouping_service)
+def get_incident_rule_service(request: Request) -> IncidentRuleService:
+    return cast(IncidentRuleService, request.app.state.incident_rule_service)
 
 
 def get_source_authentication_service(request: Request) -> SourceAuthenticationService:
@@ -108,23 +88,3 @@ def get_source_receipt_service(request: Request) -> SourceReceiptService:
 
 def get_signal_intake_service(request: Request) -> SignalIntakeService:
     return cast(SignalIntakeService, request.app.state.signal_intake_service)
-
-
-def get_catalog_service(request: Request) -> ServiceCatalogService:
-    return cast(ServiceCatalogService, request.app.state.catalog_service)
-
-
-def get_correlation_read_service(request: Request) -> CorrelationReadService:
-    return cast(CorrelationReadService, request.app.state.correlation_read_service)
-
-
-def get_correlation_job_service(request: Request) -> CorrelationJobService:
-    return cast(CorrelationJobService, request.app.state.correlation_job_service)
-
-
-def get_incident_center_service(request: Request) -> IncidentCenterService:
-    return cast(IncidentCenterService, request.app.state.incident_center_service)
-
-
-def get_incident_operation_service(request: Request) -> IncidentOperationService:
-    return cast(IncidentOperationService, request.app.state.incident_operation_service)

@@ -7,44 +7,27 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from incident_intelligence.persistence.models import (
-    AlertGroupCorrelationJobRow,
-    AlertGroupDecisionRow,
-    AlertGroupMemberRow,
-    AlertGroupRow,
-    AlertRow,
-    AlertSourceRow,
-    CorrelationDecisionRow,
-    CorrelationJobRow,
-    IncidentAlertLinkRow,
-    IncidentRow,
-    SignalEventRow,
-    SignalIntakeResultRow,
-)
+from incident_intelligence.domain.incident_rule_evaluation import AlertEvaluationFact
+from incident_intelligence.persistence.models import AlertLifecycleRow, AlertSourceRow
 
 
 @dataclass(frozen=True, slots=True)
-class AlertListRecord:
-    alert: AlertRow
-    source: AlertSourceRow
-    incident_id: str | None
-    signal_count: int
-
-
-@dataclass(frozen=True, slots=True)
-class AlertOverviewRecord:
-    alert: AlertRow
+class AlertRecord:
+    alert: AlertLifecycleRow
     source: AlertSourceRow
 
 
 @dataclass(frozen=True, slots=True)
-class CorrelationRecord:
-    job: CorrelationJobRow | AlertGroupCorrelationJobRow | None
-    decision: CorrelationDecisionRow | AlertGroupDecisionRow | None
-    incident: IncidentRow | None
+class AlertTrendCount:
+    source_id: str
+    source_name: str
+    source_type: str
+    management_type: str
+    bucket_epoch: int
+    count: int
 
 
-class AlertCenterRepository:
+class AlertRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -54,241 +37,188 @@ class AlertCenterRepository:
         alert_source_id: str | None,
         state: str | None,
         severity: str | None,
-        service: str | None,
         environment: str | None,
-        incident_linked: bool | None,
+        service: str | None,
         observed_from: datetime | None,
         observed_to: datetime | None,
+        received_from: datetime | None,
+        received_to: datetime | None,
         query: str | None,
         limit: int,
         offset: int,
-    ) -> tuple[AlertListRecord, ...]:
-        signal_counts = (
-            select(
-                SignalIntakeResultRow.alert_id.label("alert_id"),
-                func.count(func.distinct(SignalIntakeResultRow.signal_event_id)).label(
-                    "signal_count"
-                ),
-            )
-            .where(SignalIntakeResultRow.alert_id.is_not(None))
-            .group_by(SignalIntakeResultRow.alert_id)
-            .subquery()
-        )
-        statement = (
-            select(
-                AlertRow,
-                AlertSourceRow,
-                IncidentAlertLinkRow.incident_id,
-                func.coalesce(signal_counts.c.signal_count, 1),
-            )
-            .join(AlertSourceRow, AlertSourceRow.id == AlertRow.alert_source_id)
-            .outerjoin(IncidentAlertLinkRow, IncidentAlertLinkRow.alert_id == AlertRow.id)
-            .outerjoin(signal_counts, signal_counts.c.alert_id == AlertRow.id)
+    ) -> tuple[AlertRecord, ...]:
+        statement = select(AlertLifecycleRow, AlertSourceRow).join(
+            AlertSourceRow, AlertSourceRow.id == AlertLifecycleRow.alert_source_id
         )
         statement = _apply_filters(
             statement,
             alert_source_id=alert_source_id,
             state=state,
             severity=severity,
-            service=service,
             environment=environment,
-            incident_linked=incident_linked,
+            service=service,
             observed_from=observed_from,
             observed_to=observed_to,
+            received_from=received_from,
+            received_to=received_to,
             query=query,
         )
         rows = self._session.execute(
-            statement.order_by(AlertRow.last_observed_at.desc(), AlertRow.id.desc())
+            statement.order_by(
+                AlertLifecycleRow.first_received_at.desc(),
+                AlertLifecycleRow.id.desc(),
+            )
             .limit(limit)
             .offset(offset)
         )
+        return tuple(AlertRecord(alert=row[0], source=row[1]) for row in rows)
+
+    def count_alerts(self, **filters: Any) -> int:
+        statement = _apply_filters(
+            select(func.count()).select_from(AlertLifecycleRow),
+            **filters,
+        )
+        return self._session.scalar(statement) or 0
+
+    def find_alert(self, alert_id: str) -> AlertRecord | None:
+        row = self._session.execute(
+            select(AlertLifecycleRow, AlertSourceRow)
+            .join(AlertSourceRow, AlertSourceRow.id == AlertLifecycleRow.alert_source_id)
+            .where(AlertLifecycleRow.id == alert_id)
+        ).one_or_none()
+        return None if row is None else AlertRecord(alert=row[0], source=row[1])
+
+    def count_by_source_and_first_received_bucket(
+        self,
+        *,
+        received_from: datetime,
+        received_to: datetime,
+        bucket_seconds: int,
+    ) -> tuple[AlertTrendCount, ...]:
+        bucket_epoch = (
+            func.floor(func.unix_timestamp(AlertLifecycleRow.first_received_at) / bucket_seconds)
+            * bucket_seconds
+        ).label("bucket_epoch")
+        rows = self._session.execute(
+            select(
+                AlertSourceRow.id,
+                AlertSourceRow.name,
+                AlertSourceRow.source_type,
+                AlertSourceRow.management_type,
+                bucket_epoch,
+                func.count().label("alert_count"),
+            )
+            .join(AlertSourceRow, AlertSourceRow.id == AlertLifecycleRow.alert_source_id)
+            .where(
+                AlertLifecycleRow.first_received_at >= received_from,
+                AlertLifecycleRow.first_received_at < received_to,
+            )
+            .group_by(
+                AlertSourceRow.id,
+                AlertSourceRow.name,
+                AlertSourceRow.source_type,
+                AlertSourceRow.management_type,
+                bucket_epoch,
+            )
+            .order_by(AlertSourceRow.name, AlertSourceRow.id, bucket_epoch)
+        )
         return tuple(
-            AlertListRecord(
-                alert=row[0],
-                source=row[1],
-                incident_id=row[2],
-                signal_count=row[3],
+            AlertTrendCount(
+                source_id=row[0],
+                source_name=row[1],
+                source_type=row[2],
+                management_type=row[3],
+                bucket_epoch=int(row[4]),
+                count=int(row[5]),
             )
             for row in rows
         )
 
-    def count_alerts(
+    def list_for_rule_evaluation(
         self,
         *,
-        alert_source_id: str | None,
-        state: str | None,
-        severity: str | None,
-        service: str | None,
-        environment: str | None,
-        incident_linked: bool | None,
-        observed_from: datetime | None,
-        observed_to: datetime | None,
-        query: str | None,
-    ) -> int:
-        statement = (
-            select(func.count())
-            .select_from(AlertRow)
-            .outerjoin(IncidentAlertLinkRow, IncidentAlertLinkRow.alert_id == AlertRow.id)
+        environment: str,
+        alert_source_ids: tuple[str, ...],
+        services: tuple[str, ...],
+        received_from: datetime,
+        received_to: datetime,
+        limit: int,
+    ) -> tuple[AlertEvaluationFact, ...]:
+        statement = select(AlertLifecycleRow).where(
+            AlertLifecycleRow.environment == environment,
+            AlertLifecycleRow.first_received_at >= received_from,
+            AlertLifecycleRow.first_received_at < received_to,
         )
-        statement = _apply_filters(
-            statement,
-            alert_source_id=alert_source_id,
-            state=state,
-            severity=severity,
-            service=service,
-            environment=environment,
-            incident_linked=incident_linked,
-            observed_from=observed_from,
-            observed_to=observed_to,
-            query=query,
-        )
-        return self._session.scalar(statement) or 0
-
-    def find_alert(self, alert_id: str) -> AlertOverviewRecord | None:
-        row = self._session.execute(
-            select(AlertRow, AlertSourceRow)
-            .join(AlertSourceRow, AlertSourceRow.id == AlertRow.alert_source_id)
-            .where(AlertRow.id == alert_id)
-        ).one_or_none()
-        if row is None:
-            return None
-        return AlertOverviewRecord(alert=row[0], source=row[1])
-
-    def find_signal(self, signal_event_id: str) -> SignalEventRow | None:
-        return self._session.get(SignalEventRow, signal_event_id)
-
-    def find_alert_group(self, alert_id: str, alert_cycle: int) -> AlertGroupRow | None:
-        return self._session.scalar(
-            select(AlertGroupRow)
-            .join(
-                AlertGroupMemberRow,
-                AlertGroupMemberRow.alert_group_id == AlertGroupRow.id,
-            )
-            .where(
-                AlertGroupMemberRow.alert_id == alert_id,
-                AlertGroupMemberRow.alert_cycle == alert_cycle,
-            )
-        )
-
-    def alert_signals(self, alert: AlertRow, *, limit: int) -> tuple[SignalEventRow, ...]:
-        related_signal_ids = select(SignalIntakeResultRow.signal_event_id).where(
-            SignalIntakeResultRow.alert_id == alert.id
+        if alert_source_ids:
+            statement = statement.where(AlertLifecycleRow.alert_source_id.in_(alert_source_ids))
+        if services:
+            statement = statement.where(AlertLifecycleRow.service.in_(services))
+        rows = self._session.scalars(
+            statement.order_by(
+                AlertLifecycleRow.first_received_at,
+                AlertLifecycleRow.id,
+            ).limit(limit)
         )
         return tuple(
-            self._session.scalars(
-                select(SignalEventRow)
-                .where(
-                    or_(
-                        SignalEventRow.id == alert.signal_event_id,
-                        SignalEventRow.id.in_(related_signal_ids),
-                    )
-                )
-                .order_by(SignalEventRow.observed_at.desc(), SignalEventRow.id.desc())
-                .limit(limit)
+            AlertEvaluationFact.model_validate(
+                {
+                    "id": row.id,
+                    "alert_source_id": row.alert_source_id,
+                    "alert_name": row.alert_name,
+                    "state": row.state,
+                    "severity": row.severity,
+                    "environment": row.environment,
+                    "service": row.service,
+                    "entity_key": row.entity_key,
+                    "entity_display_name": row.entity_display_name,
+                    "first_received_at": row.first_received_at,
+                }
             )
+            for row in rows
         )
 
-    def correlation(self, alert_id: str) -> CorrelationRecord:
-        link = self._session.scalar(
-            select(IncidentAlertLinkRow).where(IncidentAlertLinkRow.alert_id == alert_id)
-        )
-        if link is not None and link.group_decision_id is not None:
-            group_decision = self._session.get(AlertGroupDecisionRow, link.group_decision_id)
-            group_job = (
-                None
-                if group_decision is None
-                else self._session.get(AlertGroupCorrelationJobRow, group_decision.job_id)
-            )
-            incident = self._session.get(IncidentRow, link.incident_id)
-            return CorrelationRecord(
-                job=group_job,
-                decision=group_decision,
-                incident=incident,
-            )
-        job = self._session.scalar(
-            select(CorrelationJobRow)
-            .where(CorrelationJobRow.alert_id == alert_id)
-            .order_by(CorrelationJobRow.alert_version.desc(), CorrelationJobRow.created_at.desc())
-            .limit(1)
-        )
-        if job is None:
-            return CorrelationRecord(job=None, decision=None, incident=None)
-        decision = self._session.scalar(
-            select(CorrelationDecisionRow).where(CorrelationDecisionRow.job_id == job.id)
-        )
-        incident = None if link is None else self._session.get(IncidentRow, link.incident_id)
-        return CorrelationRecord(job=job, decision=decision, incident=incident)
 
-    def summary_counts(self, *, cutoff: datetime) -> tuple[int, int, int, int]:
-        active = (
-            self._session.scalar(
-                select(func.count()).select_from(AlertRow).where(AlertRow.state == "ACTIVE")
-            )
-            or 0
-        )
-        severe_active = (
-            self._session.scalar(
-                select(func.count())
-                .select_from(AlertRow)
-                .where(AlertRow.state == "ACTIVE", AlertRow.severity.in_(("critical", "high")))
-            )
-            or 0
-        )
-        resolved = (
-            self._session.scalar(
-                select(func.count())
-                .select_from(AlertRow)
-                .where(AlertRow.state == "RESOLVED", AlertRow.state_changed_at >= cutoff)
-            )
-            or 0
-        )
-        unlinked_active = (
-            self._session.scalar(
-                select(func.count())
-                .select_from(AlertRow)
-                .outerjoin(IncidentAlertLinkRow, IncidentAlertLinkRow.alert_id == AlertRow.id)
-                .where(AlertRow.state == "ACTIVE", IncidentAlertLinkRow.incident_id.is_(None))
-            )
-            or 0
-        )
-        return active, severe_active, resolved, unlinked_active
-
-    def active_by_source(self) -> tuple[tuple[AlertSourceRow, int], ...]:
-        rows = self._session.execute(
-            select(AlertSourceRow, func.count(AlertRow.id))
-            .join(AlertRow, AlertRow.alert_source_id == AlertSourceRow.id)
-            .where(AlertRow.state == "ACTIVE")
-            .group_by(AlertSourceRow.id)
-            .order_by(func.count(AlertRow.id).desc(), AlertSourceRow.name, AlertSourceRow.id)
-            .limit(100)
-        )
-        return tuple((row[0], row[1]) for row in rows)
-
-
-def _apply_filters(statement: Any, **filters: Any) -> Any:
-    if filters["alert_source_id"] is not None:
-        statement = statement.where(AlertRow.alert_source_id == filters["alert_source_id"])
-    if filters["state"] is not None:
-        statement = statement.where(AlertRow.state == filters["state"])
-    if filters["severity"] is not None:
-        statement = statement.where(AlertRow.severity == filters["severity"])
-    if filters["service"] is not None:
-        statement = statement.where(AlertRow.service == filters["service"])
-    if filters["environment"] is not None:
-        statement = statement.where(AlertRow.environment == filters["environment"])
-    if filters["incident_linked"] is True:
-        statement = statement.where(IncidentAlertLinkRow.incident_id.is_not(None))
-    elif filters["incident_linked"] is False:
-        statement = statement.where(IncidentAlertLinkRow.incident_id.is_(None))
-    if filters["observed_from"] is not None:
-        statement = statement.where(AlertRow.last_observed_at >= filters["observed_from"])
-    if filters["observed_to"] is not None:
-        statement = statement.where(AlertRow.last_observed_at <= filters["observed_to"])
-    if filters["query"] is not None:
+def _apply_filters(
+    statement: Any,
+    *,
+    alert_source_id: str | None,
+    state: str | None,
+    severity: str | None,
+    environment: str | None,
+    service: str | None,
+    observed_from: datetime | None,
+    observed_to: datetime | None,
+    received_from: datetime | None,
+    received_to: datetime | None,
+    query: str | None,
+) -> Any:
+    if alert_source_id is not None:
+        statement = statement.where(AlertLifecycleRow.alert_source_id == alert_source_id)
+    if state is not None:
+        statement = statement.where(AlertLifecycleRow.state == state)
+    if severity is not None:
+        statement = statement.where(AlertLifecycleRow.severity == severity)
+    if environment is not None:
+        statement = statement.where(AlertLifecycleRow.environment == environment)
+    if service is not None:
+        statement = statement.where(AlertLifecycleRow.service == service)
+    if observed_from is not None:
+        statement = statement.where(AlertLifecycleRow.first_observed_at >= observed_from)
+    if observed_to is not None:
+        statement = statement.where(AlertLifecycleRow.first_observed_at <= observed_to)
+    if received_from is not None:
+        statement = statement.where(AlertLifecycleRow.first_received_at >= received_from)
+    if received_to is not None:
+        statement = statement.where(AlertLifecycleRow.first_received_at <= received_to)
+    if query is not None:
+        pattern = f"%{query}%"
         statement = statement.where(
             or_(
-                AlertRow.title.contains(filters["query"], autoescape=True),
-                AlertRow.service.contains(filters["query"], autoescape=True),
+                AlertLifecycleRow.alert_name.like(pattern),
+                AlertLifecycleRow.summary.like(pattern),
+                AlertLifecycleRow.description.like(pattern),
+                AlertLifecycleRow.service.like(pattern),
+                AlertLifecycleRow.entity_display_name.like(pattern),
             )
         )
     return statement

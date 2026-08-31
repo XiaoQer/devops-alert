@@ -1,4 +1,4 @@
-import { onBeforeUnmount, onMounted, ref, toRaw } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 
 import {
   copyIncidentRule,
@@ -11,7 +11,7 @@ import {
   publishIncidentRule,
   updateIncidentRule,
 } from "../api/incidentRules";
-import { createEmptyRuleDraft, ruleToDraft, toIncidentRuleListItem } from "../presentation/incidentRuleView";
+import { cloneRuleData, createEmptyRuleDraft, ruleToDraft, toIncidentRuleListItem } from "../presentation/incidentRuleView";
 
 const safeMessage = (error, fallback) => typeof error?.userMessage === "string" ? error.userMessage : fallback;
 const operationKey = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -58,7 +58,7 @@ export function useIncidentRules({ autoLoad = true } = {}) {
   }
 
   function openRule(rule) {
-    currentRule.value = structuredClone(rule);
+    currentRule.value = cloneRuleData(rule);
     draft.value = ruleToDraft(rule);
     dryRunResult.value = null;
     operationState.value = "idle";
@@ -101,7 +101,7 @@ export function useIncidentRules({ autoLoad = true } = {}) {
     operationState.value = "pending";
     operationError.value = "";
     try {
-      const command = structuredClone(toRaw(draft.value));
+      const command = cloneRuleData(draft.value);
       const result = currentRule.value
         ? await updateIncidentRule(
           currentRule.value.id,

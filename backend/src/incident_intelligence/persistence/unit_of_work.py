@@ -4,10 +4,11 @@ from types import TracebackType
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from incident_intelligence.persistence.alert_group_repository import AlertGroupRepository
+from incident_intelligence.persistence.alert_lifecycle_repository import (
+    AlertLifecycleRepository,
+)
 from incident_intelligence.persistence.alert_source_repository import AlertSourceRepository
-from incident_intelligence.persistence.catalog_repository import ServiceCatalogRepository
-from incident_intelligence.persistence.correlation_repository import CorrelationRepository
+from incident_intelligence.persistence.incident_rule_repository import IncidentRuleRepository
 from incident_intelligence.persistence.repositories import RecordRepositories
 
 
@@ -17,17 +18,15 @@ class SqlAlchemyUnitOfWork:
         self.session: Session | None = None
         self.records: RecordRepositories | None = None
         self.alert_sources: AlertSourceRepository | None = None
-        self.alert_groups: AlertGroupRepository | None = None
-        self.catalog: ServiceCatalogRepository | None = None
-        self.correlation: CorrelationRepository | None = None
+        self.alert_lifecycles: AlertLifecycleRepository | None = None
+        self.incident_rules: IncidentRuleRepository | None = None
 
     def __enter__(self) -> SqlAlchemyUnitOfWork:
         self.session = self._session_factory()
         self.records = RecordRepositories(self.session)
         self.alert_sources = AlertSourceRepository(self.session)
-        self.alert_groups = AlertGroupRepository(self.session)
-        self.catalog = ServiceCatalogRepository(self.session)
-        self.correlation = CorrelationRepository(self.session)
+        self.alert_lifecycles = AlertLifecycleRepository(self.session)
+        self.incident_rules = IncidentRuleRepository(self.session)
         return self
 
     def commit(self) -> None:

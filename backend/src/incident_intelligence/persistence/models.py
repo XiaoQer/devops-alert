@@ -227,9 +227,13 @@ class SignalEventRow(Base):
     )
     source: Mapped[str] = mapped_column(String(64), nullable=False)
     source_event_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    source_alert_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    episode_started_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
     event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    alert_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     summary: Mapped[str] = mapped_column(String(2_000), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(2_000), nullable=True)
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
     service: Mapped[str | None] = mapped_column(String(128), nullable=True)
     entity_type: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -295,6 +299,186 @@ class AlertRow(Base):
     state_changed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     version: Mapped[int] = mapped_column(nullable=False)
+
+
+class AlertLifecycleRow(Base):
+    __tablename__ = "alert_lifecycles"
+    __table_args__ = (
+        CheckConstraint(f"severity IN ({SEVERITY_VALUES})", name="severity"),
+        CheckConstraint(ENVIRONMENT_CHECK, name="environment"),
+        CheckConstraint(
+            "entity_type IN ('SERVICE','WORKLOAD','POD','NODE','JOB',"
+            "'INSTANCE','CLUSTER','UNKNOWN')",
+            name="entity_type",
+        ),
+        CheckConstraint("char_length(entity_key) = 64", name="entity_key"),
+        CheckConstraint("version >= 1", name="version"),
+        CheckConstraint(
+            "(state = 'ACTIVE' AND resolved_at IS NULL AND firing_observed = 1) "
+            "OR (state = 'RESOLVED' AND resolved_at IS NOT NULL "
+            "AND resolved_at >= episode_started_at)",
+            name="state",
+        ),
+        UniqueConstraint(
+            "alert_source_id",
+            "source_alert_key",
+            "episode_started_at",
+            name="alert_lifecycle_identity",
+        ),
+        Index("ix_alert_lifecycles_state", "state"),
+        Index("ix_alert_lifecycles_source_received", "alert_source_id", "first_received_at"),
+        Index("ix_alert_lifecycles_first_received_at", "first_received_at"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    alert_source_id: Mapped[str] = mapped_column(
+        ForeignKey("alert_sources.id", ondelete="RESTRICT"), nullable=False
+    )
+    source_alert_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    episode_started_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    alert_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    summary: Mapped[str] = mapped_column(String(2_000), nullable=False)
+    description: Mapped[str] = mapped_column(String(2_000), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    service: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    entity_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    entity_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_display_name: Mapped[str] = mapped_column(String(257), nullable=False)
+    first_observed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    last_observed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    first_received_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    last_received_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    firing_observed: Mapped[bool] = mapped_column(nullable=False)
+    version: Mapped[int] = mapped_column(nullable=False, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class IncidentRuleRow(Base):
+    __tablename__ = "incident_rules"
+    __table_args__ = (
+        UniqueConstraint("name", name="rule_name"),
+        CheckConstraint("state IN ('DRAFT', 'PUBLISHED', 'DISABLED')", name="state"),
+        CheckConstraint(ENVIRONMENT_CHECK, name="environment"),
+        CheckConstraint("group_by IN ('SERVICE', 'ENTITY')", name="group_by"),
+        CheckConstraint("window_minutes BETWEEN 1 AND 60", name="window_minutes"),
+        CheckConstraint("version >= 1", name="version"),
+        CheckConstraint(
+            "JSON_TYPE(alert_source_ids) = 'ARRAY' AND JSON_LENGTH(alert_source_ids) <= 50",
+            name="source_ids",
+        ),
+        CheckConstraint(
+            "JSON_TYPE(services) = 'ARRAY' AND JSON_LENGTH(services) <= 50",
+            name="services",
+        ),
+        CheckConstraint(
+            "JSON_TYPE(conditions) = 'ARRAY' AND JSON_LENGTH(conditions) BETWEEN 1 AND 4",
+            name="conditions",
+        ),
+        CheckConstraint(
+            "(last_successful_dry_run_id IS NULL "
+            "AND last_successful_dry_run_version IS NULL "
+            "AND last_successful_dry_run_at IS NULL) OR "
+            "(last_successful_dry_run_id IS NOT NULL "
+            "AND last_successful_dry_run_version BETWEEN 1 AND version "
+            "AND last_successful_dry_run_at IS NOT NULL)",
+            name="dry_run_pair",
+        ),
+        CheckConstraint(
+            "(state = 'DRAFT' AND published_at IS NULL AND disabled_at IS NULL) OR "
+            "(state = 'PUBLISHED' AND published_at IS NOT NULL AND disabled_at IS NULL) OR "
+            "(state = 'DISABLED' AND published_at IS NOT NULL AND disabled_at IS NOT NULL)",
+            name="state_times",
+        ),
+        Index("ix_incident_rules_state", "state"),
+        Index("ix_incident_rules_updated_at", "updated_at", "id"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(String(1_000), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    alert_source_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    services: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    group_by: Mapped[str] = mapped_column(String(16), nullable=False)
+    window_minutes: Mapped[int] = mapped_column(nullable=False)
+    conditions: Mapped[list[dict[str, object]]] = mapped_column(JSON, nullable=False)
+    summary: Mapped[str] = mapped_column(String(2_000), nullable=False)
+    version: Mapped[int] = mapped_column(nullable=False)
+    last_successful_dry_run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    last_successful_dry_run_version: Mapped[int | None] = mapped_column(nullable=True)
+    last_successful_dry_run_at: Mapped[datetime | None] = mapped_column(
+        UtcDateTime(), nullable=True
+    )
+    published_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    disabled_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class IncidentRuleDryRunRow(Base):
+    __tablename__ = "incident_rule_dry_runs"
+    __table_args__ = (
+        CheckConstraint("rule_version >= 1", name="rule_version"),
+        CheckConstraint("history_hours IN (1, 6, 12, 24, 48)", name="history_hours"),
+        CheckConstraint(
+            "scanned_alert_count BETWEEN 0 AND 10001 AND match_count BETWEEN 0 AND 100",
+            name="counts",
+        ),
+        CheckConstraint(
+            "JSON_TYPE(matches) = 'ARRAY' AND JSON_LENGTH(matches) <= 100",
+            name="matches",
+        ),
+        Index("ix_incident_rule_dry_runs_rule_time", "rule_id", "executed_at", "id"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    rule_id: Mapped[str] = mapped_column(
+        ForeignKey("incident_rules.id", ondelete="CASCADE"), nullable=False
+    )
+    rule_version: Mapped[int] = mapped_column(nullable=False)
+    history_hours: Mapped[int] = mapped_column(nullable=False)
+    scanned_alert_count: Mapped[int] = mapped_column(nullable=False)
+    match_count: Mapped[int] = mapped_column(nullable=False)
+    truncated: Mapped[bool] = mapped_column(nullable=False)
+    matches: Mapped[list[dict[str, object]]] = mapped_column(JSON, nullable=False)
+    executed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class IncidentRuleOperationRow(Base):
+    __tablename__ = "incident_rule_operations"
+    __table_args__ = (
+        UniqueConstraint("scope", "idempotency_key_hash", name="incident_rule_operation_key"),
+        CheckConstraint(
+            "action IN ('CREATE', 'UPDATE', 'DELETE', 'PUBLISH', 'DISABLE', 'COPY')",
+            name="action",
+        ),
+        CheckConstraint(
+            "char_length(idempotency_key_hash) = 64 AND char_length(command_fingerprint) = 64",
+            name="hashes",
+        ),
+        CheckConstraint("result_version >= 1", name="result_version"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    scope: Mapped[str] = mapped_column(String(96), nullable=False)
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    command_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    rule_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    result_version: Mapped[int] = mapped_column(nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 class IncidentRow(Base):
@@ -903,6 +1087,7 @@ class SignalIntakeResultRow(Base):
         ),
         Index("ix_signal_intake_results_signal_event_id", "signal_event_id"),
         Index("ix_signal_intake_results_alert_id", "alert_id"),
+        Index("ix_signal_intake_results_alert_lifecycle_id", "alert_lifecycle_id"),
         _mysql_table_options(),
     )
 
@@ -917,6 +1102,9 @@ class SignalIntakeResultRow(Base):
     )
     alert_id: Mapped[str | None] = mapped_column(
         ForeignKey("alerts.id", ondelete="RESTRICT"), nullable=True
+    )
+    alert_lifecycle_id: Mapped[str | None] = mapped_column(
+        ForeignKey("alert_lifecycles.id", ondelete="RESTRICT"), nullable=True
     )
     outcome: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)

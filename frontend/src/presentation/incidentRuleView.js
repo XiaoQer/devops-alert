@@ -2,6 +2,10 @@ const stateLabels = { DRAFT: "草稿", PUBLISHED: "已发布", DISABLED: "已停
 const stateTones = { DRAFT: "draft", PUBLISHED: "published", DISABLED: "disabled" };
 const groupLabels = { SERVICE: "同一服务", ENTITY: "同一实体" };
 
+export function cloneRuleData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 export function toIncidentRuleListItem(rule) {
   return {
     ...rule,
@@ -31,7 +35,7 @@ export function ruleToDraft(rule) {
   return {
     name: rule.name,
     description: rule.description,
-    config: structuredClone(rule.config),
+    config: cloneRuleData(rule.config),
   };
 }
 

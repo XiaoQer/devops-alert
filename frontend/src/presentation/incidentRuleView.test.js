@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { createEmptyRuleDraft, toIncidentRuleListItem } from "./incidentRuleView";
+import { cloneRuleData, createEmptyRuleDraft, toIncidentRuleListItem } from "./incidentRuleView";
 
 describe("Incident 规则展示转换", () => {
+  it("可以安全复制代理形态的规则数据", () => {
+    const proxied = new Proxy({ environment: "production", conditions: [] }, {});
+    expect(cloneRuleData(proxied)).toEqual({ environment: "production", conditions: [] });
+  });
+
   it("把后端状态转换为中文且保留结构化配置", () => {
     const item = toIncidentRuleListItem({
       id: "irl_1", name: "支付异常", state: "PUBLISHED", summary: "生产环境内按服务分组",
