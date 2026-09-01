@@ -88,6 +88,23 @@ class AlertRepository:
         ).one_or_none()
         return None if row is None else AlertRecord(alert=row[0], source=row[1])
 
+    def get_evaluation_fact(self, alert_id: str) -> AlertEvaluationFact | None:
+        row = self._session.get(AlertLifecycleRow, alert_id)
+        return None if row is None else _evaluation_fact(row)
+
+    def list_evaluation_facts_by_ids(
+        self,
+        alert_ids: tuple[str, ...],
+    ) -> tuple[AlertEvaluationFact, ...]:
+        if not alert_ids:
+            return ()
+        rows = self._session.scalars(
+            select(AlertLifecycleRow)
+            .where(AlertLifecycleRow.id.in_(alert_ids))
+            .order_by(AlertLifecycleRow.first_received_at, AlertLifecycleRow.id)
+        )
+        return tuple(_evaluation_fact(row) for row in rows)
+
     def count_by_source_and_first_received_bucket(
         self,
         *,
@@ -159,23 +176,24 @@ class AlertRepository:
                 AlertLifecycleRow.id,
             ).limit(limit)
         )
-        return tuple(
-            AlertEvaluationFact.model_validate(
-                {
-                    "id": row.id,
-                    "alert_source_id": row.alert_source_id,
-                    "alert_name": row.alert_name,
-                    "state": row.state,
-                    "severity": row.severity,
-                    "environment": row.environment,
-                    "service": row.service,
-                    "entity_key": row.entity_key,
-                    "entity_display_name": row.entity_display_name,
-                    "first_received_at": row.first_received_at,
-                }
-            )
-            for row in rows
-        )
+        return tuple(_evaluation_fact(row) for row in rows)
+
+
+def _evaluation_fact(row: AlertLifecycleRow) -> AlertEvaluationFact:
+    return AlertEvaluationFact.model_validate(
+        {
+            "id": row.id,
+            "alert_source_id": row.alert_source_id,
+            "alert_name": row.alert_name,
+            "state": row.state,
+            "severity": row.severity,
+            "environment": row.environment,
+            "service": row.service,
+            "entity_key": row.entity_key,
+            "entity_display_name": row.entity_display_name,
+            "first_received_at": row.first_received_at,
+        }
+    )
 
 
 def _apply_filters(

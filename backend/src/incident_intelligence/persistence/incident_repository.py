@@ -227,6 +227,16 @@ class IncidentRepository:
             total=int(row[2]),
         )
 
+    def next_reference(self, now: datetime) -> str:
+        date_key = now.strftime("%Y%m%d")
+        prefix = f"INC-{date_key}-"
+        current = self._session.scalar(
+            select(func.count())
+            .select_from(OperationalIncidentRow)
+            .where(OperationalIncidentRow.reference.like(f"{prefix}%"))
+        )
+        return f"{prefix}{int(current or 0) + 1:03d}"
+
     def update(self, incident: Incident, *, expected_version: int) -> bool:
         values = _incident_values(incident)
         values.pop("id")
@@ -336,9 +346,56 @@ class IncidentEvaluationJobRepository:
         self._session.flush()
         return result.rowcount == 1
 
-    def get(self, job_id: str) -> IncidentEvaluationJobRecord | None:
-        row = self._session.get(IncidentEvaluationJobRow, job_id)
+    def get(
+        self,
+        job_id: str,
+        *,
+        for_update: bool = False,
+    ) -> IncidentEvaluationJobRecord | None:
+        statement = select(IncidentEvaluationJobRow).where(
+            IncidentEvaluationJobRow.id == job_id
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        row = self._session.scalar(statement)
         return None if row is None else _to_job(row)
+
+    def claim_due(
+        self,
+        job_id: str,
+        *,
+        owner: str,
+        now: datetime,
+        lease_until: datetime,
+    ) -> bool:
+        result = cast(
+            CursorResult[Any],
+            self._session.execute(
+                update(IncidentEvaluationJobRow)
+                .where(
+                    IncidentEvaluationJobRow.id == job_id,
+                    or_(
+                        (
+                            (IncidentEvaluationJobRow.state == "PENDING")
+                            & (IncidentEvaluationJobRow.available_at <= now)
+                        ),
+                        (
+                            (IncidentEvaluationJobRow.state == "LEASED")
+                            & (IncidentEvaluationJobRow.lease_expires_at <= now)
+                        ),
+                    ),
+                )
+                .values(
+                    state="LEASED",
+                    attempt_count=IncidentEvaluationJobRow.attempt_count + 1,
+                    lease_owner=owner,
+                    lease_expires_at=lease_until,
+                    updated_at=now,
+                )
+            ),
+        )
+        self._session.flush()
+        return result.rowcount == 1
 
     def lease_due(
         self,

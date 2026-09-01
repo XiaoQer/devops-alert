@@ -95,6 +95,15 @@ class IncidentRuleRepository:
             offset=offset,
         )
 
+    def list_published(self, *, limit: int = 101) -> tuple[IncidentRule, ...]:
+        rows = self._session.scalars(
+            select(IncidentRuleRow)
+            .where(IncidentRuleRow.state == "PUBLISHED")
+            .order_by(IncidentRuleRow.id)
+            .limit(limit)
+        )
+        return tuple(_to_rule(row) for row in rows)
+
     def update(self, rule: IncidentRule, *, expected_version: int) -> bool:
         values = _rule_values(rule)
         values.pop("id")
