@@ -471,6 +471,10 @@ Commit: `git add backend/src/incident_intelligence/services/incidents.py backend
 - Create: `backend/src/incident_intelligence/services/incident_notification_routes.py`
 - Create: `backend/src/incident_intelligence/api/schemas/incident_notification_routes.py`
 - Create: `backend/src/incident_intelligence/api/routes/incident_notification_routes.py`
+- Create: `backend/migrations/versions/0016_incident_notification_route_operations.py`
+- Modify: `backend/src/incident_intelligence/persistence/models.py`
+- Modify: `backend/src/incident_intelligence/persistence/incident_repository.py`
+- Modify: `backend/src/incident_intelligence/persistence/unit_of_work.py`
 - Modify: `backend/src/incident_intelligence/settings.py`
 - Modify: `backend/src/incident_intelligence/api/dependencies.py`
 - Modify: `backend/src/incident_intelligence/api/router.py`
@@ -483,7 +487,7 @@ Commit: `git add backend/src/incident_intelligence/services/incidents.py backend
 - Produces: `GET/POST /api/v1/incident-notification-routes`、`PATCH /api/v1/incident-notification-routes/{id}`。
 - Produces: `FeishuCapabilityView(configured: bool, missing_environment_keys: tuple[str, ...])`，只暴露是否完整，不暴露值。
 
-- [ ] **Step 1: 编写领域和配置失败测试**
+- [x] **Step 1: 编写领域和配置失败测试**
 
 ```python
 def test_route_requires_environment_chat_and_version():
@@ -497,13 +501,13 @@ def test_settings_never_render_feishu_secrets(settings_factory):
     assert "secret-value" not in settings.model_dump_json()
 ```
 
-- [ ] **Step 2: 运行测试并确认模型与配置缺失**
+- [x] **Step 2: 运行测试并确认模型与配置缺失**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/unit/domain/test_incident_notifications.py tests/api/test_incident_notification_routes.py -q`
 
 Expected: FAIL。
 
-- [ ] **Step 3: 实现路由服务和管理 API**
+- [x] **Step 3: 实现路由服务和管理 API**
 
 ```python
 class IncidentNotificationRoute(BaseModel):
@@ -517,7 +521,7 @@ class IncidentNotificationRoute(BaseModel):
 
 创建、修改使用现有 Bearer Token、幂等键和乐观版本；启用重复环境返回 `409 incident_notification_route_conflict`。应用凭据不完整时仍允许保存停用路由，但启用返回中文缺项码。
 
-- [ ] **Step 4: 运行测试并提交**
+- [x] **Step 4: 运行测试并提交**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/unit/domain/test_incident_notifications.py tests/api/test_incident_notification_routes.py -q`
 

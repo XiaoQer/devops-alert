@@ -23,6 +23,7 @@ def test_incident_operational_rows_are_registered_in_orm_metadata() -> None:
         "operational_incident_operations",
         "incident_evaluation_jobs",
         "incident_notification_routes",
+        "incident_notification_route_operations",
         "incident_notification_outbox",
         "incident_feishu_threads",
         "feishu_event_receipts",
@@ -43,6 +44,7 @@ def test_incident_operations_schema_uses_new_tables_without_reusing_legacy_incid
         "operational_incident_operations",
         "incident_evaluation_jobs",
         "incident_notification_routes",
+        "incident_notification_route_operations",
         "incident_notification_outbox",
         "incident_feishu_threads",
         "feishu_event_receipts",
@@ -70,6 +72,9 @@ def test_incident_schema_has_concurrency_and_idempotency_unique_constraints(
     )
     assert "operational_incident_operation_key" in _unique_names(
         inspector, "operational_incident_operations"
+    )
+    assert "incident_notification_route_operation_key" in _unique_names(
+        inspector, "incident_notification_route_operations"
     )
     assert {
         "incident_feishu_thread_incident",

@@ -6,7 +6,7 @@
 - 一个 Vue 3 前端；
 - 一个 MySQL 8.4 数据库。
 
-当前没有关联 Worker、诊断 Worker或 AI Worker。
+当前包含 Incident 评估 Worker；没有诊断 Worker 或 AI Worker。飞书通知 Outbox 已持久化，但投递 Worker 尚未实现。
 
 ## 数据流
 
@@ -29,7 +29,11 @@ Alertmanager Watchdog 心跳忽略
           ↓
 有界只读历史试运行（最多扫描 10,000 条 Alert）
           ↓
-发布或停用规则（当前不创建 Incident）
+发布或停用规则
+          ↓
+Incident 评估 Worker 创建或更新正式 Incident
+          ↓
+Incident 查询、确认、解决与飞书群路由配置
 ```
 
 ## 领域边界
@@ -64,6 +68,14 @@ Alertmanager Watchdog 心跳忽略
 
 保存某一规则版本在指定历史范围上的只读评估结果，包括扫描数量、命中窗口、示例 Alert 和是否达到安全上限。只有当前版本存在成功且未截断的试运行结果时才允许发布。试运行不写入 Incident。
 
+### Incident
+
+描述需要通知和人工处置的一次正式事件。已发布规则命中新 Alert 后异步创建或更新；同一规则、环境和分组键最多存在一个未解决 Incident。状态为 `OPEN`、`ACKNOWLEDGED` 或 `RESOLVED`，确认与解决要求期望版本和持久化幂等键。
+
+### IncidentNotificationRoute
+
+描述某个环境应通知到的固定飞书事故群。停用路由可以保留配置但不占用环境启用边界；启用前只检查环境变量中的应用凭据是否完整，数据库和 API 均不保存或返回 Secret。
+
 ## 事务与并发
 
 - SignalEvent、Alert 投影、接入结果和审计在同一事务提交或回滚；
@@ -84,10 +96,12 @@ Alertmanager Watchdog 心跳忽略
 - `/api/v1/alerts`
 - `/api/v1/alerts/timeseries`
 - `/api/v1/incident-rules`
+- `/api/v1/incidents`
+- `/api/v1/incident-notification-routes`
 - `/health/live`
 - `/health/ready`
 
-`/api/v1/alerts` 与详情按 Alert ID 读取生命周期；趋势按 `first_received_at` 统计新建 Alert。`/api/v1/incident-rules` 提供规则管理、历史试运行、发布、停用和复制；它不创建 Incident。旧告警汇总、告警组、目录、关联、事故、人工事故报告和诊断 API 不注册。
+`/api/v1/alerts` 与详情按 Alert ID 读取生命周期；趋势按 `first_received_at` 统计新建 Alert。`/api/v1/incident-rules` 提供规则管理与试运行；后台根据发布规则异步生成 Incident。`/api/v1/incidents` 提供查询和人工状态操作，通知路由 API 按环境维护飞书群。旧告警汇总、告警组、目录、旧事故、人工事故报告和诊断 API 不注册。
 
 ## 历史兼容
 

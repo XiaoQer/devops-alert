@@ -14,6 +14,7 @@ from incident_intelligence.persistence.incident_repository import (
     IncidentEvaluationJobRepository,
     IncidentFeishuThreadRepository,
     IncidentNotificationRepository,
+    IncidentNotificationRouteOperationRepository,
     IncidentNotificationRouteRepository,
     IncidentOperationRepository,
     IncidentRepository,
@@ -36,6 +37,9 @@ class SqlAlchemyUnitOfWork:
         self.incident_notifications: IncidentNotificationRepository | None = None
         self.incident_operations: IncidentOperationRepository | None = None
         self.incident_notification_routes: IncidentNotificationRouteRepository | None = None
+        self.incident_notification_route_operations: (
+            IncidentNotificationRouteOperationRepository | None
+        ) = None
         self.incident_feishu_threads: IncidentFeishuThreadRepository | None = None
         self.feishu_event_receipts: FeishuEventReceiptRepository | None = None
 
@@ -51,6 +55,9 @@ class SqlAlchemyUnitOfWork:
         self.incident_notifications = IncidentNotificationRepository(self.session)
         self.incident_operations = IncidentOperationRepository(self.session)
         self.incident_notification_routes = IncidentNotificationRouteRepository(self.session)
+        self.incident_notification_route_operations = IncidentNotificationRouteOperationRepository(
+            self.session
+        )
         self.incident_feishu_threads = IncidentFeishuThreadRepository(self.session)
         self.feishu_event_receipts = FeishuEventReceiptRepository(self.session)
         return self

@@ -741,6 +741,37 @@ class IncidentNotificationRouteRow(Base):
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
+class IncidentNotificationRouteOperationRow(Base):
+    __tablename__ = "incident_notification_route_operations"
+    __table_args__ = (
+        UniqueConstraint(
+            "scope",
+            "idempotency_key_hash",
+            name="incident_notification_route_operation_key",
+        ),
+        CheckConstraint("action IN ('CREATE', 'UPDATE')", name="action"),
+        CheckConstraint(
+            "char_length(idempotency_key_hash) = 64 AND char_length(command_fingerprint) = 64",
+            name="hashes",
+        ),
+        CheckConstraint("result_version >= 1", name="result_version"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    scope: Mapped[str] = mapped_column(String(96), nullable=False)
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    command_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    route_id: Mapped[str] = mapped_column(
+        ForeignKey("incident_notification_routes.id", ondelete="CASCADE"), nullable=False
+    )
+    result_version: Mapped[int] = mapped_column(nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
 class IncidentNotificationOutboxRow(Base):
     __tablename__ = "incident_notification_outbox"
     __table_args__ = (

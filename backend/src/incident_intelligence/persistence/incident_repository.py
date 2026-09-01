@@ -22,6 +22,7 @@ from incident_intelligence.persistence.models import (
     IncidentEvaluationJobRow,
     IncidentFeishuThreadRow,
     IncidentNotificationOutboxRow,
+    IncidentNotificationRouteOperationRow,
     IncidentNotificationRouteRow,
     IncidentReferenceSequenceRow,
     OperationalIncidentActivityRow,
@@ -96,6 +97,20 @@ class IncidentNotificationRouteRecord:
     version: int
     created_at: datetime
     updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class IncidentNotificationRouteOperationRecord:
+    id: str
+    scope: str
+    idempotency_key_hash: str
+    command_fingerprint: str
+    action: Literal["CREATE", "UPDATE"]
+    route_id: str
+    result_version: int
+    actor: str
+    request_id: str
+    completed_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -771,6 +786,52 @@ class IncidentNotificationRouteRepository:
         )
         self._session.flush()
 
+    def list(self) -> tuple[IncidentNotificationRouteRecord, ...]:
+        rows = self._session.scalars(
+            select(IncidentNotificationRouteRow).order_by(
+                IncidentNotificationRouteRow.environment,
+                IncidentNotificationRouteRow.id,
+            )
+        )
+        return tuple(_to_route(row) for row in rows)
+
+    def get(
+        self,
+        route_id: str,
+        *,
+        for_update: bool = False,
+    ) -> IncidentNotificationRouteRecord | None:
+        statement = select(IncidentNotificationRouteRow).where(
+            IncidentNotificationRouteRow.id == route_id
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        row = self._session.scalar(statement)
+        return None if row is None else _to_route(row)
+
+    def update(
+        self,
+        record: IncidentNotificationRouteRecord,
+        *,
+        expected_version: int,
+    ) -> bool:
+        values = asdict(record)
+        values.pop("id")
+        values["enabled_environment_key"] = record.environment if record.enabled else None
+        result = cast(
+            CursorResult[Any],
+            self._session.execute(
+                update(IncidentNotificationRouteRow)
+                .where(
+                    IncidentNotificationRouteRow.id == record.id,
+                    IncidentNotificationRouteRow.version == expected_version,
+                )
+                .values(**values)
+            ),
+        )
+        self._session.flush()
+        return result.rowcount == 1
+
     def find_enabled(self, environment: str) -> IncidentNotificationRouteRecord | None:
         row = self._session.scalar(
             select(IncidentNotificationRouteRow).where(
@@ -778,6 +839,42 @@ class IncidentNotificationRouteRepository:
             )
         )
         return None if row is None else _to_route(row)
+
+
+class IncidentNotificationRouteOperationRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def insert(self, record: IncidentNotificationRouteOperationRecord) -> None:
+        self._session.add(IncidentNotificationRouteOperationRow(**asdict(record)))
+        self._session.flush()
+
+    def find(
+        self,
+        *,
+        scope: str,
+        idempotency_key_hash: str,
+    ) -> IncidentNotificationRouteOperationRecord | None:
+        row = self._session.scalar(
+            select(IncidentNotificationRouteOperationRow).where(
+                IncidentNotificationRouteOperationRow.scope == scope,
+                IncidentNotificationRouteOperationRow.idempotency_key_hash == idempotency_key_hash,
+            )
+        )
+        if row is None:
+            return None
+        return IncidentNotificationRouteOperationRecord(
+            id=row.id,
+            scope=row.scope,
+            idempotency_key_hash=row.idempotency_key_hash,
+            command_fingerprint=row.command_fingerprint,
+            action=cast(Literal["CREATE", "UPDATE"], row.action),
+            route_id=row.route_id,
+            result_version=row.result_version,
+            actor=row.actor,
+            request_id=row.request_id,
+            completed_at=row.completed_at,
+        )
 
 
 class IncidentFeishuThreadRepository:

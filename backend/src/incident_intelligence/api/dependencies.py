@@ -10,6 +10,9 @@ from pydantic import SecretStr
 from incident_intelligence.api.errors import ApiError
 from incident_intelligence.services.alert_center import AlertCenterService
 from incident_intelligence.services.alert_sources import AlertSourceService
+from incident_intelligence.services.incident_notification_routes import (
+    IncidentNotificationRouteService,
+)
 from incident_intelligence.services.incident_rules import IncidentRuleService
 from incident_intelligence.services.incidents import IncidentService
 from incident_intelligence.services.signal_intake import SignalIntakeService
@@ -77,6 +80,15 @@ def get_alert_center_service(request: Request) -> AlertCenterService:
 
 def get_incident_rule_service(request: Request) -> IncidentRuleService:
     return cast(IncidentRuleService, request.app.state.incident_rule_service)
+
+
+def get_incident_notification_route_service(
+    request: Request,
+) -> IncidentNotificationRouteService:
+    return cast(
+        IncidentNotificationRouteService,
+        request.app.state.incident_notification_route_service,
+    )
 
 
 def get_incident_service(request: Request) -> IncidentService:
