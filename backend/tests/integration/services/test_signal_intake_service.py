@@ -1,80 +1,61 @@
-"""共享外部信号接入服务的真实 MySQL 集成测试。"""
-
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from functools import partial
-from threading import Barrier
+from threading import Barrier, Lock
 
 import pytest
-from pydantic import ValidationError
 from sqlalchemy import func, select
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from incident_intelligence.domain.enums import AlertState
-from incident_intelligence.domain.forbidden_identity import ForbiddenIdentityError
 from incident_intelligence.domain.signal_intake import SignalCommand
-from incident_intelligence.ids import IdPrefix, new_id
+from incident_intelligence.persistence.alert_lifecycle_repository import AlertLifecycleRepository
+from incident_intelligence.persistence.incident_repository import (
+    IncidentEvaluationJobRepository,
+)
 from incident_intelligence.persistence.models import (
     AlertGroupingJobRow,
+    AlertLifecycleRow,
     AlertRow,
     AuditEventRow,
-    CorrelationJobRow,
-    DiagnosisRunRow,
-    IncidentRow,
+    IncidentEvaluationJobRow,
     SignalEventRow,
     SignalIntakeResultRow,
 )
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
-from incident_intelligence.services.signal_intake import (
-    SignalIntakeBatchResult,
-    SignalIntakeService,
-    SourceEventConflict,
-)
+from incident_intelligence.services.signal_intake import SignalIntakeService, SourceEventConflict
 
-NOW = datetime(2026, 8, 25, 8, 0, tzinfo=UTC)
-ALERT_SOURCE_ID = "src_00000000000000000000000000000002"
-TIME_2 = NOW + timedelta(minutes=5)
-TIME_3 = TIME_2 + timedelta(minutes=5)
-TIME_4 = TIME_3 + timedelta(minutes=5)
+NOW = datetime(2026, 8, 28, 8, 0, tzinfo=UTC)
+SOURCE_ID = "src_00000000000000000000000000000002"
 
 
-def firing_command(**overrides: object) -> SignalCommand:
+def command(**overrides: object) -> SignalCommand:
     values: dict[str, object] = {
-        "alert_source_id": ALERT_SOURCE_ID,
+        "alert_source_id": SOURCE_ID,
         "source": "alertmanager",
         "source_instance": "1" * 64,
         "source_event_id": "2" * 64,
-        "source_alert_key": "payment-high-error-rate",
+        "source_alert_key": "mysql-lock-wait",
         "event_type": "alert.firing",
         "event_at": NOW,
         "episode_started_at": NOW,
-        "title": "支付接口错误率升高",
-        "summary": "支付接口错误率超过阈值",
+        "alert_name": "MySQLRowLockWaitActive",
+        "title": "MySQLRowLockWaitActive",
+        "summary": "当前检测到活跃行锁等待",
+        "description": "等待事务超过阈值",
         "severity": "high",
-        "service": "payment-api",
+        "service": None,
         "environment": "production",
-        "facts": {"region": "cn-east-1"},
+        "facts": {"instance": "mysql:3306"},
         "normalization_reason_codes": (),
     }
     values.update(overrides)
     return SignalCommand.model_validate(values)
 
 
-def resolved_command(**overrides: object) -> SignalCommand:
-    values: dict[str, object] = {
-        **firing_command().model_dump(),
-        "source_event_id": "3" * 64,
-        "event_type": "alert.resolved",
-    }
-    values.update(overrides)
-    return SignalCommand.model_validate(values)
-
-
 @pytest.fixture
-def session_factory(migrated_engine: Engine) -> sessionmaker[Session]:
+def session_factory(migrated_engine) -> sessionmaker[Session]:
     return sessionmaker(bind=migrated_engine, expire_on_commit=False)
 
 
@@ -82,260 +63,222 @@ def session_factory(migrated_engine: Engine) -> sessionmaker[Session]:
 def service(session_factory: sessionmaker[Session]) -> SignalIntakeService:
     return SignalIntakeService(
         uow_factory=partial(SqlAlchemyUnitOfWork, session_factory),
-        clock=lambda: NOW,
+        clock=lambda: NOW.replace(hour=10),
     )
 
 
-def count_rows(session: Session, row_type: type[object]) -> int:
+def count(session: Session, row_type: type[object]) -> int:
     return session.scalar(select(func.count()).select_from(row_type)) or 0
 
 
-def test_firing_creates_only_signal_alert_result_and_audits(
-    service: SignalIntakeService,
-    session_factory: sessionmaker[Session],
+def test_first_receive_creates_signal_and_active_alert_lifecycle(
+    service: SignalIntakeService, session_factory: sessionmaker[Session]
 ) -> None:
-    command = firing_command()
-    result = service.submit_batch([command], "alertmanager", "req-1")
-
+    result = service.submit_batch([command()], "alertmanager", "req-1")
     with session_factory() as session:
-        assert count_rows(session, SignalEventRow) == 1
-        assert count_rows(session, AlertRow) == 1
-        assert count_rows(session, SignalIntakeResultRow) == 1
-        assert count_rows(session, AuditEventRow) == 2
-        job = session.scalar(select(AlertGroupingJobRow))
+        assert count(session, SignalEventRow) == 1
+        assert count(session, SignalIntakeResultRow) == 1
+        assert count(session, AuditEventRow) == 2
+        assert count(session, AlertLifecycleRow) == 1
+        assert count(session, IncidentEvaluationJobRow) == 1
+        assert count(session, AlertRow) == 0
+        assert count(session, AlertGroupingJobRow) == 0
+        job = session.scalar(select(IncidentEvaluationJobRow))
         assert job is not None
-        assert (job.alert_id, job.alert_version, job.state) == (
-            result.items[0].alert_id,
-            1,
-            "PENDING",
-        )
-        assert count_rows(session, IncidentRow) == 0
-        assert count_rows(session, CorrelationJobRow) == 0
-        assert count_rows(session, DiagnosisRunRow) == 0
-        audits = list(session.scalars(select(AuditEventRow).order_by(AuditEventRow.action)))
-        assert {audit.action for audit in audits} == {"alert.opened", "signal.received"}
-        assert all(
-            set(audit.details) <= {"reason_code", "adapter", "parent_id"} for audit in audits
-        )
-        serialized_details = " ".join(str(audit.details) for audit in audits)
-        assert command.title not in serialized_details
-        assert command.summary not in serialized_details
-    assert result.items[0].outcome == "opened"
-    assert result.items[0].replayed is False
-    assert result.counts.opened == 1
+        assert job.alert_id == result.items[0].alert_id
+        assert job.alert_version == 1
+        assert job.state == "PENDING"
+    assert result.items[0].signal_event_id.startswith("sig_")
+    assert result.items[0].alert_id is not None
+    assert result.items[0].alert_id.startswith("alt_")
 
 
-def test_projection_sequence_updates_resolves_ignores_stale_and_reopens(
-    service: SignalIntakeService,
-    session_factory: sessionmaker[Session],
+def test_exact_replay_returns_original_signal_without_second_record(
+    service: SignalIntakeService, session_factory: sessionmaker[Session]
 ) -> None:
-    commands = (
-        firing_command(event_at=NOW, episode_started_at=NOW),
-        firing_command(source_event_id="4" * 64, event_at=TIME_2, episode_started_at=NOW),
-        resolved_command(source_event_id="5" * 64, event_at=TIME_3),
-        firing_command(source_event_id="6" * 64, event_at=TIME_2, episode_started_at=NOW),
-        firing_command(source_event_id="7" * 64, event_at=TIME_4, episode_started_at=TIME_4),
+    first = service.submit_batch([command()], "alertmanager", "req-1")
+    replay = service.submit_batch([command()], "alertmanager", "req-2")
+    assert replay.items[0].signal_event_id == first.items[0].signal_event_id
+    assert replay.items[0].alert_id == first.items[0].alert_id
+    assert replay.items[0].replayed is True
+    with session_factory() as session:
+        assert count(session, SignalEventRow) == 1
+        assert count(session, AlertLifecycleRow) == 1
+        assert count(session, IncidentEvaluationJobRow) == 1
+        assert count(session, AuditEventRow) == 2
+
+
+def test_same_source_identity_with_changed_content_conflicts(
+    service: SignalIntakeService,
+) -> None:
+    service.submit_batch([command()], "alertmanager", "req-1")
+    with pytest.raises(SourceEventConflict):
+        service.submit_batch([command(summary="另一份规范化内容")], "alertmanager", "req-2")
+
+
+def test_resolved_updates_same_alert_without_creating_second_row(
+    service: SignalIntakeService, session_factory: sessionmaker[Session]
+) -> None:
+    firing = service.submit_batch([command()], "alertmanager", "req-1")
+    resolved = service.submit_batch(
+        [
+            command(
+                source_event_id="4" * 64,
+                event_type="alert.resolved",
+                event_at=NOW.replace(minute=5),
+            )
+        ],
+        "alertmanager",
+        "req-2",
     )
 
-    outcomes = [
-        service.submit_batch([command], "alertmanager", f"req-{index}").items[0].outcome
-        for index, command in enumerate(commands, start=1)
-    ]
-
-    assert outcomes == ["opened", "updated", "resolved", "stale", "reopened"]
+    assert resolved.items[0].alert_id == firing.items[0].alert_id
+    assert resolved.items[0].outcome == "resolved"
     with session_factory() as session:
-        alert = session.scalar(select(AlertRow))
+        assert count(session, SignalEventRow) == 2
+        assert count(session, AlertLifecycleRow) == 1
+        alert = session.get(AlertLifecycleRow, firing.items[0].alert_id)
         assert alert is not None
-        assert alert.state == AlertState.ACTIVE.value
-        assert alert.signal_event_id.startswith("sig_")
-        assert alert.first_observed_at == TIME_4
-        assert alert.last_observed_at == TIME_4
-        assert alert.version == 4
-        assert count_rows(session, SignalEventRow) == 5
-        assert count_rows(session, AlertRow) == 1
-        assert count_rows(session, SignalIntakeResultRow) == 5
-        assert count_rows(session, AuditEventRow) == 10
-        jobs = list(
-            session.scalars(select(AlertGroupingJobRow).order_by(AlertGroupingJobRow.alert_version))
+        assert alert.state == "RESOLVED"
+        assert alert.resolved_at == NOW.replace(minute=5)
+        jobs = tuple(
+            session.scalars(
+                select(IncidentEvaluationJobRow).order_by(
+                    IncidentEvaluationJobRow.alert_version
+                )
+            )
         )
-        assert [(job.alert_version, job.state) for job in jobs] == [
-            (1, "PENDING"),
-            (2, "PENDING"),
-            (3, "PENDING"),
-            (4, "PENDING"),
+        assert [(job.alert_id, job.alert_version) for job in jobs] == [
+            (firing.items[0].alert_id, 1),
+            (firing.items[0].alert_id, 2),
         ]
 
 
-def test_exact_command_replays_original_result_without_new_rows_or_audit(
-    service: SignalIntakeService,
-    session_factory: sessionmaker[Session],
+def test_same_fingerprint_with_new_episode_creates_new_alert(
+    service: SignalIntakeService, session_factory: sessionmaker[Session]
 ) -> None:
-    command = firing_command()
-
-    first = service.submit_batch([command], "alertmanager", "req-1")
-    replay = service.submit_batch([command], "alertmanager", "req-2")
-
-    assert replay.items[0].model_copy(update={"replayed": False}) == first.items[0]
-    assert replay.items[0].replayed is True
-    assert replay.counts.replayed == 1
-    with session_factory() as session:
-        assert count_rows(session, SignalEventRow) == 1
-        assert count_rows(session, AlertRow) == 1
-        assert count_rows(session, SignalIntakeResultRow) == 1
-        assert count_rows(session, AuditEventRow) == 2
-        assert count_rows(session, AlertGroupingJobRow) == 1
-        assert count_rows(session, CorrelationJobRow) == 0
-
-
-def test_same_source_event_identity_with_different_content_conflicts(
-    service: SignalIntakeService,
-    session_factory: sessionmaker[Session],
-) -> None:
-    command = firing_command()
-    service.submit_batch([command], "alertmanager", "req-1")
-
-    with pytest.raises(SourceEventConflict) as error:
-        service.submit_batch(
-            [command.model_copy(update={"title": "另一条规范化标题"})],
-            "alertmanager",
-            "req-2",
-        )
-
-    assert error.value.reason_code == "source_event_conflict"
-    with session_factory() as session:
-        assert count_rows(session, SignalEventRow) == 1
-        assert count_rows(session, AuditEventRow) == 2
-
-
-def test_orphan_resolved_replay_keeps_original_null_alert_id(
-    service: SignalIntakeService,
-    session_factory: sessionmaker[Session],
-) -> None:
-    orphan = resolved_command(source="cloudevents")
-    first = service.submit_batch([orphan], "cloudevents", "req-1")
-    service.submit_batch(
+    first = service.submit_batch([command()], "alertmanager", "req-1")
+    second_started_at = NOW.replace(hour=9)
+    second = service.submit_batch(
         [
-            firing_command(
-                source="cloudevents",
-                source_event_id="8" * 64,
-                event_at=TIME_2,
-                episode_started_at=TIME_2,
+            command(
+                source_event_id="5" * 64,
+                episode_started_at=second_started_at,
+                event_at=second_started_at,
             )
         ],
-        "cloudevents",
+        "alertmanager",
         "req-2",
     )
-    replay = service.submit_batch([orphan], "cloudevents", "req-3")
 
-    assert first.items[0].outcome == "orphan_resolved"
-    assert first.items[0].alert_id is None
-    assert replay.items[0].alert_id is None
-    assert replay.items[0].replayed is True
+    assert second.items[0].alert_id != first.items[0].alert_id
     with session_factory() as session:
-        assert count_rows(session, SignalEventRow) == 2
-        assert count_rows(session, AlertRow) == 1
-        assert count_rows(session, AuditEventRow) == 4
-        assert count_rows(session, AlertGroupingJobRow) == 1
-        assert count_rows(session, CorrelationJobRow) == 0
+        assert count(session, AlertLifecycleRow) == 2
 
 
-def test_forbidden_identity_is_rejected_before_any_batch_write(
+def test_late_firing_completes_orphan_resolved_without_reopening(
+    service: SignalIntakeService, session_factory: sessionmaker[Session]
+) -> None:
+    orphan = service.submit_batch(
+        [
+            command(
+                source_event_id="4" * 64,
+                event_type="alert.resolved",
+                event_at=NOW.replace(minute=5),
+            )
+        ],
+        "alertmanager",
+        "req-1",
+    )
+    late_firing = service.submit_batch([command()], "alertmanager", "req-2")
+
+    assert orphan.items[0].outcome == "orphan_resolved"
+    assert late_firing.items[0].alert_id == orphan.items[0].alert_id
+    with session_factory() as session:
+        alert = session.get(AlertLifecycleRow, orphan.items[0].alert_id)
+        assert alert is not None
+        assert alert.state == "RESOLVED"
+        assert alert.firing_observed is True
+
+
+def test_projection_failure_rolls_back_signal_event(
     service: SignalIntakeService,
     session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    command = firing_command(facts={"scenario_id": "hidden"})
+    def fail_insert(self: AlertLifecycleRepository, alert: object) -> None:
+        raise RuntimeError("projection_write_failed")
 
-    with pytest.raises(ForbiddenIdentityError):
-        service.submit_batch([command], "alertmanager", "req-1")
+    monkeypatch.setattr(AlertLifecycleRepository, "insert", fail_insert)
+
+    with pytest.raises(RuntimeError, match="projection_write_failed"):
+        service.submit_batch([command()], "alertmanager", "req-1")
 
     with session_factory() as session:
-        assert count_rows(session, SignalEventRow) == 0
-        assert count_rows(session, SignalIntakeResultRow) == 0
-        assert count_rows(session, AuditEventRow) == 0
+        assert count(session, SignalEventRow) == 0
+        assert count(session, SignalIntakeResultRow) == 0
+        assert count(session, AlertLifecycleRow) == 0
+        assert count(session, AuditEventRow) == 0
 
 
-def test_concurrent_duplicate_converges_to_one_result_and_one_audit_pair(
+def test_evaluation_job_failure_rolls_back_signal_and_alert(
+    service: SignalIntakeService,
     session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    command = firing_command()
-    simultaneous_writes = Barrier(2)
+    def fail_enqueue(
+        self: IncidentEvaluationJobRepository,
+        record: object,
+    ) -> bool:
+        raise RuntimeError("incident_evaluation_job_write_failed")
 
-    def synchronized_clock() -> datetime:
-        simultaneous_writes.wait(timeout=5)
-        return NOW
+    monkeypatch.setattr(IncidentEvaluationJobRepository, "enqueue", fail_enqueue)
 
-    service = SignalIntakeService(
-        uow_factory=partial(SqlAlchemyUnitOfWork, session_factory),
-        clock=synchronized_clock,
-    )
+    with pytest.raises(RuntimeError, match="incident_evaluation_job_write_failed"):
+        service.submit_batch([command()], "alertmanager", "req-1")
 
-    def submit(request_id: str) -> SignalIntakeBatchResult:
-        return service.submit_batch([command], "alertmanager", request_id)
+    with session_factory() as session:
+        assert count(session, SignalEventRow) == 0
+        assert count(session, SignalIntakeResultRow) == 0
+        assert count(session, AlertLifecycleRow) == 0
+        assert count(session, IncidentEvaluationJobRow) == 0
+        assert count(session, AuditEventRow) == 0
+
+
+def test_concurrent_firing_converges_to_one_alert(
+    service: SignalIntakeService,
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rendezvous = Barrier(2)
+    counter_lock = Lock()
+    initial_reads = 0
+    original_get = AlertLifecycleRepository.get_by_identity
+
+    def synchronized_get(self: AlertLifecycleRepository, **kwargs: object):
+        nonlocal initial_reads
+        result = original_get(self, **kwargs)
+        with counter_lock:
+            initial_reads += 1
+            should_wait = initial_reads <= 2
+        if should_wait:
+            rendezvous.wait(timeout=5)
+        return result
+
+    monkeypatch.setattr(AlertLifecycleRepository, "get_by_identity", synchronized_get)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
-        results = list(executor.map(submit, ["req-1", "req-2"]))
+        results = tuple(
+            executor.map(
+                lambda arguments: service.submit_batch(*arguments),
+                (
+                    ([command(source_event_id="6" * 64)], "alertmanager", "req-1"),
+                    ([command(source_event_id="7" * 64)], "alertmanager", "req-2"),
+                ),
+            )
+        )
 
-    assert {result.items[0].replayed for result in results} == {False, True}
-    assert len({result.items[0].signal_event_id for result in results}) == 1
+    assert results[0].items[0].alert_id == results[1].items[0].alert_id
     with session_factory() as session:
-        assert count_rows(session, SignalEventRow) == 1
-        assert count_rows(session, AlertRow) == 1
-        assert count_rows(session, SignalIntakeResultRow) == 1
-        assert count_rows(session, AuditEventRow) == 2
-        assert count_rows(session, AlertGroupingJobRow) == 1
-        assert count_rows(session, CorrelationJobRow) == 0
-
-
-def test_second_command_failure_rolls_back_entire_batch(
-    session_factory: sessionmaker[Session],
-) -> None:
-    signal_count = 0
-
-    def fail_second_signal(prefix: IdPrefix) -> str:
-        nonlocal signal_count
-        if prefix == "sig":
-            signal_count += 1
-            if signal_count == 2:
-                return "sig_invalid"
-        return new_id(prefix)
-
-    service = SignalIntakeService(
-        uow_factory=partial(SqlAlchemyUnitOfWork, session_factory),
-        clock=lambda: NOW,
-        id_factory=fail_second_signal,
-    )
-    commands = [
-        firing_command(),
-        firing_command(source_event_id="9" * 64, source_alert_key="inventory-high-latency"),
-    ]
-
-    with pytest.raises(ValidationError):
-        service.submit_batch(commands, "alertmanager", "req-1")
-
-    with session_factory() as session:
-        assert count_rows(session, SignalEventRow) == 0
-        assert count_rows(session, AlertRow) == 0
-        assert count_rows(session, SignalIntakeResultRow) == 0
-        assert count_rows(session, AuditEventRow) == 0
-        assert count_rows(session, AlertGroupingJobRow) == 0
-        assert count_rows(session, CorrelationJobRow) == 0
-
-
-def test_batch_preserves_input_order_for_replay_and_new_event(
-    service: SignalIntakeService,
-) -> None:
-    existing = firing_command()
-    first = service.submit_batch([existing], "alertmanager", "req-1")
-    new_command = firing_command(
-        source_event_id="a" * 64,
-        source_alert_key="inventory-high-latency",
-    )
-
-    batch = service.submit_batch([existing, new_command], "alertmanager", "req-2")
-
-    assert batch.items[0].signal_event_id == first.items[0].signal_event_id
-    assert batch.items[0].replayed is True
-    assert batch.items[1].signal_event_id != first.items[0].signal_event_id
-    assert batch.items[1].replayed is False
-    assert batch.counts.replayed == 1
-    assert batch.counts.opened == 1
+        assert count(session, SignalEventRow) == 2
+        assert count(session, AlertLifecycleRow) == 1

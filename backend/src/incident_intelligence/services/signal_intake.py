@@ -10,17 +10,18 @@ from typing import cast
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.exc import IntegrityError, OperationalError
 
+from incident_intelligence.domain.alerts import project_alert
 from incident_intelligence.domain.forbidden_identity import reject_forbidden_identity
-from incident_intelligence.domain.models import Alert, SignalEvent
-from incident_intelligence.domain.signal_intake import (
-    ProjectionOutcome,
-    SignalCommand,
-    decide_alert_projection,
-)
+from incident_intelligence.domain.models import SignalEvent
+from incident_intelligence.domain.signal_intake import ProjectionOutcome, SignalCommand
 from incident_intelligence.ids import IdPrefix, new_id
-from incident_intelligence.persistence.alert_group_repository import AlertGroupRepository
+from incident_intelligence.persistence.alert_lifecycle_repository import AlertLifecycleRepository
 from incident_intelligence.persistence.alert_source_repository import AlertSourceRepository
-from incident_intelligence.persistence.models import AlertRow, SignalIntakeResultRow
+from incident_intelligence.persistence.incident_repository import (
+    IncidentEvaluationJobRecord,
+    IncidentEvaluationJobRepository,
+)
+from incident_intelligence.persistence.models import SignalIntakeResultRow
 from incident_intelligence.persistence.repositories import RecordRepositories
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.source_receipts import (
@@ -49,6 +50,7 @@ class SignalIntakeCounts(BaseModel):
     stale: int = 0
     orphan_resolved: int = 0
     replayed: int = 0
+    ignored: int = 0
 
 
 class SignalIntakeBatchResult(BaseModel):
@@ -84,6 +86,8 @@ class SignalIntakeService:
         actor: str,
         request_id: str,
         receipt_context: ReceiptContext | None = None,
+        input_count: int | None = None,
+        ignored_count: int = 0,
     ) -> SignalIntakeBatchResult:
         for command in commands:
             reject_forbidden_identity(command.model_dump(mode="json"))
@@ -97,6 +101,8 @@ class SignalIntakeService:
                     actor,
                     request_id,
                     receipt_context,
+                    input_count=input_count,
+                    ignored_count=ignored_count,
                 )
             except IntegrityError:
                 if attempt == 2:
@@ -107,8 +113,7 @@ class SignalIntakeService:
         raise RuntimeError("signal_intake_retry_exhausted")
 
     def _apply_source_environments(
-        self,
-        commands: Sequence[SignalCommand],
+        self, commands: Sequence[SignalCommand]
     ) -> tuple[SignalCommand, ...]:
         with self._uow_factory() as uow:
             sources = _alert_sources(uow)
@@ -117,28 +122,25 @@ class SignalIntakeService:
                 source = sources.find_source(command.alert_source_id)
                 if source is None:
                     raise RuntimeError("signal_alert_source_not_found")
-                if source.environment_configured:
-                    reason_codes = command.normalization_reason_codes
-                    if command.environment not in {"unknown", source.environment}:
-                        filtered_reason_codes = tuple(
-                            code
-                            for code in reason_codes
-                            if code != "source_environment_overrode_payload"
-                        )
-                        reason_codes = (
-                            *filtered_reason_codes[:9],
-                            "source_environment_overrode_payload",
-                        )
-                    result.append(
-                        command.model_copy(
-                            update={
-                                "environment": source.environment,
-                                "normalization_reason_codes": reason_codes,
-                            }
-                        )
-                    )
-                else:
+                if not source.environment_configured:
                     result.append(command)
+                    continue
+                reason_codes = command.normalization_reason_codes
+                if command.environment not in {"unknown", source.environment}:
+                    kept_codes = tuple(
+                        code
+                        for code in reason_codes
+                        if code != "source_environment_overrode_payload"
+                    )[:9]
+                    reason_codes = (*kept_codes, "source_environment_overrode_payload")
+                result.append(
+                    command.model_copy(
+                        update={
+                            "environment": source.environment,
+                            "normalization_reason_codes": reason_codes,
+                        }
+                    )
+                )
             return tuple(result)
 
     def _submit_once(
@@ -148,14 +150,19 @@ class SignalIntakeService:
         actor: str,
         request_id: str,
         receipt_context: ReceiptContext | None,
+        *,
+        input_count: int | None,
+        ignored_count: int,
     ) -> SignalIntakeBatchResult:
         with self._uow_factory() as uow:
             records = _records(uow)
-            alert_groups = _alert_groups(uow)
+            alert_lifecycles = _alert_lifecycles(uow)
+            incident_evaluation_jobs = _incident_evaluation_jobs(uow)
             items = tuple(
                 self._submit_command(
                     records,
-                    alert_groups,
+                    alert_lifecycles,
+                    incident_evaluation_jobs,
                     command,
                     fingerprint,
                     actor,
@@ -163,47 +170,46 @@ class SignalIntakeService:
                 )
                 for command, fingerprint in zip(commands, fingerprints, strict=True)
             )
-            counts = _counts(items)
+            counts = _counts(items, ignored_count=ignored_count)
             if receipt_context is not None:
                 _validate_receipt_context(commands, receipt_context)
+                replayed_batch = bool(items) and all(item.replayed for item in items)
                 record_receipt(
                     _alert_sources(uow),
                     id_factory=self._id_factory,
                     context=receipt_context,
-                    outcome="REPLAYED" if all(item.replayed for item in items) else "ACCEPTED",
+                    outcome="REPLAYED" if replayed_batch else "ACCEPTED",
                     reason_code=(
                         "exact_batch_replay"
-                        if all(item.replayed for item in items)
+                        if replayed_batch
+                        else "watchdog_ignored"
+                        if not items and ignored_count
                         else "signal_batch_accepted"
                     ),
-                    input_count=len(commands),
+                    input_count=input_count if input_count is not None else len(commands),
                     counts=ReceiptCounts(
-                        opened=counts.opened + counts.reopened,
+                        opened=counts.opened,
                         updated=counts.updated,
                         resolved=counts.resolved,
                         replayed=counts.replayed,
-                        ignored=counts.stale + counts.orphan_resolved,
+                        ignored=counts.ignored,
                     ),
                 )
             uow.commit()
-        return SignalIntakeBatchResult(
-            items=items,
-            counts=counts,
-        )
+        return SignalIntakeBatchResult(items=items, counts=counts)
 
     def _submit_command(
         self,
         records: RecordRepositories,
-        alert_groups: AlertGroupRepository,
+        alert_lifecycles: AlertLifecycleRepository,
+        incident_evaluation_jobs: IncidentEvaluationJobRepository,
         command: SignalCommand,
         fingerprint: str,
         actor: str,
         request_id: str,
     ) -> SignalIntakeItemResult:
         existing = records.find_signal_result(
-            command.alert_source_id,
-            command.source,
-            command.source_event_id,
+            command.alert_source_id, command.source, command.source_event_id
         )
         if existing is not None:
             return _replay_result(existing, fingerprint)
@@ -214,9 +220,13 @@ class SignalIntakeService:
             alert_source_id=command.alert_source_id,
             source=command.source,
             source_event_id=command.source_event_id,
+            source_alert_key=command.source_alert_key,
+            episode_started_at=command.episode_started_at,
             event_type=command.event_type,
+            alert_name=command.alert_name,
             title=command.title,
             summary=command.summary,
+            description=command.description,
             severity=command.severity,
             service=command.service,
             entity_type=command.entity_type,
@@ -230,32 +240,44 @@ class SignalIntakeService:
             created_at=now,
         )
         records.add_signal(signal)
-        current = records.find_alert_for_update(
-            command.alert_source_id,
-            command.source,
-            command.source_instance,
-            command.source_alert_key,
+        existing_alert = alert_lifecycles.get_by_identity(
+            alert_source_id=command.alert_source_id,
+            source_alert_key=command.source_alert_key,
+            episode_started_at=command.episode_started_at,
+            for_update=True,
         )
-        decision = decide_alert_projection(
-            current=None if current is None else _alert_from_row(current),
-            command=command,
-            new_alert_id=self._id_factory("alt"),
-            signal_event_id=signal.id,
-            now=now,
+        projection = project_alert(
+            existing_alert,
+            command,
+            received_at=now,
+            alert_id=self._id_factory("alt") if existing_alert is None else None,
         )
-        if decision.changes_projection:
-            if current is None and decision.alert is not None:
-                records.add_alert(decision.alert)
-            elif decision.alert is not None:
-                records.update_alert(decision.alert)
-        alert_id = None if decision.alert is None else decision.alert.id
-        if decision.changes_projection and decision.alert is not None:
-            alert_groups.enqueue_grouping(
-                alert_id=decision.alert.id,
-                alert_cycle=decision.alert.cycle,
-                alert_version=decision.alert.version,
-                now=now,
+        if projection.created:
+            alert_lifecycles.insert(projection.alert)
+        elif not alert_lifecycles.update(
+            projection.alert,
+            expected_version=projection.alert.version - 1,
+        ):
+            raise RuntimeError("alert_lifecycle_concurrent_update")
+        incident_evaluation_jobs.enqueue(
+            IncidentEvaluationJobRecord(
+                id=self._id_factory("iej"),
+                alert_id=projection.alert.id,
+                alert_version=projection.alert.version,
+                state="PENDING",
+                attempt_count=0,
+                available_at=now,
+                lease_owner=None,
+                lease_expires_at=None,
+                last_error_code=None,
+                outcome=None,
+                reason_codes=(),
+                incident_ids=(),
+                created_at=now,
+                updated_at=now,
             )
+        )
+        outcome: ProjectionOutcome = projection.outcome
         records.add_signal_result(
             SignalIntakeResultRow(
                 alert_source_id=command.alert_source_id,
@@ -263,74 +285,48 @@ class SignalIntakeService:
                 source_event_id=command.source_event_id,
                 command_fingerprint=fingerprint,
                 signal_event_id=signal.id,
-                alert_id=alert_id,
-                outcome=decision.outcome,
+                alert_id=None,
+                alert_lifecycle_id=projection.alert.id,
+                outcome=outcome,
                 created_at=now,
             )
         )
-        self._append_audit(
-            records,
+        audit_details = {
+            "reason_code": "external_signal_received",
+            "adapter": command.source,
+        }
+        if command.normalization_reason_codes:
+            audit_details["normalization_reason_codes"] = ",".join(
+                command.normalization_reason_codes
+            )
+        records.add_audit(
             audit_id=self._id_factory("aud"),
             actor=actor,
             action="signal.received",
             resource_type="signal_event",
             resource_id=signal.id,
             request_id=request_id,
-            reason_code="external_signal_received",
-            adapter=command.source,
-            normalization_reason_codes=command.normalization_reason_codes,
+            details=audit_details,
             created_at=now,
         )
-        self._append_audit(
-            records,
+        records.add_audit(
             audit_id=self._id_factory("aud"),
             actor=actor,
-            action=_audit_action(decision.outcome),
-            resource_type="alert" if alert_id is not None else "signal_event",
-            resource_id=alert_id or signal.id,
+            action=f"alert.{outcome}",
+            resource_type="alert",
+            resource_id=projection.alert.id,
             request_id=request_id,
-            reason_code=decision.reason_code,
-            adapter=command.source,
-            parent_id=signal.id,
+            details={
+                "reason_code": f"alert_lifecycle_{outcome}",
+                "signal_event_id": signal.id,
+            },
             created_at=now,
         )
         return SignalIntakeItemResult(
             signal_event_id=signal.id,
-            alert_id=alert_id,
-            outcome=decision.outcome,
+            alert_id=projection.alert.id,
+            outcome=outcome,
             replayed=False,
-        )
-
-    @staticmethod
-    def _append_audit(
-        records: RecordRepositories,
-        *,
-        audit_id: str,
-        actor: str,
-        action: str,
-        resource_type: str,
-        resource_id: str,
-        request_id: str,
-        reason_code: str,
-        adapter: str,
-        created_at: datetime,
-        parent_id: str | None = None,
-        normalization_reason_codes: tuple[str, ...] = (),
-    ) -> None:
-        details = {"reason_code": reason_code, "adapter": adapter}
-        if parent_id is not None:
-            details["parent_id"] = parent_id
-        if normalization_reason_codes:
-            details["normalization_reason_codes"] = ",".join(normalization_reason_codes)
-        records.add_audit(
-            audit_id=audit_id,
-            actor=actor,
-            action=action,
-            resource_type=resource_type,
-            resource_id=resource_id,
-            request_id=request_id,
-            details=details,
-            created_at=created_at,
         )
 
 
@@ -350,22 +346,27 @@ def _records(uow: SqlAlchemyUnitOfWork) -> RecordRepositories:
     return uow.records
 
 
-def _alert_groups(uow: SqlAlchemyUnitOfWork) -> AlertGroupRepository:
-    if uow.alert_groups is None:
-        raise RuntimeError("工作单元没有可用告警组仓储")
-    return uow.alert_groups
-
-
 def _alert_sources(uow: SqlAlchemyUnitOfWork) -> AlertSourceRepository:
     if uow.alert_sources is None:
         raise RuntimeError("工作单元没有可用告警源仓储")
     return uow.alert_sources
 
 
-def _validate_receipt_context(
-    commands: Sequence[SignalCommand],
-    context: ReceiptContext,
-) -> None:
+def _alert_lifecycles(uow: SqlAlchemyUnitOfWork) -> AlertLifecycleRepository:
+    if uow.alert_lifecycles is None:
+        raise RuntimeError("工作单元没有可用告警生命周期仓储")
+    return uow.alert_lifecycles
+
+
+def _incident_evaluation_jobs(
+    uow: SqlAlchemyUnitOfWork,
+) -> IncidentEvaluationJobRepository:
+    if uow.incident_evaluation_jobs is None:
+        raise RuntimeError("工作单元没有可用 Incident 评估任务仓储")
+    return uow.incident_evaluation_jobs
+
+
+def _validate_receipt_context(commands: Sequence[SignalCommand], context: ReceiptContext) -> None:
     expected_source = {
         "ALERTMANAGER": "alertmanager",
         "CLOUDEVENTS": "cloudevents",
@@ -378,74 +379,33 @@ def _validate_receipt_context(
         raise ValueError("接收上下文与信号命令来源不一致")
 
 
-def _alert_from_row(row: AlertRow) -> Alert:
-    return Alert.model_validate(
-        {
-            "id": row.id,
-            "signal_event_id": row.signal_event_id,
-            "alert_source_id": row.alert_source_id,
-            "source": row.source,
-            "source_instance": row.source_instance,
-            "source_alert_key": row.source_alert_key,
-            "state": row.state,
-            "cycle": row.cycle,
-            "title": row.title,
-            "severity": row.severity,
-            "service": row.service,
-            "entity_type": row.entity_type,
-            "entity_key": row.entity_key,
-            "entity_display_name": row.entity_display_name,
-            "environment": row.environment,
-            "first_observed_at": row.first_observed_at,
-            "last_observed_at": row.last_observed_at,
-            "state_changed_at": row.state_changed_at,
-            "created_at": row.created_at,
-            "version": row.version,
-        }
-    )
-
-
-def _replay_result(
-    existing: SignalIntakeResultRow,
-    fingerprint: str,
-) -> SignalIntakeItemResult:
+def _replay_result(existing: SignalIntakeResultRow, fingerprint: str) -> SignalIntakeItemResult:
     if existing.command_fingerprint != fingerprint:
         raise SourceEventConflict()
-    return SignalIntakeItemResult.model_validate(
-        {
-            "signal_event_id": existing.signal_event_id,
-            "alert_id": existing.alert_id,
-            "outcome": existing.outcome,
-            "replayed": True,
-        }
+    return SignalIntakeItemResult(
+        signal_event_id=existing.signal_event_id,
+        alert_id=existing.alert_lifecycle_id,
+        outcome=cast(ProjectionOutcome, existing.outcome),
+        replayed=True,
     )
 
 
-def _counts(items: tuple[SignalIntakeItemResult, ...]) -> SignalIntakeCounts:
-    values = {
-        "opened": 0,
-        "updated": 0,
-        "resolved": 0,
-        "reopened": 0,
-        "stale": 0,
-        "orphan_resolved": 0,
-        "replayed": 0,
-    }
-    for item in items:
-        key = "replayed" if item.replayed else item.outcome
-        values[key] += 1
-    return SignalIntakeCounts.model_validate(values)
-
-
-def _audit_action(outcome: ProjectionOutcome) -> str:
-    return {
-        "opened": "alert.opened",
-        "updated": "alert.updated",
-        "resolved": "alert.resolved",
-        "reopened": "alert.reopened",
-        "stale": "alert.stale_signal_ignored",
-        "orphan_resolved": "alert.orphan_resolved_ignored",
-    }[outcome]
+def _counts(
+    items: tuple[SignalIntakeItemResult, ...], *, ignored_count: int = 0
+) -> SignalIntakeCounts:
+    opened = sum(not item.replayed and item.outcome == "opened" for item in items)
+    updated = sum(not item.replayed and item.outcome == "updated" for item in items)
+    resolved = sum(
+        not item.replayed and item.outcome in {"resolved", "orphan_resolved"} for item in items
+    )
+    replayed = sum(item.replayed for item in items)
+    return SignalIntakeCounts(
+        opened=opened,
+        updated=updated,
+        resolved=resolved,
+        replayed=replayed,
+        ignored=ignored_count,
+    )
 
 
 def _is_retryable_mysql_lock_error(error: OperationalError) -> bool:
