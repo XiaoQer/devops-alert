@@ -25,6 +25,7 @@ def test_incident_operational_rows_are_registered_in_orm_metadata() -> None:
         "incident_notification_outbox",
         "incident_feishu_threads",
         "feishu_event_receipts",
+        "incident_reference_sequences",
     } <= set(Base.metadata.tables)
 
 
@@ -43,6 +44,7 @@ def test_incident_operations_schema_uses_new_tables_without_reusing_legacy_incid
         "incident_notification_outbox",
         "incident_feishu_threads",
         "feishu_event_receipts",
+        "incident_reference_sequences",
     } <= table_names
     assert "incidents" in table_names
 

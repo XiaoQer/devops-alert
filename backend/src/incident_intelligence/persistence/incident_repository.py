@@ -23,6 +23,7 @@ from incident_intelligence.persistence.models import (
     IncidentFeishuThreadRow,
     IncidentNotificationOutboxRow,
     IncidentNotificationRouteRow,
+    IncidentReferenceSequenceRow,
     OperationalIncidentActivityRow,
     OperationalIncidentAlertRow,
     OperationalIncidentRow,
@@ -228,14 +229,24 @@ class IncidentRepository:
         )
 
     def next_reference(self, now: datetime) -> str:
-        date_key = now.strftime("%Y%m%d")
-        prefix = f"INC-{date_key}-"
-        current = self._session.scalar(
-            select(func.count())
-            .select_from(OperationalIncidentRow)
-            .where(OperationalIncidentRow.reference.like(f"{prefix}%"))
+        sequence_date = now.date()
+        row = self._session.scalar(
+            select(IncidentReferenceSequenceRow)
+            .where(IncidentReferenceSequenceRow.sequence_date == sequence_date)
+            .with_for_update()
         )
-        return f"{prefix}{int(current or 0) + 1:03d}"
+        if row is None:
+            row = IncidentReferenceSequenceRow(
+                sequence_date=sequence_date,
+                last_value=1,
+                updated_at=now,
+            )
+            self._session.add(row)
+        else:
+            row.last_value += 1
+            row.updated_at = now
+        self._session.flush()
+        return f"INC-{sequence_date:%Y%m%d}-{row.last_value:03d}"
 
     def update(self, incident: Incident, *, expected_version: int) -> bool:
         values = _incident_values(incident)

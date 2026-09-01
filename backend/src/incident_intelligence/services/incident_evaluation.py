@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy.exc import IntegrityError
 
 from incident_intelligence.domain.incident_rule_evaluation import (
     AlertEvaluationFact,
@@ -13,6 +15,7 @@ from incident_intelligence.domain.incident_rule_evaluation import (
 from incident_intelligence.domain.incident_rules import IncidentRuleConfig, RuleGroupBy
 from incident_intelligence.domain.incidents import (
     Incident,
+    IncidentActivity,
     IncidentActivityIds,
     IncidentAlertFact,
     IncidentAlertLink,
@@ -25,7 +28,10 @@ from incident_intelligence.persistence.alert_center_repository import AlertRepos
 from incident_intelligence.persistence.incident_repository import (
     IncidentEvaluationJobRecord,
     IncidentEvaluationJobRepository,
+    IncidentNotificationRecord,
+    IncidentNotificationRepository,
     IncidentRepository,
+    NotificationKind,
 )
 from incident_intelligence.persistence.incident_rule_repository import IncidentRuleRepository
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
@@ -60,6 +66,15 @@ class IncidentEvaluationService:
         self._lease_seconds = lease_seconds
 
     def process(self, job_id: str) -> EvaluationJobResult:
+        for attempt in range(3):
+            try:
+                return self._process_once(job_id)
+            except IntegrityError:
+                if attempt == 2:
+                    raise
+        raise RuntimeError("incident_evaluation_retry_exhausted")
+
+    def _process_once(self, job_id: str) -> EvaluationJobResult:
         now = self._clock().astimezone(UTC)
         with self._uow_factory() as uow:
             jobs = _evaluation_jobs(uow)
@@ -95,6 +110,7 @@ class IncidentEvaluationService:
                 raise RuntimeError("published_incident_rule_limit_exceeded")
 
             incidents = _incidents(uow)
+            notifications = _notifications(uow)
             affected: list[str] = []
             created = False
             for rule in rules:
@@ -118,6 +134,7 @@ class IncidentEvaluationService:
                         continue
                     incident, was_created = self._apply_match(
                         incidents=incidents,
+                        notifications=notifications,
                         alerts=alerts,
                         rule_id=rule.id,
                         rule_version=rule.version,
@@ -164,6 +181,7 @@ class IncidentEvaluationService:
         self,
         *,
         incidents: IncidentRepository,
+        notifications: IncidentNotificationRepository,
         alerts: AlertRepository,
         rule_id: str,
         rule_version: int,
@@ -213,6 +231,12 @@ class IncidentEvaluationService:
                 )
             )
             incidents.append_activities(change.activities)
+            self._enqueue_notifications(
+                notifications,
+                incident=change.incident,
+                activities=change.activities,
+                now=now,
+            )
             return change.incident, True
 
         existing_ids = incidents.list_alert_ids(existing.id)
@@ -249,7 +273,60 @@ class IncidentEvaluationService:
             )
         )
         incidents.append_activities(change.activities)
+        self._enqueue_notifications(
+            notifications,
+            incident=change.incident,
+            activities=change.activities,
+            now=now,
+        )
         return change.incident, False
+
+    def _enqueue_notifications(
+        self,
+        repository: IncidentNotificationRepository,
+        *,
+        incident: Incident,
+        activities: tuple[IncidentActivity, ...],
+        now: datetime,
+    ) -> None:
+        for activity in activities:
+            kind: NotificationKind = (
+                "CREATE_CARD" if activity.kind == "INCIDENT_CREATED" else "UPDATE_CARD"
+            )
+            notification_key = sha256(
+                f"{incident.id}\x1f{activity.id}\x1f{kind}".encode()
+            ).hexdigest()
+            repository.enqueue(
+                IncidentNotificationRecord(
+                    id=self._id_factory("ino"),
+                    incident_id=incident.id,
+                    activity_id=activity.id,
+                    notification_key=notification_key,
+                    kind=kind,
+                    state="PENDING",
+                    payload={
+                        "incident_id": incident.id,
+                        "reference": incident.reference,
+                        "title": incident.title,
+                        "state": incident.state,
+                        "severity": incident.severity,
+                        "environment": incident.environment,
+                        "group_display_name": incident.group_display_name,
+                        "alert_count": incident.alert_count,
+                        "active_alert_count": incident.active_alert_count,
+                        "activity_kind": activity.kind,
+                        "activity_summary": activity.summary,
+                    },
+                    attempt_count=0,
+                    available_at=now,
+                    lease_owner=None,
+                    lease_expires_at=None,
+                    last_error_code=None,
+                    feishu_message_id=None,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
 
 
 def _anchor_in_scope(
@@ -318,3 +395,9 @@ def _incidents(uow: SqlAlchemyUnitOfWork) -> IncidentRepository:
     if uow.incidents is None:
         raise RuntimeError("工作单元没有可用 Incident 仓储")
     return uow.incidents
+
+
+def _notifications(uow: SqlAlchemyUnitOfWork) -> IncidentNotificationRepository:
+    if uow.incident_notifications is None:
+        raise RuntimeError("工作单元没有可用 Incident 通知仓储")
+    return uow.incident_notifications

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
@@ -486,6 +486,21 @@ class IncidentRuleOperationRow(Base):
     request_id: Mapped[str] = mapped_column(String(64), nullable=False)
     summary: Mapped[str] = mapped_column(String(500), nullable=False)
     completed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class IncidentReferenceSequenceRow(Base):
+    __tablename__ = "incident_reference_sequences"
+    __table_args__ = (
+        CheckConstraint(
+            "`last_value` BETWEEN 1 AND 999999999",
+            name="incident_reference_sequence_value",
+        ),
+        _mysql_table_options(),
+    )
+
+    sequence_date: Mapped[date] = mapped_column(primary_key=True)
+    last_value: Mapped[int] = mapped_column(nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 class OperationalIncidentRow(Base):

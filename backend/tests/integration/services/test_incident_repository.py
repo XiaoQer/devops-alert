@@ -395,6 +395,18 @@ def test_incident_repository_lists_newest_and_counts_linked_alert_states(
         assert (counts.active, counts.resolved, counts.total) == (1, 0, 1)
 
 
+def test_incident_reference_sequence_is_monotonic_per_utc_day(
+    migrated_engine: Engine,
+) -> None:
+    with Session(migrated_engine) as session:
+        repository = IncidentRepository(session)
+
+        assert repository.next_reference(NOW) == "INC-20260901-001"
+        assert repository.next_reference(NOW + timedelta(minutes=1)) == "INC-20260901-002"
+        assert repository.next_reference(NOW + timedelta(days=1)) == "INC-20260902-001"
+        session.commit()
+
+
 def test_route_thread_and_event_receipt_repositories_keep_external_identity_bounded(
     migrated_engine: Engine,
 ) -> None:
