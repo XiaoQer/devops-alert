@@ -837,7 +837,7 @@ Commit: `git add frontend/src/components/IncidentCenter.vue frontend/src/compone
 - Produces: 健康响应中的评估任务、通知任务和飞书配置摘要，不包含任务正文和 Secret。
 - Produces: 从 Alert 接收到 Incident 创建、飞书卡片、群聊回流、页面解决的完整可复现验证证据。
 
-- [ ] **Step 1: 编写健康和端到端失败测试**
+- [x] **Step 1: 编写健康和端到端失败测试**
 
 ```python
 def test_health_exposes_bounded_worker_status_without_secrets(client, settings):
@@ -858,7 +858,7 @@ def test_alert_to_incident_feishu_and_resolution_flow(app_harness):
     assert app_harness.get_incident(incident.id).state == "RESOLVED"
 ```
 
-- [ ] **Step 2: 实现健康摘要并运行完整后端验证**
+- [x] **Step 2: 实现健康摘要并运行完整后端验证**
 
 健康统计每类最多返回总数、最早待处理时间、最近成功时间、最近失败错误码；禁止返回任务 ID 列表、payload、异常堆栈或凭据。
 
@@ -866,7 +866,7 @@ Run: `II_TEST_DATABASE_URL="$II_TEST_DATABASE_URL" ./scripts/verify-backend.sh`
 
 Expected: pytest、覆盖率、ruff、mypy 全部通过。
 
-- [ ] **Step 3: 运行完整前端验证**
+- [x] **Step 3: 运行完整前端验证**
 
 Run: `cd frontend && npm test && npm run build`
 
