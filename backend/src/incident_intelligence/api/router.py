@@ -5,6 +5,7 @@ from incident_intelligence.api.routes.alert_sources import router as alert_sourc
 from incident_intelligence.api.routes.alertmanager import router as alertmanager_router
 from incident_intelligence.api.routes.alerts import router as alerts_router
 from incident_intelligence.api.routes.cloudevents import router as cloudevents_router
+from incident_intelligence.api.routes.feishu import router as feishu_router
 from incident_intelligence.api.routes.health import create_health_router
 from incident_intelligence.api.routes.incident_notification_routes import (
     router as incident_notification_routes_router,
@@ -21,6 +22,7 @@ def create_router(engine: Engine) -> APIRouter:
     router.include_router(incident_rules_router)
     router.include_router(incident_notification_routes_router)
     router.include_router(incidents_router)
+    router.include_router(feishu_router)
     router.include_router(alertmanager_router)
     router.include_router(cloudevents_router)
     return router

@@ -9,6 +9,7 @@ description = "多源生产事故智能平台后端"
 requires-python = ">=3.13,<3.15"
 dependencies = [
   "alembic>=1.16,<2",
+  "cryptography>=45,<47",
   "fastapi>=0.116,<1",
   "PyMySQL>=1.1,<2",
   "pydantic>=2.11,<3",

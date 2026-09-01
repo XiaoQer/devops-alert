@@ -665,7 +665,7 @@ class OperationalIncidentActivityRow(Base):
     occurred_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     actor_type: Mapped[str] = mapped_column(String(16), nullable=False)
     actor: Mapped[str] = mapped_column(String(128), nullable=False)
-    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    summary: Mapped[str] = mapped_column(String(4_000), nullable=False)
     activity_metadata: Mapped[dict[str, object]] = mapped_column("metadata", JSON, nullable=False)
 
 

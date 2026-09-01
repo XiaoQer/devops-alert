@@ -632,7 +632,7 @@ Commit: `git add backend/src/incident_intelligence/adapters/feishu.py backend/sr
 - Produces: `FeishuEventService.handle_card_action(headers, body) -> FeishuCallbackResult`。
 - Produces: `POST /api/v1/integrations/feishu/events` 与 `/card-actions`。
 
-- [ ] **Step 1: 编写消息过滤和幂等失败测试**
+- [x] **Step 1: 编写消息过滤和幂等失败测试**
 
 ```python
 @pytest.mark.parametrize("event", [wrong_chat(), not_thread_reply(), without_bot_mention(), bot_self_message()])
@@ -650,17 +650,17 @@ def test_valid_thread_mention_records_plain_text_once(service):
     assert latest_activity().summary == "已联系数据库同学\n等待确认"
 ```
 
-- [ ] **Step 2: 运行服务测试并确认服务不存在**
+- [x] **Step 2: 运行服务测试并确认服务不存在**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/unit/services/test_feishu_events.py -q`
 
 Expected: FAIL。
 
-- [ ] **Step 3: 实现验证、解密边界和线程回流**
+- [x] **Step 3: 实现验证、解密边界和线程回流**
 
 按飞书协议验证时间戳、nonce、签名、Verification Token 和可选 Encrypt Key；时间偏差超过 5 分钟拒绝。只保存规范化 4,000 字纯文本、事件 ID、chat/message/root_message 标识、事件时间和发送者安全摘要；不保存完整请求或附件。
 
-- [ ] **Step 4: 编写卡片动作失败测试**
+- [x] **Step 4: 编写卡片动作失败测试**
 
 ```python
 def test_ack_card_action_uses_same_incident_state_machine(service):
@@ -675,11 +675,11 @@ def test_resolve_card_action_requires_resolution_summary(service):
     assert get_incident().state == "OPEN"
 ```
 
-- [ ] **Step 5: 实现回调 API、URL challenge 和错误响应**
+- [x] **Step 5: 实现回调 API、URL challenge 和错误响应**
 
 回调 API 不接受平台 Bearer Token替代飞书验证。重复事件返回 200；伪造签名返回 401；未知群、未知线程和非文字消息返回 200 且 `outcome=IGNORED`，避免飞书无意义重试。
 
-- [ ] **Step 6: 运行回调测试并提交**
+- [x] **Step 6: 运行回调测试并提交**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/unit/services/test_feishu_events.py tests/api/test_feishu_callbacks.py -q`
 

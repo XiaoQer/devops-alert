@@ -132,7 +132,7 @@ class IncidentActivity(_FrozenIncidentModel):
     occurred_at: UtcAwareDatetime
     actor_type: IncidentActorType
     actor: IncidentActor
-    summary: str = Field(min_length=1, max_length=500)
+    summary: str = Field(min_length=1, max_length=4_000)
     metadata: dict[str, ActivityMetadataValue] = Field(default_factory=dict, max_length=20)
 
     @model_validator(mode="after")

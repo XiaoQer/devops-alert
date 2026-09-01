@@ -14,6 +14,7 @@ from incident_intelligence.persistence.session import get_engine, make_session_f
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.alert_center import AlertCenterService
 from incident_intelligence.services.alert_sources import AlertSourceService
+from incident_intelligence.services.feishu_events import FeishuEventService
 from incident_intelligence.services.incident_evaluation import IncidentEvaluationService
 from incident_intelligence.services.incident_evaluation_runner import (
     IncidentEvaluationRunner,
@@ -69,6 +70,12 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
         lease_seconds=resolved_settings.incident_worker_lease_seconds,
         max_attempts=min(resolved_settings.incident_worker_max_attempts, 5),
     )
+    incident_service = IncidentService(uow_factory=uow_factory)
+    feishu_event_service = _feishu_event_service(
+        resolved_settings,
+        uow_factory,
+        incident_service,
+    )
 
     app = FastAPI(
         title="Alert Intake API",
@@ -86,6 +93,7 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
     app.state.incident_evaluation_runner = incident_evaluation_runner
     app.state.incident_notification_service = incident_notification_service
     app.state.incident_notification_runner = incident_notification_runner
+    app.state.feishu_event_service = feishu_event_service
     app.state.alert_source_service = AlertSourceService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
@@ -97,9 +105,7 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory),
         capability=resolved_settings.feishu_capability(),
     )
-    app.state.incident_service = IncidentService(
-        uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
-    )
+    app.state.incident_service = incident_service
     app.state.source_authentication_service = SourceAuthenticationService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
@@ -199,3 +205,26 @@ def _feishu_client(settings: Settings) -> FeishuClient | None:
     if not app_id or not app_secret:
         return None
     return FeishuClient(FeishuConfig(app_id=app_id, app_secret=app_secret))
+
+
+def _feishu_event_service(
+    settings: Settings,
+    uow_factory: Callable[[], SqlAlchemyUnitOfWork],
+    incident_service: IncidentService,
+) -> FeishuEventService | None:
+    if settings.feishu_verification_token is None:
+        return None
+    verification_token = settings.feishu_verification_token.get_secret_value().strip()
+    if not verification_token:
+        return None
+    encrypt_key = (
+        None
+        if settings.feishu_encrypt_key is None
+        else settings.feishu_encrypt_key.get_secret_value().strip() or None
+    )
+    return FeishuEventService(
+        uow_factory=uow_factory,
+        incident_service=incident_service,
+        verification_token=verification_token,
+        encrypt_key=encrypt_key,
+    )

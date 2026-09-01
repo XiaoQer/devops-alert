@@ -10,6 +10,7 @@ from pydantic import SecretStr
 from incident_intelligence.api.errors import ApiError
 from incident_intelligence.services.alert_center import AlertCenterService
 from incident_intelligence.services.alert_sources import AlertSourceService
+from incident_intelligence.services.feishu_events import FeishuEventService
 from incident_intelligence.services.incident_notification_routes import (
     IncidentNotificationRouteService,
 )
@@ -93,6 +94,13 @@ def get_incident_notification_route_service(
 
 def get_incident_service(request: Request) -> IncidentService:
     return cast(IncidentService, request.app.state.incident_service)
+
+
+def get_feishu_event_service(request: Request) -> FeishuEventService:
+    service = cast(FeishuEventService | None, request.app.state.feishu_event_service)
+    if service is None:
+        raise ApiError(503, "feishu_not_configured", "飞书回调能力尚未配置")
+    return service
 
 
 def get_source_authentication_service(request: Request) -> SourceAuthenticationService:
