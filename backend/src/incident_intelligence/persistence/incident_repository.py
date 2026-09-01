@@ -5,10 +5,11 @@ from datetime import datetime
 from hashlib import sha256
 from typing import Any, Literal, cast
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from incident_intelligence.domain.incidents import (
     Incident,
@@ -16,6 +17,7 @@ from incident_intelligence.domain.incidents import (
     IncidentAlertLink,
 )
 from incident_intelligence.persistence.models import (
+    AlertLifecycleRow,
     FeishuEventReceiptRow,
     IncidentEvaluationJobRow,
     IncidentFeishuThreadRow,
@@ -28,6 +30,21 @@ from incident_intelligence.persistence.models import (
 
 AsyncJobState = Literal["PENDING", "LEASED", "SUCCEEDED", "FAILED"]
 NotificationKind = Literal["CREATE_CARD", "UPDATE_CARD", "THREAD_REPLY"]
+
+
+@dataclass(frozen=True, slots=True)
+class IncidentPage:
+    items: tuple[Incident, ...]
+    total: int
+    limit: int
+    offset: int
+
+
+@dataclass(frozen=True, slots=True)
+class IncidentAlertStateCounts:
+    active: int
+    resolved: int
+    total: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +153,79 @@ class IncidentRepository:
             statement = statement.with_for_update()
         row = self._session.scalar(statement)
         return None if row is None else _to_incident(row)
+
+    def list(
+        self,
+        *,
+        states: tuple[str, ...] = (),
+        environment: str | None = None,
+        severity: str | None = None,
+        search: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> IncidentPage:
+        filters: list[ColumnElement[bool]] = []
+        if states:
+            filters.append(OperationalIncidentRow.state.in_(states))
+        if environment is not None:
+            filters.append(OperationalIncidentRow.environment == environment)
+        if severity is not None:
+            filters.append(OperationalIncidentRow.severity == severity)
+        if search:
+            pattern = f"%{search}%"
+            filters.append(
+                or_(
+                    OperationalIncidentRow.reference.like(pattern),
+                    OperationalIncidentRow.title.like(pattern),
+                    OperationalIncidentRow.group_display_name.like(pattern),
+                )
+            )
+
+        total = self._session.scalar(
+            select(func.count()).select_from(OperationalIncidentRow).where(*filters)
+        )
+        rows = self._session.scalars(
+            select(OperationalIncidentRow)
+            .where(*filters)
+            .order_by(
+                OperationalIncidentRow.updated_at.desc(),
+                OperationalIncidentRow.id.desc(),
+            )
+            .limit(limit)
+            .offset(offset)
+        )
+        return IncidentPage(
+            items=tuple(_to_incident(row) for row in rows),
+            total=int(total or 0),
+            limit=limit,
+            offset=offset,
+        )
+
+    def count_alert_states(self, incident_id: str) -> IncidentAlertStateCounts:
+        row = self._session.execute(
+            select(
+                func.coalesce(
+                    func.sum(case((AlertLifecycleRow.state == "ACTIVE", 1), else_=0)),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(case((AlertLifecycleRow.state == "RESOLVED", 1), else_=0)),
+                    0,
+                ),
+                func.count(),
+            )
+            .select_from(OperationalIncidentAlertRow)
+            .join(
+                AlertLifecycleRow,
+                AlertLifecycleRow.id == OperationalIncidentAlertRow.alert_id,
+            )
+            .where(OperationalIncidentAlertRow.incident_id == incident_id)
+        ).one()
+        return IncidentAlertStateCounts(
+            active=int(row[0]),
+            resolved=int(row[1]),
+            total=int(row[2]),
+        )
 
     def update(self, incident: Incident, *, expected_version: int) -> bool:
         values = _incident_values(incident)
@@ -246,6 +336,10 @@ class IncidentEvaluationJobRepository:
         self._session.flush()
         return result.rowcount == 1
 
+    def get(self, job_id: str) -> IncidentEvaluationJobRecord | None:
+        row = self._session.get(IncidentEvaluationJobRow, job_id)
+        return None if row is None else _to_job(row)
+
     def lease_due(
         self,
         *,
@@ -287,6 +381,89 @@ class IncidentEvaluationJobRepository:
         self._session.flush()
         return tuple(_to_job(row) for row in rows)
 
+    def retry(
+        self,
+        job_id: str,
+        *,
+        owner: str,
+        error_code: str,
+        available_at: datetime,
+        now: datetime,
+    ) -> bool:
+        return self._finish_owned_lease(
+            job_id,
+            owner=owner,
+            state="PENDING",
+            available_at=available_at,
+            last_error_code=error_code,
+            updated_at=now,
+        )
+
+    def complete(
+        self,
+        job_id: str,
+        *,
+        owner: str,
+        outcome: str,
+        reason_codes: tuple[str, ...],
+        incident_ids: tuple[str, ...],
+        now: datetime,
+    ) -> bool:
+        return self._finish_owned_lease(
+            job_id,
+            owner=owner,
+            state="SUCCEEDED",
+            last_error_code=None,
+            outcome=outcome,
+            reason_codes=list(reason_codes),
+            incident_ids=list(incident_ids),
+            updated_at=now,
+        )
+
+    def fail(
+        self,
+        job_id: str,
+        *,
+        owner: str,
+        error_code: str,
+        now: datetime,
+    ) -> bool:
+        return self._finish_owned_lease(
+            job_id,
+            owner=owner,
+            state="FAILED",
+            last_error_code=error_code,
+            updated_at=now,
+        )
+
+    def _finish_owned_lease(
+        self,
+        job_id: str,
+        *,
+        owner: str,
+        state: AsyncJobState,
+        **values: object,
+    ) -> bool:
+        result = cast(
+            CursorResult[Any],
+            self._session.execute(
+                update(IncidentEvaluationJobRow)
+                .where(
+                    IncidentEvaluationJobRow.id == job_id,
+                    IncidentEvaluationJobRow.state == "LEASED",
+                    IncidentEvaluationJobRow.lease_owner == owner,
+                )
+                .values(
+                    state=state,
+                    lease_owner=None,
+                    lease_expires_at=None,
+                    **values,
+                )
+            ),
+        )
+        self._session.flush()
+        return result.rowcount == 1
+
 
 class IncidentNotificationRepository:
     def __init__(self, session: Session) -> None:
@@ -308,6 +485,139 @@ class IncidentNotificationRepository:
     def get(self, notification_id: str) -> IncidentNotificationRecord | None:
         row = self._session.get(IncidentNotificationOutboxRow, notification_id)
         return None if row is None else _to_notification(row)
+
+    def lease_due(
+        self,
+        *,
+        owner: str,
+        now: datetime,
+        lease_until: datetime,
+        limit: int,
+    ) -> tuple[IncidentNotificationRecord, ...]:
+        rows = tuple(
+            self._session.scalars(
+                select(IncidentNotificationOutboxRow)
+                .where(
+                    or_(
+                        (
+                            (IncidentNotificationOutboxRow.state == "PENDING")
+                            & (IncidentNotificationOutboxRow.available_at <= now)
+                        ),
+                        (
+                            (IncidentNotificationOutboxRow.state == "LEASED")
+                            & (IncidentNotificationOutboxRow.lease_expires_at <= now)
+                        ),
+                    )
+                )
+                .order_by(
+                    IncidentNotificationOutboxRow.available_at,
+                    IncidentNotificationOutboxRow.created_at,
+                    IncidentNotificationOutboxRow.id,
+                )
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+        )
+        for row in rows:
+            row.state = "LEASED"
+            row.attempt_count += 1
+            row.lease_owner = owner
+            row.lease_expires_at = lease_until
+            row.updated_at = now
+        self._session.flush()
+        return tuple(_to_notification(row) for row in rows)
+
+    def succeed(
+        self,
+        notification_id: str,
+        *,
+        owner: str,
+        feishu_message_id: str,
+        now: datetime,
+    ) -> bool:
+        result = cast(
+            CursorResult[Any],
+            self._session.execute(
+                update(IncidentNotificationOutboxRow)
+                .where(
+                    IncidentNotificationOutboxRow.id == notification_id,
+                    IncidentNotificationOutboxRow.state == "LEASED",
+                    IncidentNotificationOutboxRow.lease_owner == owner,
+                )
+                .values(
+                    state="SUCCEEDED",
+                    lease_owner=None,
+                    lease_expires_at=None,
+                    last_error_code=None,
+                    feishu_message_id=feishu_message_id,
+                    updated_at=now,
+                )
+            ),
+        )
+        self._session.flush()
+        return result.rowcount == 1
+
+    def retry(
+        self,
+        notification_id: str,
+        *,
+        owner: str,
+        error_code: str,
+        available_at: datetime,
+        now: datetime,
+    ) -> bool:
+        return self._finish_owned_lease(
+            notification_id,
+            owner=owner,
+            state="PENDING",
+            available_at=available_at,
+            last_error_code=error_code,
+            updated_at=now,
+        )
+
+    def fail(
+        self,
+        notification_id: str,
+        *,
+        owner: str,
+        error_code: str,
+        now: datetime,
+    ) -> bool:
+        return self._finish_owned_lease(
+            notification_id,
+            owner=owner,
+            state="FAILED",
+            last_error_code=error_code,
+            updated_at=now,
+        )
+
+    def _finish_owned_lease(
+        self,
+        notification_id: str,
+        *,
+        owner: str,
+        state: AsyncJobState,
+        **values: object,
+    ) -> bool:
+        result = cast(
+            CursorResult[Any],
+            self._session.execute(
+                update(IncidentNotificationOutboxRow)
+                .where(
+                    IncidentNotificationOutboxRow.id == notification_id,
+                    IncidentNotificationOutboxRow.state == "LEASED",
+                    IncidentNotificationOutboxRow.lease_owner == owner,
+                )
+                .values(
+                    state=state,
+                    lease_owner=None,
+                    lease_expires_at=None,
+                    **values,
+                )
+            ),
+        )
+        self._session.flush()
+        return result.rowcount == 1
 
 
 class IncidentNotificationRouteRepository:
