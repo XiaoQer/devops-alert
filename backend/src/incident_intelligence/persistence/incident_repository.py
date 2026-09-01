@@ -685,7 +685,7 @@ class IncidentNotificationRepository:
         notification_id: str,
         *,
         owner: str,
-        feishu_message_id: str,
+        feishu_message_id: str | None,
         now: datetime,
     ) -> bool:
         result = cast(

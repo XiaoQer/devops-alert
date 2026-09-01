@@ -545,7 +545,7 @@ Commit: `git add backend/src/incident_intelligence/domain/incident_notifications
 - Produces: `render_incident_card(IncidentNotificationSnapshot) -> dict[str, object]`。
 - Produces: `IncidentNotificationRunner.run_once(limit: int = 20) -> NotificationBatchResult`。
 
-- [ ] **Step 1: 编写 HTTP 契约和安全卡片失败测试**
+- [x] **Step 1: 编写 HTTP 契约和安全卡片失败测试**
 
 ```python
 def test_send_card_uses_tenant_token_and_chat_id(fake_transport):
@@ -563,13 +563,13 @@ def test_card_contains_incident_facts_but_no_secrets_or_raw_payload():
     assert "app_secret" not in serialized and "raw_payload" not in serialized
 ```
 
-- [ ] **Step 2: 运行适配器测试并确认模块不存在**
+- [x] **Step 2: 运行适配器测试并确认模块不存在**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/unit/adapters/test_feishu.py -q`
 
 Expected: FAIL。
 
-- [ ] **Step 3: 实现可注入 HTTP transport 的 FeishuClient**
+- [x] **Step 3: 实现可注入 HTTP transport 的 FeishuClient**
 
 ```python
 class FeishuTransport(Protocol):
@@ -583,7 +583,7 @@ class FeishuClient:
 
 租户 token 只缓存到进程内并在过期前 60 秒刷新；日志只记录 Feishu 错误码和 request_id。HTTP 429、网络错误、5xx 为可重试；鉴权、权限和参数错误为永久失败。
 
-- [ ] **Step 4: 编写 Outbox 行为失败测试**
+- [x] **Step 4: 编写 Outbox 行为失败测试**
 
 ```python
 def test_created_notification_sends_root_card_and_binds_thread(service, pending_created):
@@ -603,11 +603,11 @@ def test_missing_route_completes_without_retry(service, pending_created):
     assert result.outcome == "SKIPPED_ROUTE_MISSING"
 ```
 
-- [ ] **Step 5: 实现通知服务、退避与 Runner**
+- [x] **Step 5: 实现通知服务、退避与 Runner**
 
 通知键为 `sha256(incident_id|activity_kind|activity_id)`；退避使用 5 秒、30 秒、2 分钟、10 分钟、30 分钟，最多 5 次。永久失败或重试耗尽时写一条 `NOTIFICATION_FAILED`，但该活动不得再次生成失败通知形成循环。
 
-- [ ] **Step 6: 运行通知测试并提交**
+- [x] **Step 6: 运行通知测试并提交**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/unit/adapters/test_feishu.py tests/integration/services/test_incident_notification_service.py tests/unit/services/test_incident_notification_runner.py -q`
 

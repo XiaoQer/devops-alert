@@ -6,6 +6,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppres
 from fastapi import FastAPI
 from sqlalchemy.engine import Engine
 
+from incident_intelligence.adapters.feishu import FeishuClient, FeishuConfig
 from incident_intelligence.api.errors import install_error_handlers
 from incident_intelligence.api.middleware import RequestBodyLimitMiddleware
 from incident_intelligence.api.router import create_router
@@ -19,6 +20,12 @@ from incident_intelligence.services.incident_evaluation_runner import (
 )
 from incident_intelligence.services.incident_notification_routes import (
     IncidentNotificationRouteService,
+)
+from incident_intelligence.services.incident_notification_runner import (
+    IncidentNotificationRunner,
+)
+from incident_intelligence.services.incident_notifications import (
+    IncidentNotificationService,
 )
 from incident_intelligence.services.incident_rules import IncidentRuleService
 from incident_intelligence.services.incidents import IncidentService
@@ -50,17 +57,35 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
         lease_seconds=resolved_settings.incident_worker_lease_seconds,
         max_attempts=resolved_settings.incident_worker_max_attempts,
     )
+    feishu_client = _feishu_client(resolved_settings)
+    incident_notification_service = IncidentNotificationService(
+        uow_factory=uow_factory,
+        feishu_client=feishu_client,
+    )
+    incident_notification_runner = IncidentNotificationRunner(
+        uow_factory=uow_factory,
+        processor=incident_notification_service,
+        owner="incident-notification",
+        lease_seconds=resolved_settings.incident_worker_lease_seconds,
+        max_attempts=min(resolved_settings.incident_worker_max_attempts, 5),
+    )
 
     app = FastAPI(
         title="Alert Intake API",
         version="0.2.0",
-        lifespan=_lifespan(resolved_settings, incident_evaluation_runner),
+        lifespan=_lifespan(
+            resolved_settings,
+            incident_evaluation_runner,
+            incident_notification_runner,
+        ),
     )
     app.state.settings = resolved_settings
     app.state.engine = resolved_engine
     app.state.session_factory = session_factory
     app.state.incident_evaluation_service = incident_evaluation_service
     app.state.incident_evaluation_runner = incident_evaluation_runner
+    app.state.incident_notification_service = incident_notification_service
+    app.state.incident_notification_runner = incident_notification_runner
     app.state.alert_source_service = AlertSourceService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
@@ -101,20 +126,26 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
 
 def _lifespan(
     settings: Settings,
-    runner: IncidentEvaluationRunner,
+    evaluation_runner: IncidentEvaluationRunner,
+    notification_runner: IncidentNotificationRunner,
 ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         del app
         stop = asyncio.Event()
-        task: asyncio.Task[None] | None = None
+        tasks: list[asyncio.Task[None]] = []
         if settings.incident_workers_enabled:
-            task = asyncio.create_task(_run_incident_worker(settings, runner, stop))
+            tasks.append(
+                asyncio.create_task(_run_incident_worker(settings, evaluation_runner, stop))
+            )
+            tasks.append(
+                asyncio.create_task(_run_notification_worker(settings, notification_runner, stop))
+            )
         try:
             yield
         finally:
             stop.set()
-            if task is not None:
+            for task in tasks:
                 await task
 
     return lifespan
@@ -138,3 +169,33 @@ async def _run_incident_worker(
                 stop.wait(),
                 timeout=settings.incident_worker_poll_seconds,
             )
+
+
+async def _run_notification_worker(
+    settings: Settings,
+    runner: IncidentNotificationRunner,
+    stop: asyncio.Event,
+) -> None:
+    while not stop.is_set():
+        try:
+            await asyncio.to_thread(
+                runner.run_once,
+                limit=settings.incident_worker_batch_size,
+            )
+        except Exception:
+            LOGGER.exception("Incident 通知批次执行失败")
+        with suppress(TimeoutError):
+            await asyncio.wait_for(
+                stop.wait(),
+                timeout=settings.incident_worker_poll_seconds,
+            )
+
+
+def _feishu_client(settings: Settings) -> FeishuClient | None:
+    if settings.feishu_app_id is None or settings.feishu_app_secret is None:
+        return None
+    app_id = settings.feishu_app_id.get_secret_value().strip()
+    app_secret = settings.feishu_app_secret.get_secret_value().strip()
+    if not app_id or not app_secret:
+        return None
+    return FeishuClient(FeishuConfig(app_id=app_id, app_secret=app_secret))
