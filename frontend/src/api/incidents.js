@@ -1,86 +1,55 @@
-import { ApiError, requestJson } from "./request";
+import { requestJson } from "./request";
 
-export class IncidentApiError extends ApiError {
-  constructor(code, userMessage, status = 0) {
-    super(userMessage);
-    this.name = "IncidentApiError";
-    this.code = code;
-    this.userMessage = userMessage;
-    this.status = status;
-  }
-}
-
-const incidentReadMessages = {
-  unavailableCode: "incident_api_unavailable",
-  unavailable: "事故数据暂时不可用，请稍后重试",
-  errorCode: "incident_api_error",
-  error: "事故数据暂时不可用，请稍后重试",
+const readMessages = {
+  unavailable: "Incident 暂时无法读取，请稍后重试",
+  error: "Incident 暂时无法读取，请稍后重试",
 };
-
-const incidentWriteMessages = {
-  ...incidentReadMessages,
-  unavailable: "事故服务暂时不可用，本次操作结果未知",
+const writeMessages = {
+  unavailable: "Incident 服务暂时不可用，本次操作结果未知",
+  error: "Incident 操作未完成，请稍后重试",
 };
+const bounded = (value, fallback) => Math.min(Math.max(value ?? fallback, 1), 100);
 
 export function fetchIncidents(filters = {}, options = {}) {
   const params = new URLSearchParams();
-  if (filters.environment && filters.environment !== "all") {
-    params.set("environment", filters.environment);
+  for (const state of filters.states ?? []) {
+    if (state) params.append("state", state);
   }
-  if (filters.state) params.set("state", filters.state);
-  if (filters.query?.trim()) params.set("query", filters.query.trim());
-  params.set("limit", String(filters.limit ?? 100));
-  params.set("offset", String(filters.offset ?? 0));
-  return requestJson(`/api/v1/incidents?${params.toString()}`, { signal: options.signal }, incidentReadMessages);
+  if (filters.environment) params.set("environment", filters.environment);
+  if (filters.severity) params.set("severity", filters.severity);
+  if (filters.search?.trim()) params.set("search", filters.search.trim());
+  params.set("limit", String(bounded(filters.limit, 50)));
+  params.set("offset", String(Math.max(filters.offset ?? 0, 0)));
+  return requestJson(`/api/v1/incidents?${params}`, { signal: options.signal }, readMessages);
 }
 
-export function fetchIncidentOverview(incidentId, options = {}) {
-  return requestJson(`/api/v1/incidents/${encodeURIComponent(incidentId)}/overview`, {
+export function fetchIncident(incidentId, options = {}) {
+  return requestJson(`/api/v1/incidents/${encodeURIComponent(incidentId)}`, { signal: options.signal }, readMessages);
+}
+
+function mutate(path, body, idempotencyKey, options = {}) {
+  return requestJson(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify(body),
     signal: options.signal,
-  }, incidentReadMessages);
+  }, writeMessages);
 }
 
-const incidentActions = new Set([
-  "claim",
-  "release",
-  "transitions",
-  "notes",
-  "resolve",
-  "reopen",
-  "close",
-]);
-
-export function executeIncidentAction(
-  incidentId,
-  action,
-  command,
-  idempotencyKey,
-  options = {},
-) {
-  if (!incidentActions.has(action)) {
-    throw new IncidentApiError("invalid_incident_action", "未知的事故操作");
-  }
-  if (typeof idempotencyKey !== "string" || !idempotencyKey.trim()) {
-    throw new IncidentApiError("invalid_idempotency_key", "本次操作缺少安全重试标识");
-  }
-  return requestJson(
-    `/api/v1/incidents/${encodeURIComponent(incidentId)}/${action}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Idempotency-Key": idempotencyKey,
-      },
-      body: JSON.stringify(command),
-      signal: options.signal,
-    },
-    incidentWriteMessages,
+export function acknowledgeIncident(incidentId, expectedVersion, idempotencyKey, options = {}) {
+  return mutate(
+    `/api/v1/incidents/${encodeURIComponent(incidentId)}/acknowledge`,
+    { expected_version: expectedVersion },
+    idempotencyKey,
+    options,
   );
 }
 
-export function claimIncident(incidentId, options = {}) {
-  return requestJson(`/api/v1/incidents/${encodeURIComponent(incidentId)}/claim`, {
-    method: "POST",
-    signal: options.signal,
-  }, incidentWriteMessages);
+export function resolveIncident(incidentId, expectedVersion, resolutionSummary, idempotencyKey, options = {}) {
+  return mutate(
+    `/api/v1/incidents/${encodeURIComponent(incidentId)}/resolve`,
+    { expected_version: expectedVersion, resolution_summary: resolutionSummary },
+    idempotencyKey,
+    options,
+  );
 }

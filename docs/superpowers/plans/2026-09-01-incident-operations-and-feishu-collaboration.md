@@ -704,7 +704,7 @@ Commit: `git add backend/src/incident_intelligence/services/feishu_events.py bac
 - Produces: `fetchIncidentNotificationRoutes/createIncidentNotificationRoute/updateIncidentNotificationRoute`。
 - Produces: `useIncidents({ autoLoad = true })` 的列表、详情、筛选、状态操作和冲突恢复状态。
 
-- [ ] **Step 1: 编写 API 契约失败测试**
+- [x] **Step 1: 编写 API 契约失败测试**
 
 ```javascript
 it("确认 Incident 时发送版本与幂等键", async () => {
@@ -721,13 +721,13 @@ it("确认 Incident 时发送版本与幂等键", async () => {
 });
 ```
 
-- [ ] **Step 2: 运行前端目标测试并确认模块不存在**
+- [x] **Step 2: 运行前端目标测试并确认模块不存在**
 
 Run: `cd frontend && npm test -- src/api/incidents.test.js src/api/incidentNotificationRoutes.test.js`
 
 Expected: FAIL。
 
-- [ ] **Step 3: 实现 API 封装和展示投影**
+- [x] **Step 3: 实现 API 封装和展示投影**
 
 ```javascript
 export const incidentStateLabel = { OPEN: "待确认", ACKNOWLEDGED: "处理中", RESOLVED: "已解决" };
@@ -745,7 +745,7 @@ export const activityKindLabel = {
 
 所有错误通过现有 `request.js` 转换为中文可操作信息，不读取技术栈、任务 ID 或原始飞书响应。
 
-- [ ] **Step 4: 编写 composable 并发与错误失败测试**
+- [x] **Step 4: 编写 composable 并发与错误失败测试**
 
 ```javascript
 it("版本冲突后保留解决说明并刷新详情", async () => {
@@ -759,7 +759,7 @@ it("版本冲突后保留解决说明并刷新详情", async () => {
 });
 ```
 
-- [ ] **Step 5: 实现 composable，运行测试并提交**
+- [x] **Step 5: 实现 composable，运行测试并提交**
 
 Run: `cd frontend && npm test -- src/api/incidents.test.js src/api/incidentNotificationRoutes.test.js src/presentation/incidentView.test.js src/composables/useIncidents.test.js`
 
