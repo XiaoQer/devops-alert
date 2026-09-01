@@ -493,7 +493,7 @@ class IncidentReferenceSequenceRow(Base):
     __table_args__ = (
         CheckConstraint(
             "`last_value` BETWEEN 1 AND 999999999",
-            name="incident_reference_sequence_value",
+            name="value",
         ),
         _mysql_table_options(),
     )
@@ -503,6 +503,44 @@ class IncidentReferenceSequenceRow(Base):
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
+class OperationalIncidentOperationRow(Base):
+    __tablename__ = "operational_incident_operations"
+    __table_args__ = (
+        UniqueConstraint(
+            "scope",
+            "idempotency_key_hash",
+            name="operational_incident_operation_key",
+        ),
+        CheckConstraint(
+            "action IN ('ACKNOWLEDGE', 'RESOLVE')",
+            name="action",
+        ),
+        CheckConstraint(
+            "char_length(idempotency_key_hash) = 64 AND char_length(command_fingerprint) = 64",
+            name="hashes",
+        ),
+        CheckConstraint(
+            "result_version >= 1",
+            name="result_version",
+        ),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    scope: Mapped[str] = mapped_column(String(96), nullable=False)
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    command_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    incident_id: Mapped[str] = mapped_column(
+        ForeignKey("operational_incidents.id", ondelete="CASCADE"), nullable=False
+    )
+    result_version: Mapped[int] = mapped_column(nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
 class OperationalIncidentRow(Base):
     __tablename__ = "operational_incidents"
     __table_args__ = (
@@ -510,23 +548,34 @@ class OperationalIncidentRow(Base):
         UniqueConstraint("open_boundary_key", name="operational_incident_open_boundary"),
         CheckConstraint(
             f"state IN ({OPERATIONAL_INCIDENT_STATE_VALUES})",
-            name="operational_incident_state",
+            name="state",
         ),
-        CheckConstraint(f"severity IN ({SEVERITY_VALUES})", name="operational_incident_severity"),
-        CheckConstraint(ENVIRONMENT_CHECK, name="operational_incident_environment"),
-        CheckConstraint("group_by IN ('SERVICE', 'ENTITY')", name="operational_incident_group_by"),
+        CheckConstraint(f"severity IN ({SEVERITY_VALUES})", name="severity"),
+        CheckConstraint(ENVIRONMENT_CHECK, name="environment"),
+        CheckConstraint("group_by IN ('SERVICE', 'ENTITY')", name="group_by"),
         CheckConstraint(
             "char_length(open_boundary_key) = 64 OR open_boundary_key IS NULL",
-            name="operational_incident_open_boundary_length",
+            name="open_boundary",
         ),
         CheckConstraint(
             "incident_rule_version >= 1 AND version >= 1",
-            name="operational_incident_versions",
+            name="versions",
         ),
         CheckConstraint(
             "alert_count >= 1 AND active_alert_count >= 0 "
             "AND active_alert_count <= alert_count AND distinct_alert_name_count >= 1",
-            name="operational_incident_counts",
+            name="counts",
+        ),
+        CheckConstraint(
+            "(state = 'OPEN' AND open_boundary_key IS NOT NULL "
+            "AND acknowledged_at IS NULL AND resolved_at IS NULL "
+            "AND resolution_summary IS NULL) OR "
+            "(state = 'ACKNOWLEDGED' AND open_boundary_key IS NOT NULL "
+            "AND acknowledged_at IS NOT NULL AND resolved_at IS NULL "
+            "AND resolution_summary IS NULL) OR "
+            "(state = 'RESOLVED' AND open_boundary_key IS NULL "
+            "AND resolved_at IS NOT NULL AND resolution_summary IS NOT NULL)",
+            name="state_facts",
         ),
         Index("ix_operational_incidents_list", "state", "updated_at", "id"),
         Index(
@@ -568,7 +617,7 @@ class OperationalIncidentRow(Base):
 class OperationalIncidentAlertRow(Base):
     __tablename__ = "operational_incident_alerts"
     __table_args__ = (
-        CheckConstraint("incident_rule_version >= 1", name="operational_incident_alert_version"),
+        CheckConstraint("incident_rule_version >= 1", name="rule_version"),
         Index("ix_operational_incident_alerts_alert", "alert_id", "incident_id"),
         _mysql_table_options(),
     )
@@ -589,15 +638,15 @@ class OperationalIncidentActivityRow(Base):
     __table_args__ = (
         CheckConstraint(
             f"kind IN ({OPERATIONAL_INCIDENT_ACTIVITY_VALUES})",
-            name="operational_incident_activity_kind",
+            name="kind",
         ),
         CheckConstraint(
             "actor_type IN ('SYSTEM', 'USER', 'FEISHU')",
-            name="operational_incident_activity_actor_type",
+            name="actor_type",
         ),
         CheckConstraint(
             "JSON_TYPE(metadata) = 'OBJECT' AND JSON_LENGTH(metadata) <= 20",
-            name="operational_incident_activity_metadata",
+            name="metadata",
         ),
         Index(
             "ix_operational_incident_activities_timeline",
@@ -617,9 +666,7 @@ class OperationalIncidentActivityRow(Base):
     actor_type: Mapped[str] = mapped_column(String(16), nullable=False)
     actor: Mapped[str] = mapped_column(String(128), nullable=False)
     summary: Mapped[str] = mapped_column(String(500), nullable=False)
-    activity_metadata: Mapped[dict[str, object]] = mapped_column(
-        "metadata", JSON, nullable=False
-    )
+    activity_metadata: Mapped[dict[str, object]] = mapped_column("metadata", JSON, nullable=False)
 
 
 class IncidentEvaluationJobRow(Base):
@@ -628,11 +675,21 @@ class IncidentEvaluationJobRow(Base):
         UniqueConstraint("alert_id", "alert_version", name="incident_evaluation_alert_version"),
         CheckConstraint(
             f"state IN ({INCIDENT_ASYNC_STATE_VALUES})",
-            name="incident_evaluation_job_state",
+            name="state",
         ),
         CheckConstraint(
             "alert_version >= 1 AND attempt_count BETWEEN 0 AND 10",
-            name="incident_evaluation_job_bounds",
+            name="bounds",
+        ),
+        CheckConstraint(
+            "(state = 'LEASED' AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL) "
+            "OR (state <> 'LEASED' AND lease_owner IS NULL AND lease_expires_at IS NULL)",
+            name="lease",
+        ),
+        CheckConstraint(
+            "JSON_TYPE(reason_codes) = 'ARRAY' AND JSON_LENGTH(reason_codes) <= 20 "
+            "AND JSON_TYPE(incident_ids) = 'ARRAY' AND JSON_LENGTH(incident_ids) <= 100",
+            name="results",
         ),
         Index("ix_incident_evaluation_jobs_claim", "state", "available_at", "created_at"),
         _mysql_table_options(),
@@ -663,8 +720,13 @@ class IncidentNotificationRouteRow(Base):
             "enabled_environment_key",
             name="incident_route_enabled_environment",
         ),
-        CheckConstraint(ENVIRONMENT_CHECK, name="incident_notification_route_environment"),
-        CheckConstraint("version >= 1", name="incident_notification_route_version"),
+        CheckConstraint(ENVIRONMENT_CHECK, name="environment"),
+        CheckConstraint("version >= 1", name="version"),
+        CheckConstraint(
+            "(enabled = 1 AND enabled_environment_key = environment) "
+            "OR (enabled = 0 AND enabled_environment_key IS NULL)",
+            name="enabled_key",
+        ),
         _mysql_table_options(),
     )
 
@@ -685,15 +747,24 @@ class IncidentNotificationOutboxRow(Base):
         UniqueConstraint("notification_key", name="incident_notification_key"),
         CheckConstraint(
             f"state IN ({INCIDENT_ASYNC_STATE_VALUES})",
-            name="incident_notification_outbox_state",
+            name="state",
         ),
         CheckConstraint(
             "kind IN ('CREATE_CARD', 'UPDATE_CARD', 'THREAD_REPLY')",
-            name="incident_notification_outbox_kind",
+            name="kind",
         ),
         CheckConstraint(
             "attempt_count BETWEEN 0 AND 10 AND char_length(notification_key) = 64",
-            name="incident_notification_outbox_bounds",
+            name="bounds",
+        ),
+        CheckConstraint(
+            "(state = 'LEASED' AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL) "
+            "OR (state <> 'LEASED' AND lease_owner IS NULL AND lease_expires_at IS NULL)",
+            name="lease",
+        ),
+        CheckConstraint(
+            "JSON_TYPE(payload) = 'OBJECT' AND JSON_LENGTH(payload) <= 30",
+            name="payload",
         ),
         Index(
             "ix_incident_notification_outbox_claim",
@@ -710,7 +781,8 @@ class IncidentNotificationOutboxRow(Base):
     )
     activity_id: Mapped[str] = mapped_column(
         String(37),
-        ForeignKey("operational_incident_activities.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("operational_incident_activities.id", ondelete="CASCADE"),
+        nullable=False,
     )
     notification_key: Mapped[str] = mapped_column(String(64), nullable=False)
     kind: Mapped[str] = mapped_column(String(32), nullable=False)

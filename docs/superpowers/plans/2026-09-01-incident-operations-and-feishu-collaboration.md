@@ -385,9 +385,12 @@ Commit: `git add backend/src/incident_intelligence/services/incident_evaluation.
 ### Task 5：实现 Incident 查询、确认和解决 API
 
 **Files:**
+- Create: `backend/migrations/versions/0015_operational_incident_operations.py`
 - Create: `backend/src/incident_intelligence/services/incidents.py`
 - Create: `backend/src/incident_intelligence/api/schemas/incidents.py`
 - Create: `backend/src/incident_intelligence/api/routes/incidents.py`
+- Modify: `backend/src/incident_intelligence/persistence/models.py`
+- Modify: `backend/src/incident_intelligence/persistence/incident_repository.py`
 - Modify: `backend/src/incident_intelligence/api/dependencies.py`
 - Modify: `backend/src/incident_intelligence/api/router.py`
 - Modify: `backend/src/incident_intelligence/main.py`
@@ -399,7 +402,7 @@ Commit: `git add backend/src/incident_intelligence/services/incident_evaluation.
 - Produces: `GET /api/v1/incidents`、`GET /api/v1/incidents/{id}`、`POST /acknowledge`、`POST /resolve`。
 - Writes require: Bearer Token、`Idempotency-Key`、`expected_version`；解决还要求 `resolution_summary`。
 
-- [ ] **Step 1: 编写应用服务失败测试**
+- [x] **Step 1: 编写应用服务失败测试**
 
 ```python
 def test_acknowledge_is_idempotent_and_writes_one_activity(service):
@@ -414,13 +417,13 @@ def test_resolve_rejects_stale_version(service):
         service.resolve(INCIDENT_ID, expected_version=0, resolution_summary="已恢复", idempotency_key="resolve-1", actor="tester", request_id="req-1")
 ```
 
-- [ ] **Step 2: 运行服务测试并确认接口不存在**
+- [x] **Step 2: 运行服务测试并确认接口不存在**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/integration/services/test_incident_service.py -q`
 
 Expected: FAIL。
 
-- [ ] **Step 3: 实现服务与只读详情投影**
+- [x] **Step 3: 实现服务与只读详情投影**
 
 ```python
 class IncidentDetailView(BaseModel):
@@ -434,7 +437,7 @@ class IncidentDetailView(BaseModel):
 
 列表默认状态为 `OPEN,ACKNOWLEDGED`，支持状态、环境、严重级别、关键词，`limit<=100`、`offset<=10_000`。详情 Alert 最多 500 条、活动最多 1,000 条，超限时返回 `truncated=true`。
 
-- [ ] **Step 4: 编写 API 契约失败测试**
+- [x] **Step 4: 编写 API 契约失败测试**
 
 ```python
 def test_incident_api_lists_real_data_and_supports_state_changes(api_client, auth_headers):
@@ -449,11 +452,11 @@ def test_incident_api_lists_real_data_and_supports_state_changes(api_client, aut
     assert acknowledged.json()["incident"]["state"] == "ACKNOWLEDGED"
 ```
 
-- [ ] **Step 5: 实现 schema、路由、依赖接线和错误映射**
+- [x] **Step 5: 实现 schema、路由、依赖接线和错误映射**
 
 `404=incident_not_found`、`409=incident_version_conflict/incident_state_conflict/idempotency_conflict`、`422=validation_error`；响应不得包含数据库任务正文、Secret 或飞书原始事件。
 
-- [ ] **Step 6: 运行 API 测试并提交**
+- [x] **Step 6: 运行 API 测试并提交**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/integration/services/test_incident_service.py tests/api/test_incidents.py -q`
 

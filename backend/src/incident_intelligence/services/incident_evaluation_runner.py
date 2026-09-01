@@ -75,8 +75,7 @@ class IncidentEvaluationRunner:
                     else:
                         delay = min(
                             300,
-                            self._retry_base_seconds
-                            * (2 ** max(0, job.attempt_count - 1)),
+                            self._retry_base_seconds * (2 ** max(0, job.attempt_count - 1)),
                         )
                         changed = repository.retry(
                             job.id,

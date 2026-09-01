@@ -20,6 +20,7 @@ def test_incident_operational_rows_are_registered_in_orm_metadata() -> None:
         "operational_incidents",
         "operational_incident_alerts",
         "operational_incident_activities",
+        "operational_incident_operations",
         "incident_evaluation_jobs",
         "incident_notification_routes",
         "incident_notification_outbox",
@@ -39,6 +40,7 @@ def test_incident_operations_schema_uses_new_tables_without_reusing_legacy_incid
         "operational_incidents",
         "operational_incident_alerts",
         "operational_incident_activities",
+        "operational_incident_operations",
         "incident_evaluation_jobs",
         "incident_notification_routes",
         "incident_notification_outbox",
@@ -54,20 +56,20 @@ def test_incident_schema_has_concurrency_and_idempotency_unique_constraints(
 ) -> None:
     inspector = inspect(migrated_engine)
 
-    assert "operational_incident_open_boundary" in _unique_names(
-        inspector, "operational_incidents"
-    )
-    assert inspector.get_pk_constraint("operational_incident_alerts")[
-        "constrained_columns"
-    ] == ["incident_id", "alert_id"]
+    assert "operational_incident_open_boundary" in _unique_names(inspector, "operational_incidents")
+    assert inspector.get_pk_constraint("operational_incident_alerts")["constrained_columns"] == [
+        "incident_id",
+        "alert_id",
+    ]
     assert "incident_evaluation_alert_version" in _unique_names(
         inspector, "incident_evaluation_jobs"
     )
-    assert "incident_notification_key" in _unique_names(
-        inspector, "incident_notification_outbox"
-    )
+    assert "incident_notification_key" in _unique_names(inspector, "incident_notification_outbox")
     assert "incident_route_enabled_environment" in _unique_names(
         inspector, "incident_notification_routes"
+    )
+    assert "operational_incident_operation_key" in _unique_names(
+        inspector, "operational_incident_operations"
     )
     assert {
         "incident_feishu_thread_incident",

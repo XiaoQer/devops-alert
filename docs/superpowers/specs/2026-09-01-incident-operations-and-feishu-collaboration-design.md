@@ -188,6 +188,7 @@ Alert 追加只更新卡片统计，不逐条向群发送消息；严重级别�
 - `incident_notification_outbox`
 - `incident_feishu_threads`
 - `feishu_event_receipts`
+- `operational_incident_operations`：只保存操作范围、幂等键哈希、命令指纹、结果版本和安全审计字段，不保存请求正文。
 
 所有批次、文本和 JSON 字段必须有界。Worker 不读取故障注入平台，不使用 `scenario_id`、`experiment_id` 或任何实验身份。
 

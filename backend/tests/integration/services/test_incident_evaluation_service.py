@@ -144,9 +144,7 @@ def test_two_matching_jobs_converge_to_one_unresolved_incident(
     }
     with Session(migrated_engine) as session:
         assert session.scalar(select(func.count()).select_from(OperationalIncidentRow)) == 1
-        assert session.scalar(
-            select(func.count()).select_from(OperationalIncidentAlertRow)
-        ) == 2
+        assert session.scalar(select(func.count()).select_from(OperationalIncidentAlertRow)) == 2
 
 
 def test_all_linked_alerts_recovered_records_once_without_resolving_incident(
@@ -165,9 +163,7 @@ def test_all_linked_alerts_recovered_records_once_without_resolving_incident(
         "iej_88888888888888888888888888888888",
     )
     with Session(migrated_engine) as session:
-        alerts = tuple(
-            session.scalars(select(AlertLifecycleRow).order_by(AlertLifecycleRow.id))
-        )
+        alerts = tuple(session.scalars(select(AlertLifecycleRow).order_by(AlertLifecycleRow.id)))
         for alert, job_id in zip(alerts, recovery_jobs, strict=True):
             alert.state = "RESOLVED"
             alert.resolved_at = NOW + timedelta(minutes=1)
@@ -223,9 +219,7 @@ def _seed(
                     "services": ("checkout",),
                     "group_by": "SERVICE",
                     "window_minutes": 5,
-                    "conditions": (
-                        {"type": "DISTINCT_ALERT_NAMES_GTE", "threshold": 2},
-                    ),
+                    "conditions": ({"type": "DISTINCT_ALERT_NAMES_GTE", "threshold": 2},),
                 }
             ),
             now=NOW - timedelta(minutes=10),

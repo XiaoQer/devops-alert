@@ -478,9 +478,7 @@ def _insert_rule_and_alert(session: Session) -> None:
                     "services": ("checkout",),
                     "group_by": "SERVICE",
                     "window_minutes": 5,
-                    "conditions": (
-                        {"type": "DISTINCT_ALERT_NAMES_GTE", "threshold": 1},
-                    ),
+                    "conditions": ({"type": "DISTINCT_ALERT_NAMES_GTE", "threshold": 1},),
                 }
             ),
             now=NOW,

@@ -143,9 +143,7 @@ def test_resolved_updates_same_alert_without_creating_second_row(
         assert alert.resolved_at == NOW.replace(minute=5)
         jobs = tuple(
             session.scalars(
-                select(IncidentEvaluationJobRow).order_by(
-                    IncidentEvaluationJobRow.alert_version
-                )
+                select(IncidentEvaluationJobRow).order_by(IncidentEvaluationJobRow.alert_version)
             )
         )
         assert [(job.alert_id, job.alert_version) for job in jobs] == [

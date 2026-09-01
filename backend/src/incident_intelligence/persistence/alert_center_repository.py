@@ -88,6 +88,26 @@ class AlertRepository:
         ).one_or_none()
         return None if row is None else AlertRecord(alert=row[0], source=row[1])
 
+    def list_alerts_by_ids(
+        self,
+        alert_ids: tuple[str, ...],
+        *,
+        limit: int,
+    ) -> tuple[AlertRecord, ...]:
+        if not alert_ids:
+            return ()
+        rows = self._session.execute(
+            select(AlertLifecycleRow, AlertSourceRow)
+            .join(AlertSourceRow, AlertSourceRow.id == AlertLifecycleRow.alert_source_id)
+            .where(AlertLifecycleRow.id.in_(alert_ids))
+            .order_by(
+                AlertLifecycleRow.first_received_at,
+                AlertLifecycleRow.id,
+            )
+            .limit(limit)
+        )
+        return tuple(AlertRecord(alert=row[0], source=row[1]) for row in rows)
+
     def get_evaluation_fact(self, alert_id: str) -> AlertEvaluationFact | None:
         row = self._session.get(AlertLifecycleRow, alert_id)
         return None if row is None else _evaluation_fact(row)

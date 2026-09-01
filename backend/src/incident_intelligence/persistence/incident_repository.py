@@ -26,6 +26,7 @@ from incident_intelligence.persistence.models import (
     IncidentReferenceSequenceRow,
     OperationalIncidentActivityRow,
     OperationalIncidentAlertRow,
+    OperationalIncidentOperationRow,
     OperationalIncidentRow,
 )
 
@@ -119,6 +120,21 @@ class FeishuEventReceiptRecord:
     received_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class IncidentOperationRecord:
+    id: str
+    scope: str
+    idempotency_key_hash: str
+    command_fingerprint: str
+    action: Literal["ACKNOWLEDGE", "RESOLVE"]
+    incident_id: str
+    result_version: int
+    actor: str
+    request_id: str
+    summary: str
+    completed_at: datetime
+
+
 class IncidentRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -128,9 +144,7 @@ class IncidentRepository:
         self._session.flush()
 
     def get(self, incident_id: str, *, for_update: bool = False) -> Incident | None:
-        statement = select(OperationalIncidentRow).where(
-            OperationalIncidentRow.id == incident_id
-        )
+        statement = select(OperationalIncidentRow).where(OperationalIncidentRow.id == incident_id)
         if for_update:
             statement = statement.with_for_update()
         row = self._session.scalar(statement)
@@ -316,8 +330,13 @@ class IncidentRepository:
             )
         self._session.flush()
 
-    def list_activities(self, incident_id: str) -> tuple[IncidentActivity, ...]:
-        rows = self._session.scalars(
+    def list_activities(
+        self,
+        incident_id: str,
+        *,
+        limit: int | None = None,
+    ) -> tuple[IncidentActivity, ...]:
+        statement = (
             select(OperationalIncidentActivityRow)
             .where(OperationalIncidentActivityRow.incident_id == incident_id)
             .order_by(
@@ -325,6 +344,9 @@ class IncidentRepository:
                 OperationalIncidentActivityRow.id,
             )
         )
+        if limit is not None:
+            statement = statement.limit(limit)
+        rows = self._session.scalars(statement)
         return tuple(
             IncidentActivity.model_validate(
                 {
@@ -339,6 +361,43 @@ class IncidentRepository:
                 }
             )
             for row in rows
+        )
+
+
+class IncidentOperationRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def insert(self, record: IncidentOperationRecord) -> None:
+        self._session.add(OperationalIncidentOperationRow(**asdict(record)))
+        self._session.flush()
+
+    def find(
+        self,
+        *,
+        scope: str,
+        idempotency_key_hash: str,
+    ) -> IncidentOperationRecord | None:
+        row = self._session.scalar(
+            select(OperationalIncidentOperationRow).where(
+                OperationalIncidentOperationRow.scope == scope,
+                OperationalIncidentOperationRow.idempotency_key_hash == idempotency_key_hash,
+            )
+        )
+        if row is None:
+            return None
+        return IncidentOperationRecord(
+            id=row.id,
+            scope=row.scope,
+            idempotency_key_hash=row.idempotency_key_hash,
+            command_fingerprint=row.command_fingerprint,
+            action=cast(Literal["ACKNOWLEDGE", "RESOLVE"], row.action),
+            incident_id=row.incident_id,
+            result_version=row.result_version,
+            actor=row.actor,
+            request_id=row.request_id,
+            summary=row.summary,
+            completed_at=row.completed_at,
         )
 
 
@@ -363,9 +422,7 @@ class IncidentEvaluationJobRepository:
         *,
         for_update: bool = False,
     ) -> IncidentEvaluationJobRecord | None:
-        statement = select(IncidentEvaluationJobRow).where(
-            IncidentEvaluationJobRow.id == job_id
-        )
+        statement = select(IncidentEvaluationJobRow).where(IncidentEvaluationJobRow.id == job_id)
         if for_update:
             statement = statement.with_for_update()
         row = self._session.scalar(statement)
@@ -542,9 +599,7 @@ class IncidentNotificationRepository:
         result = cast(
             CursorResult[Any],
             self._session.execute(
-                mysql_insert(IncidentNotificationOutboxRow)
-                .values(**values)
-                .prefix_with("IGNORE")
+                mysql_insert(IncidentNotificationOutboxRow).values(**values).prefix_with("IGNORE")
             ),
         )
         self._session.flush()
@@ -552,6 +607,21 @@ class IncidentNotificationRepository:
 
     def get(self, notification_id: str) -> IncidentNotificationRecord | None:
         row = self._session.get(IncidentNotificationOutboxRow, notification_id)
+        return None if row is None else _to_notification(row)
+
+    def latest_for_incident(
+        self,
+        incident_id: str,
+    ) -> IncidentNotificationRecord | None:
+        row = self._session.scalar(
+            select(IncidentNotificationOutboxRow)
+            .where(IncidentNotificationOutboxRow.incident_id == incident_id)
+            .order_by(
+                IncidentNotificationOutboxRow.updated_at.desc(),
+                IncidentNotificationOutboxRow.id.desc(),
+            )
+            .limit(1)
+        )
         return None if row is None else _to_notification(row)
 
     def lease_due(
@@ -748,9 +818,7 @@ class FeishuEventReceiptRepository:
         result = cast(
             CursorResult[Any],
             self._session.execute(
-                mysql_insert(FeishuEventReceiptRow)
-                .values(**asdict(record))
-                .prefix_with("IGNORE")
+                mysql_insert(FeishuEventReceiptRow).values(**asdict(record)).prefix_with("IGNORE")
             ),
         )
         self._session.flush()
@@ -767,9 +835,7 @@ def _incident_values(incident: Incident) -> dict[str, object]:
 
 
 def _open_boundary_key(incident: Incident) -> str:
-    value = "\x1f".join(
-        (incident.incident_rule_id, incident.environment, incident.group_key)
-    )
+    value = "\x1f".join((incident.incident_rule_id, incident.environment, incident.group_key))
     return sha256(value.encode()).hexdigest()
 
 

@@ -11,6 +11,7 @@ from incident_intelligence.api.errors import ApiError
 from incident_intelligence.services.alert_center import AlertCenterService
 from incident_intelligence.services.alert_sources import AlertSourceService
 from incident_intelligence.services.incident_rules import IncidentRuleService
+from incident_intelligence.services.incidents import IncidentService
 from incident_intelligence.services.signal_intake import SignalIntakeService
 from incident_intelligence.services.source_authentication import SourceAuthenticationService
 from incident_intelligence.services.source_receipts import SourceReceiptService
@@ -76,6 +77,10 @@ def get_alert_center_service(request: Request) -> AlertCenterService:
 
 def get_incident_rule_service(request: Request) -> IncidentRuleService:
     return cast(IncidentRuleService, request.app.state.incident_rule_service)
+
+
+def get_incident_service(request: Request) -> IncidentService:
+    return cast(IncidentService, request.app.state.incident_service)
 
 
 def get_source_authentication_service(request: Request) -> SourceAuthenticationService:

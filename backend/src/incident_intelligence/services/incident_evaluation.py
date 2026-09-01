@@ -149,17 +149,9 @@ class IncidentEvaluationService:
                     created = created or was_created
 
             outcome = (
-                "INCIDENT_CREATED"
-                if created
-                else "INCIDENT_UPDATED"
-                if affected
-                else "NO_MATCH"
+                "INCIDENT_CREATED" if created else "INCIDENT_UPDATED" if affected else "NO_MATCH"
             )
-            reason_codes = (
-                ("published_rule_matched",)
-                if affected
-                else ("no_published_rule_match",)
-            )
+            reason_codes = ("published_rule_matched",) if affected else ("no_published_rule_match",)
             if not jobs.complete(
                 job.id,
                 owner=self._owner,
@@ -241,8 +233,7 @@ class IncidentEvaluationService:
 
         existing_ids = incidents.list_alert_ids(existing.id)
         all_facts = {
-            fact.id: fact
-            for fact in (*alerts.list_evaluation_facts_by_ids(existing_ids), *members)
+            fact.id: fact for fact in (*alerts.list_evaluation_facts_by_ids(existing_ids), *members)
         }
         change = link_alerts(
             existing,
