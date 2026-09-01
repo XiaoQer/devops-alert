@@ -205,6 +205,93 @@ def test_alert_source_migration_matches_orm_metadata(alembic_config: Config) -> 
         command.downgrade(alembic_config, "base")
 
 
+def test_upgrade_restores_missing_system_sources_without_overwriting_user_sources(
+    alembic_config: Config,
+    mysql_engine: Engine,
+) -> None:
+    command.downgrade(alembic_config, "base")
+    command.upgrade(alembic_config, "0017_feishu_activity_text")
+    alert_sources = table(
+        "alert_sources",
+        column("id"),
+        column("name"),
+        column("source_type"),
+        column("management_type"),
+        column("state"),
+        column("environment"),
+        column("environment_name"),
+        column("environment_configured"),
+        column("version"),
+        column("accepted_requests"),
+        column("rejected_requests"),
+        column("opened_count"),
+        column("updated_count"),
+        column("resolved_count"),
+        column("replayed_count"),
+        column("ignored_count"),
+        column("created_at"),
+        column("updated_at"),
+    )
+    user_source_id = new_id("src")
+    try:
+        with Session(mysql_engine) as session:
+            session.execute(
+                alert_sources.delete().where(
+                    alert_sources.c.id.in_(
+                        (
+                            MANUAL_SYSTEM_SOURCE_ID,
+                            ALERTMANAGER_COMPAT_SOURCE_ID,
+                            CLOUDEVENTS_COMPAT_SOURCE_ID,
+                        )
+                    )
+                )
+            )
+            session.execute(
+                insert(alert_sources).values(
+                    id=user_source_id,
+                    name="Alertmanager 兼容接入",
+                    source_type="ALERTMANAGER",
+                    management_type="USER_MANAGED",
+                    state="ENABLED",
+                    environment="production",
+                    environment_name="生产环境",
+                    environment_configured=True,
+                    version=3,
+                    accepted_requests=7,
+                    rejected_requests=0,
+                    opened_count=7,
+                    updated_count=0,
+                    resolved_count=0,
+                    replayed_count=0,
+                    ignored_count=0,
+                    created_at=NOW,
+                    updated_at=NOW,
+                )
+            )
+            session.commit()
+
+        command.upgrade(alembic_config, "head")
+
+        with Session(mysql_engine) as session:
+            sources = {row["id"]: row for row in session.execute(select(alert_sources)).mappings()}
+            assert set(sources) == {
+                MANUAL_SYSTEM_SOURCE_ID,
+                ALERTMANAGER_COMPAT_SOURCE_ID,
+                CLOUDEVENTS_COMPAT_SOURCE_ID,
+                user_source_id,
+            }
+            assert sources[ALERTMANAGER_COMPAT_SOURCE_ID]["name"].startswith(
+                "Alertmanager 兼容接入"
+            )
+            assert sources[ALERTMANAGER_COMPAT_SOURCE_ID]["name"] != sources[user_source_id]["name"]
+            assert sources[ALERTMANAGER_COMPAT_SOURCE_ID]["environment_configured"] == 0
+            assert sources[user_source_id]["name"] == "Alertmanager 兼容接入"
+            assert sources[user_source_id]["version"] == 3
+            assert sources[user_source_id]["accepted_requests"] == 7
+    finally:
+        command.downgrade(alembic_config, "base")
+
+
 def test_downgrade_rejects_custom_environments_without_losing_data(
     alembic_config: Config,
     mysql_engine: Engine,

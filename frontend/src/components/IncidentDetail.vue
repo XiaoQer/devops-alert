@@ -1,8 +1,8 @@
 <script setup>
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { PhBellRinging, PhCheckCircle, PhClockCounterClockwise, PhX } from "@phosphor-icons/vue";
 
-defineProps({
+const props = defineProps({
   detail: { type: Object, required: true },
   operationState: { type: String, default: "idle" },
   operationError: { type: String, default: "" },
@@ -10,6 +10,10 @@ defineProps({
 });
 defineEmits(["close", "acknowledge", "resolve", "update:resolutionSummary"]);
 const resolving = ref(false);
+watch(() => props.detail.incident.id, () => { resolving.value = false; });
+watch(() => props.detail.incident.state, (state) => {
+  if (state === "RESOLVED") resolving.value = false;
+});
 </script>
 
 <template>

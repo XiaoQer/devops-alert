@@ -40,7 +40,7 @@ describe("Incident 中文展示投影", () => {
   it("详情投影只使用后端返回的真实事实", () => {
     const view = toIncidentDetailView({
       incident, rule_name: "支付服务异常", rule_summary: "5 分钟内 3 条告警",
-      alerts: [{ id: "alt_1", alert_name: "HighLatency", state: "FIRING", severity: "high", environment: "production", service: "checkout", entity_type: "service", entity_display_name: "checkout", source_id: "src_1", source_name: "Prometheus", summary: "延迟升高", description: "P99 超过阈值", first_observed_at: "2026-09-01T01:00:00Z", last_observed_at: "2026-09-01T01:10:00Z", first_received_at: "2026-09-01T01:00:01Z", last_received_at: "2026-09-01T01:10:01Z", resolved_at: null }],
+      alerts: [{ id: "alt_1", alert_name: "HighLatency", state: "ACTIVE", severity: "high", environment: "production", service: "checkout", entity_type: "service", entity_display_name: "checkout", source_id: "src_1", source_name: "Prometheus", summary: "延迟升高", description: "P99 超过阈值", first_observed_at: "2026-09-01T01:00:00Z", last_observed_at: "2026-09-01T01:10:00Z", first_received_at: "2026-09-01T01:00:01Z", last_received_at: "2026-09-01T01:10:01Z", resolved_at: null }],
       alerts_truncated: false, activities: [], activities_truncated: false,
       feishu: { configured: true, route_name: "生产事故群", chat_id_masked: "oc_***123", thread_bound: true, last_synced_at: null, notification_state: "SENT", last_error_code: null },
     });

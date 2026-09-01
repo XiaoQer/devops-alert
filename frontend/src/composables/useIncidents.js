@@ -113,8 +113,18 @@ export function useIncidents({ autoLoad = true } = {}) {
     operationError.value = "";
     try {
       const response = await operation();
-      selectedIncident.value = toIncidentListItem(response.incident);
+      selectedIncident.value = toIncidentListItem({
+        ...response.incident,
+        rule_name: detail.value?.rule_name,
+        rule_summary: detail.value?.rule_summary,
+      });
       if (detail.value) detail.value.incident = selectedIncident.value;
+      try {
+        await reloadDetail(incidentId);
+      } catch {
+        detailState.value = "error";
+        detailError.value = "操作已完成，但最新详情暂时无法读取";
+      }
       operationState.value = "succeeded";
       if (clearResolution) resolutionSummary.value = "";
       await loadIncidents();
@@ -130,14 +140,19 @@ export function useIncidents({ autoLoad = true } = {}) {
 
   async function refreshDetailAfterConflict(incidentId) {
     try {
-      const response = await fetchIncident(incidentId);
-      detail.value = toIncidentDetailView(response);
-      selectedIncident.value = detail.value.incident;
-      detailState.value = "ready";
+      await reloadDetail(incidentId);
     } catch {
       detailState.value = "error";
       detailError.value = "Incident 已更新，但最新详情暂时无法读取";
     }
+  }
+
+  async function reloadDetail(incidentId) {
+    const response = await fetchIncident(incidentId);
+    detail.value = toIncidentDetailView(response);
+    selectedIncident.value = detail.value.incident;
+    detailState.value = "ready";
+    detailError.value = "";
   }
 
   if (autoLoad) {

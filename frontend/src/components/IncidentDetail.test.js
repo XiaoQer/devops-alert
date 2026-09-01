@@ -20,3 +20,18 @@ it("关联告警为空时明确展示真实空态", () => {
   expect(wrapper.text()).toContain("当前没有可展示的关联告警");
   expect(wrapper.text()).not.toContain("示例");
 });
+
+it("解决成功后自动关闭解决表单", async () => {
+  const wrapper = mount(IncidentDetail, { props: { detail: { incident: { ...incident, state: "ACKNOWLEDGED", stateLabel: "处理中" }, alerts: [], activities: [], feishu: { statusLabel: "未配置飞书事故群" } }, operationState: "idle", operationError: "", resolutionSummary: "已恢复" } });
+  await wrapper.get('[data-testid="open-resolve"]').trigger("click");
+  expect(wrapper.find('[data-testid="resolution-summary"]').exists()).toBe(true);
+
+  await wrapper.setProps({
+    detail: {
+      incident: { ...incident, state: "RESOLVED", stateLabel: "已解决", resolution_summary: "已恢复" },
+      alerts: [], activities: [], feishu: { statusLabel: "未配置飞书事故群" },
+    },
+  });
+
+  expect(wrapper.find('[data-testid="resolution-summary"]').exists()).toBe(false);
+});

@@ -6,7 +6,7 @@
 - 一个 Vue 3 前端；
 - 一个 MySQL 8.4 数据库。
 
-当前包含 Incident 评估 Worker；没有诊断 Worker 或 AI Worker。飞书通知 Outbox 已持久化，但投递 Worker 尚未实现。
+当前包含 Incident 评估 Worker 和飞书通知 Worker；没有诊断 Worker 或 AI Worker。飞书通知采用持久化 Outbox、租约和有界重试，飞书事件与卡片动作通过独立回调入口同步到 Incident。
 
 ## 数据流
 
@@ -34,6 +34,10 @@ Alertmanager Watchdog 心跳忽略
 Incident 评估 Worker 创建或更新正式 Incident
           ↓
 Incident 查询、确认、解决与飞书群路由配置
+          ↓
+飞书通知 Worker 发送或更新根卡片并绑定 Incident 线程
+          ↕
+已验签的线程消息与卡片动作同步 Incident 活动和状态
 ```
 
 ## 领域边界

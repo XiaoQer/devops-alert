@@ -2,7 +2,7 @@ const stateLabels = { OPEN: "待确认", ACKNOWLEDGED: "处理中", RESOLVED: "�
 const stateTones = { OPEN: "open", ACKNOWLEDGED: "acknowledged", RESOLVED: "resolved" };
 const severityLabels = { low: "提示", medium: "一般", high: "重要", critical: "严重" };
 const environmentLabels = { production: "生产环境", staging: "预发环境", testing: "测试环境", development: "开发环境" };
-const alertStateLabels = { FIRING: "告警中", RESOLVED: "已恢复" };
+const alertStateLabels = { ACTIVE: "告警中", RESOLVED: "已恢复" };
 const activityKindLabels = {
   INCIDENT_CREATED: "Incident 已创建",
   ALERTS_LINKED: "关联告警已更新",

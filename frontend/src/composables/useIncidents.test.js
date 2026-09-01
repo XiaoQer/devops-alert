@@ -55,11 +55,25 @@ describe("Incident 页面状态", () => {
 
   it("确认成功后使用新版本并刷新列表", async () => {
     acknowledgeIncident.mockResolvedValue({ incident: { ...incident, state: "ACKNOWLEDGED", version: 2 }, replayed: false });
+    fetchIncident
+      .mockResolvedValueOnce(detail)
+      .mockResolvedValueOnce({
+        ...detail,
+        incident: { ...incident, state: "ACKNOWLEDGED", version: 2 },
+        activities: [{
+          id: "iact_1", kind: "ACKNOWLEDGED", actor_type: "USER",
+          actor: "manual-api-client", summary: "INC-20260901-001 已确认",
+          occurred_at: "2026-09-01T01:02:00Z", metadata: {},
+        }],
+      });
     const state = useIncidents({ autoLoad: false });
     await state.openIncident("inc_1");
     expect(await state.acknowledge()).toBe(true);
     expect(state.selectedIncident.value.state).toBe("ACKNOWLEDGED");
     expect(state.selectedIncident.value.version).toBe(2);
+    expect(state.detail.value.incident.rule_name).toBe("支付服务异常");
+    expect(state.detail.value.activities[0].kindLabel).toBe("Incident 已确认");
+    expect(fetchIncident).toHaveBeenCalledTimes(2);
     expect(fetchIncidents).toHaveBeenCalled();
   });
 
