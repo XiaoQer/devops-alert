@@ -60,6 +60,13 @@ RECEIPT_OUTCOME_VALUES = (
     "'ACCEPTED', 'REPLAYED', 'VALIDATED', 'PAYLOAD_REJECTED', "
     "'SOURCE_DISABLED', 'PROCESSING_FAILED'"
 )
+OPERATIONAL_INCIDENT_STATE_VALUES = "'OPEN', 'ACKNOWLEDGED', 'RESOLVED'"
+OPERATIONAL_INCIDENT_ACTIVITY_VALUES = (
+    "'INCIDENT_CREATED', 'ALERTS_LINKED', 'SEVERITY_ESCALATED', "
+    "'ALL_ALERTS_RECOVERED', 'ACKNOWLEDGED', 'RESOLVED', "
+    "'FEISHU_MESSAGE_RECORDED', 'NOTIFICATION_FAILED'"
+)
+INCIDENT_ASYNC_STATE_VALUES = "'PENDING', 'LEASED', 'SUCCEEDED', 'FAILED'"
 
 
 def _mysql_table_options() -> dict[str, str]:
@@ -479,6 +486,270 @@ class IncidentRuleOperationRow(Base):
     request_id: Mapped[str] = mapped_column(String(64), nullable=False)
     summary: Mapped[str] = mapped_column(String(500), nullable=False)
     completed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class OperationalIncidentRow(Base):
+    __tablename__ = "operational_incidents"
+    __table_args__ = (
+        UniqueConstraint("reference", name="operational_incident_reference"),
+        UniqueConstraint("open_boundary_key", name="operational_incident_open_boundary"),
+        CheckConstraint(
+            f"state IN ({OPERATIONAL_INCIDENT_STATE_VALUES})",
+            name="operational_incident_state",
+        ),
+        CheckConstraint(f"severity IN ({SEVERITY_VALUES})", name="operational_incident_severity"),
+        CheckConstraint(ENVIRONMENT_CHECK, name="operational_incident_environment"),
+        CheckConstraint("group_by IN ('SERVICE', 'ENTITY')", name="operational_incident_group_by"),
+        CheckConstraint(
+            "char_length(open_boundary_key) = 64 OR open_boundary_key IS NULL",
+            name="operational_incident_open_boundary_length",
+        ),
+        CheckConstraint(
+            "incident_rule_version >= 1 AND version >= 1",
+            name="operational_incident_versions",
+        ),
+        CheckConstraint(
+            "alert_count >= 1 AND active_alert_count >= 0 "
+            "AND active_alert_count <= alert_count AND distinct_alert_name_count >= 1",
+            name="operational_incident_counts",
+        ),
+        Index("ix_operational_incidents_list", "state", "updated_at", "id"),
+        Index(
+            "ix_operational_incidents_rule_group",
+            "incident_rule_id",
+            "environment",
+            "group_key",
+        ),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    reference: Mapped[str] = mapped_column(String(22), nullable=False)
+    title: Mapped[str] = mapped_column(String(320), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    group_by: Mapped[str] = mapped_column(String(16), nullable=False)
+    group_key: Mapped[str] = mapped_column(String(257), nullable=False)
+    group_display_name: Mapped[str] = mapped_column(String(257), nullable=False)
+    incident_rule_id: Mapped[str] = mapped_column(
+        ForeignKey("incident_rules.id", ondelete="RESTRICT"), nullable=False
+    )
+    incident_rule_version: Mapped[int] = mapped_column(nullable=False)
+    open_boundary_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    alert_count: Mapped[int] = mapped_column(nullable=False)
+    active_alert_count: Mapped[int] = mapped_column(nullable=False)
+    distinct_alert_name_count: Mapped[int] = mapped_column(nullable=False)
+    version: Mapped[int] = mapped_column(nullable=False)
+    opened_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    resolution_summary: Mapped[str | None] = mapped_column(String(2_000), nullable=True)
+    last_alert_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class OperationalIncidentAlertRow(Base):
+    __tablename__ = "operational_incident_alerts"
+    __table_args__ = (
+        CheckConstraint("incident_rule_version >= 1", name="operational_incident_alert_version"),
+        Index("ix_operational_incident_alerts_alert", "alert_id", "incident_id"),
+        _mysql_table_options(),
+    )
+
+    incident_id: Mapped[str] = mapped_column(
+        ForeignKey("operational_incidents.id", ondelete="CASCADE"), primary_key=True
+    )
+    alert_id: Mapped[str] = mapped_column(
+        ForeignKey("alert_lifecycles.id", ondelete="RESTRICT"), primary_key=True
+    )
+    incident_rule_version: Mapped[int] = mapped_column(nullable=False)
+    first_trigger_window: Mapped[bool] = mapped_column(nullable=False)
+    linked_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class OperationalIncidentActivityRow(Base):
+    __tablename__ = "operational_incident_activities"
+    __table_args__ = (
+        CheckConstraint(
+            f"kind IN ({OPERATIONAL_INCIDENT_ACTIVITY_VALUES})",
+            name="operational_incident_activity_kind",
+        ),
+        CheckConstraint(
+            "actor_type IN ('SYSTEM', 'USER', 'FEISHU')",
+            name="operational_incident_activity_actor_type",
+        ),
+        CheckConstraint(
+            "JSON_TYPE(metadata) = 'OBJECT' AND JSON_LENGTH(metadata) <= 20",
+            name="operational_incident_activity_metadata",
+        ),
+        Index(
+            "ix_operational_incident_activities_timeline",
+            "incident_id",
+            "occurred_at",
+            "id",
+        ),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(
+        ForeignKey("operational_incidents.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    activity_metadata: Mapped[dict[str, object]] = mapped_column(
+        "metadata", JSON, nullable=False
+    )
+
+
+class IncidentEvaluationJobRow(Base):
+    __tablename__ = "incident_evaluation_jobs"
+    __table_args__ = (
+        UniqueConstraint("alert_id", "alert_version", name="incident_evaluation_alert_version"),
+        CheckConstraint(
+            f"state IN ({INCIDENT_ASYNC_STATE_VALUES})",
+            name="incident_evaluation_job_state",
+        ),
+        CheckConstraint(
+            "alert_version >= 1 AND attempt_count BETWEEN 0 AND 10",
+            name="incident_evaluation_job_bounds",
+        ),
+        Index("ix_incident_evaluation_jobs_claim", "state", "available_at", "created_at"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    alert_id: Mapped[str] = mapped_column(
+        ForeignKey("alert_lifecycles.id", ondelete="RESTRICT"), nullable=False
+    )
+    alert_version: Mapped[int] = mapped_column(nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(nullable=False)
+    available_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reason_codes: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    incident_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class IncidentNotificationRouteRow(Base):
+    __tablename__ = "incident_notification_routes"
+    __table_args__ = (
+        UniqueConstraint(
+            "enabled_environment_key",
+            name="incident_route_enabled_environment",
+        ),
+        CheckConstraint(ENVIRONMENT_CHECK, name="incident_notification_route_environment"),
+        CheckConstraint("version >= 1", name="incident_notification_route_version"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    chat_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    chat_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    enabled: Mapped[bool] = mapped_column(nullable=False)
+    enabled_environment_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    version: Mapped[int] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class IncidentNotificationOutboxRow(Base):
+    __tablename__ = "incident_notification_outbox"
+    __table_args__ = (
+        UniqueConstraint("notification_key", name="incident_notification_key"),
+        CheckConstraint(
+            f"state IN ({INCIDENT_ASYNC_STATE_VALUES})",
+            name="incident_notification_outbox_state",
+        ),
+        CheckConstraint(
+            "kind IN ('CREATE_CARD', 'UPDATE_CARD', 'THREAD_REPLY')",
+            name="incident_notification_outbox_kind",
+        ),
+        CheckConstraint(
+            "attempt_count BETWEEN 0 AND 10 AND char_length(notification_key) = 64",
+            name="incident_notification_outbox_bounds",
+        ),
+        Index(
+            "ix_incident_notification_outbox_claim",
+            "state",
+            "available_at",
+            "created_at",
+        ),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(
+        ForeignKey("operational_incidents.id", ondelete="CASCADE"), nullable=False
+    )
+    activity_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey("operational_incident_activities.id", ondelete="CASCADE"), nullable=False
+    )
+    notification_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    attempt_count: Mapped[int] = mapped_column(nullable=False)
+    available_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    feishu_message_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class IncidentFeishuThreadRow(Base):
+    __tablename__ = "incident_feishu_threads"
+    __table_args__ = (
+        UniqueConstraint("incident_id", name="incident_feishu_thread_incident"),
+        UniqueConstraint(
+            "chat_id",
+            "root_message_id",
+            name="incident_feishu_thread_message",
+        ),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(
+        ForeignKey("operational_incidents.id", ondelete="CASCADE"), nullable=False
+    )
+    route_id: Mapped[str] = mapped_column(
+        ForeignKey("incident_notification_routes.id", ondelete="RESTRICT"), nullable=False
+    )
+    chat_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    root_message_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    last_synced_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class FeishuEventReceiptRow(Base):
+    __tablename__ = "feishu_event_receipts"
+    __table_args__ = (
+        UniqueConstraint("event_id", name="feishu_event_identity"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 class IncidentRow(Base):

@@ -23,6 +23,7 @@
 - 所有文本、JSON、批次、扫描条数、重试次数和 API 分页均有明确上限。
 - 不读取故障注入平台，不使用 `scenario_id`、`scenario_version`、`experiment_id` 或任何实验身份。
 - 前端不生成演示数据，视觉实现以已确认的 Incident 列表、三栏详情和飞书卡片产品图为准。
+- 旧迁移已占用的 `incidents`、`incident_activities`、`incident_alert_links` 只保留兼容；新模型使用 `operational_incidents`、`operational_incident_activities`、`operational_incident_alerts`，运行时不得混用。
 
 ---
 
@@ -150,7 +151,8 @@ Commit: `git add backend/src/incident_intelligence/domain/incidents.py backend/s
 def test_incident_schema_contains_all_durable_boundaries(migrated_engine):
     names = set(inspect(migrated_engine).get_table_names())
     assert {
-        "incidents", "incident_alerts", "incident_activities",
+        "operational_incidents", "operational_incident_alerts",
+        "operational_incident_activities",
         "incident_evaluation_jobs", "incident_notification_routes",
         "incident_notification_outbox", "incident_feishu_threads",
         "feishu_event_receipts",

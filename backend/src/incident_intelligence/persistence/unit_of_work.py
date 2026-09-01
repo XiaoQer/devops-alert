@@ -8,6 +8,14 @@ from incident_intelligence.persistence.alert_lifecycle_repository import (
     AlertLifecycleRepository,
 )
 from incident_intelligence.persistence.alert_source_repository import AlertSourceRepository
+from incident_intelligence.persistence.incident_repository import (
+    FeishuEventReceiptRepository,
+    IncidentEvaluationJobRepository,
+    IncidentFeishuThreadRepository,
+    IncidentNotificationRepository,
+    IncidentNotificationRouteRepository,
+    IncidentRepository,
+)
 from incident_intelligence.persistence.incident_rule_repository import IncidentRuleRepository
 from incident_intelligence.persistence.repositories import RecordRepositories
 
@@ -20,6 +28,12 @@ class SqlAlchemyUnitOfWork:
         self.alert_sources: AlertSourceRepository | None = None
         self.alert_lifecycles: AlertLifecycleRepository | None = None
         self.incident_rules: IncidentRuleRepository | None = None
+        self.incidents: IncidentRepository | None = None
+        self.incident_evaluation_jobs: IncidentEvaluationJobRepository | None = None
+        self.incident_notifications: IncidentNotificationRepository | None = None
+        self.incident_notification_routes: IncidentNotificationRouteRepository | None = None
+        self.incident_feishu_threads: IncidentFeishuThreadRepository | None = None
+        self.feishu_event_receipts: FeishuEventReceiptRepository | None = None
 
     def __enter__(self) -> SqlAlchemyUnitOfWork:
         self.session = self._session_factory()
@@ -27,6 +41,12 @@ class SqlAlchemyUnitOfWork:
         self.alert_sources = AlertSourceRepository(self.session)
         self.alert_lifecycles = AlertLifecycleRepository(self.session)
         self.incident_rules = IncidentRuleRepository(self.session)
+        self.incidents = IncidentRepository(self.session)
+        self.incident_evaluation_jobs = IncidentEvaluationJobRepository(self.session)
+        self.incident_notifications = IncidentNotificationRepository(self.session)
+        self.incident_notification_routes = IncidentNotificationRouteRepository(self.session)
+        self.incident_feishu_threads = IncidentFeishuThreadRepository(self.session)
+        self.feishu_event_receipts = FeishuEventReceiptRepository(self.session)
         return self
 
     def commit(self) -> None:

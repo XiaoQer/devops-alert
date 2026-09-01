@@ -178,11 +178,11 @@ Alert 追加只更新卡片统计，不逐条向群发送消息；严重级别�
 - `FeishuEventService`：事件验证、消息回流和卡片动作；
 - `IncidentQueryService`：列表与详情读取模型。
 
-新增表：
+新增物理表（旧迁移已占用 `incidents`、`incident_activities` 和 `incident_alert_links`，新模型不得复用旧表）：
 
-- `incidents`
-- `incident_alerts`
-- `incident_activities`
+- `operational_incidents`
+- `operational_incident_alerts`
+- `operational_incident_activities`
 - `incident_evaluation_jobs`
 - `incident_notification_routes`
 - `incident_notification_outbox`
