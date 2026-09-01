@@ -1,14 +1,16 @@
 <script setup>
 import { computed, ref } from "vue";
-import { PhBell, PhGear, PhListChecks, PhShieldCheck } from "@phosphor-icons/vue";
+import { PhBell, PhGear, PhListChecks, PhShieldCheck, PhSiren } from "@phosphor-icons/vue";
 
 import AlertCenter from "./components/AlertCenter.vue";
 import AlertSourceManager from "./components/AlertSourceManager.vue";
 import IncidentRuleCenter from "./components/IncidentRuleCenter.vue";
+import IncidentCenter from "./components/IncidentCenter.vue";
 
 const activePage = ref("alerts");
 const pages = [
   { id: "alerts", label: "告警中心", icon: PhBell },
+  { id: "incidents", label: "Incident 中心", icon: PhSiren },
   { id: "incident-rules", label: "Incident 规则", icon: PhListChecks },
   { id: "alert-sources", label: "接入源管理", icon: PhGear },
 ];
@@ -28,6 +30,7 @@ const title = computed(() => pages.find((page) => page.id === activePage.value)?
     <main class="main-surface">
       <header class="topbar minimal-topbar"><div class="title-group"><h1>{{ title }}</h1></div></header>
       <AlertCenter v-if="activePage === 'alerts'" />
+      <IncidentCenter v-else-if="activePage === 'incidents'" />
       <IncidentRuleCenter v-else-if="activePage === 'incident-rules'" />
       <AlertSourceManager v-else />
     </main>

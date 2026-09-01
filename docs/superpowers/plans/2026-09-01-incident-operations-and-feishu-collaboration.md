@@ -784,7 +784,7 @@ Commit: `git add frontend/src/api/incidents.js frontend/src/api/incidents.test.j
 - Consumes: Task 9 的 `useIncidents` 与 API。
 - Produces: 主导航“Incident 中心”、紧凑列表、详情、确认/解决对话框、飞书路由配置。
 
-- [ ] **Step 1: 编写列表和导航失败测试**
+- [x] **Step 1: 编写列表和导航失败测试**
 
 ```javascript
 it("默认展示未解决 Incident 且列表不出现演示数据", async () => {
@@ -797,25 +797,25 @@ it("默认展示未解决 Incident 且列表不出现演示数据", async () => 
 });
 ```
 
-- [ ] **Step 2: 运行组件测试并确认组件不存在**
+- [x] **Step 2: 运行组件测试并确认组件不存在**
 
 Run: `cd frontend && npm test -- src/components/IncidentCenter.test.js src/components/IncidentDetail.test.js src/components/IncidentNotificationSettings.test.js src/App.test.js`
 
 Expected: FAIL。
 
-- [ ] **Step 3: 实现紧凑列表和筛选**
+- [x] **Step 3: 实现紧凑列表和筛选**
 
 列表只展示编号/标题、状态、环境/对象、来源规则、Alert 数和最近更新时间；默认过滤 `OPEN,ACKNOWLEDGED`。不增加 KPI 卡、拓扑、AI 结论或自动根因入口；空态明确说明“已发布规则命中新告警后会自动创建 Incident”。
 
-- [ ] **Step 4: 实现三栏详情和状态操作**
+- [x] **Step 4: 实现三栏详情和状态操作**
 
 左栏“当前情况”，中栏“关联告警”，右栏“处置时间线/飞书协同”；Alert 行复用现有原始告警展开语义。确认按钮直接提交；解决按钮要求 1–2,000 字说明；提交中禁用重复操作，409 冲突后刷新并保留用户输入。
 
-- [ ] **Step 5: 实现飞书配置面板和响应式布局**
+- [x] **Step 5: 实现飞书配置面板和响应式布局**
 
 按环境展示群名称、chat_id 安全缩略、启停、凭据完整性和最近错误；不得显示 Secret 输入框。宽度低于 1180px 时三栏变为单列分区，任何列表都有页面内滚动，不锁死正文。
 
-- [ ] **Step 6: 运行前端测试、构建并提交**
+- [x] **Step 6: 运行前端测试、构建并提交**
 
 Run: `cd frontend && npm test && npm run build`
 
