@@ -34,8 +34,8 @@
 - Test: `backend/tests/unit/domain/test_incidents.py`
 
 **Interfaces:**
-- Produces: `IncidentState`、`IncidentSeverity`、`Incident`、`IncidentActivity`、`IncidentAlertLink`。
-- Produces: `create_incident(...) -> IncidentChange`、`link_alerts(...) -> IncidentChange`、`acknowledge_incident(...) -> IncidentChange`、`resolve_incident(...) -> IncidentChange`。
+- Produces: `IncidentState`、`Incident`、`IncidentActivity`、`IncidentAlertFact`、`IncidentAlertLink`、`IncidentActivityIds`。
+- Produces: `create_incident(..., alerts, created_activity_id) -> IncidentChange`、`link_alerts(..., existing_alert_ids, alerts, activity_ids) -> IncidentChange`、`acknowledge_incident(..., activity_id) -> IncidentChange`、`resolve_incident(..., activity_id) -> IncidentChange`；领域层不随机生成活动 ID。
 - ID prefixes: `inc`、`iact`、`iej`、`ino`、`inr`、`ift`、`fer`。
 
 - [ ] **Step 1: 编写状态机和聚合失败测试**
@@ -52,7 +52,8 @@ def test_create_incident_builds_deterministic_title_and_created_activity():
         group_key="checkout",
         group_display_name="checkout",
         severity="high",
-        alert_ids=("alt_" + "3" * 32,),
+        alerts=(active_alert("alt_" + "3" * 32),),
+        created_activity_id="iact_" + "4" * 32,
         now=NOW,
     )
     assert change.incident.title == "production checkout异常"
@@ -111,6 +112,7 @@ class Incident(BaseModel):
     opened_at: UtcAwareDatetime
     acknowledged_at: UtcAwareDatetime | None
     resolved_at: UtcAwareDatetime | None
+    resolution_summary: str | None
     last_alert_at: UtcAwareDatetime
     created_at: UtcAwareDatetime
     updated_at: UtcAwareDatetime

@@ -27,6 +27,11 @@ IdPrefix = Literal[
     "irl",
     "ird",
     "iro",
+    "iej",
+    "ino",
+    "inr",
+    "ift",
+    "fer",
 ]
 
 
