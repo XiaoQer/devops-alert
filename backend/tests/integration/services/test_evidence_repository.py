@@ -93,6 +93,7 @@ def _run() -> EvidenceRun:
             environment="testing",
             service_name="checkout",
             alert_names=("HighErrorRate",),
+            facts={"component": "mysql"},
         ),
         package_versions={"common-service": 1},
         requested_by="incident-evaluation",

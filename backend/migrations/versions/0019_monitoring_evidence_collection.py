@@ -140,6 +140,7 @@ def _create_evidence_runs() -> None:
         sa.Column("environment", sa.String(32), nullable=False),
         sa.Column("service_name", sa.String(128), nullable=True),
         sa.Column("alert_names", mysql.JSON(), nullable=False),
+        sa.Column("context_facts", mysql.JSON(), nullable=False),
         sa.Column("package_versions", mysql.JSON(), nullable=False),
         sa.Column("succeeded_count", sa.Integer(), nullable=False),
         sa.Column("skipped_count", sa.Integer(), nullable=False),

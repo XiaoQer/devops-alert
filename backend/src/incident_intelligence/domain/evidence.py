@@ -15,6 +15,8 @@ from pydantic import (
 from incident_intelligence.domain.models import (
     AlertName,
     Environment,
+    FactKey,
+    FactValue,
     ServiceName,
     UtcAwareDatetime,
 )
@@ -68,11 +70,7 @@ class EvidenceWindow(_FrozenEvidenceModel):
 
     @model_validator(mode="after")
     def validate_order(self) -> EvidenceWindow:
-        if not (
-            self.baseline_start < self.baseline_end
-            <= self.fault_start
-            <= self.fault_end
-        ):
+        if not (self.baseline_start < self.baseline_end <= self.fault_start <= self.fault_end):
             raise ValueError("evidence_window_invalid")
         if self.fault_end - self.baseline_start > timedelta(hours=2):
             raise ValueError("evidence_window_exceeds_two_hours")
@@ -83,6 +81,14 @@ class EvidenceContext(_FrozenEvidenceModel):
     environment: Environment
     service_name: ServiceName | None
     alert_names: tuple[AlertName, ...] = Field(max_length=200)
+    facts: dict[FactKey, FactValue] = Field(default_factory=dict, max_length=50)
+
+    @model_validator(mode="after")
+    def reject_fault_injection_identity(self) -> EvidenceContext:
+        forbidden = {"scenario_id", "scenario_version", "experiment_id"}
+        if forbidden.intersection(self.facts):
+            raise ValueError("forbidden_fault_injection_identity")
+        return self
 
 
 class EvidenceRun(_FrozenEvidenceModel):

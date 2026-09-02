@@ -759,6 +759,7 @@ class EvidenceRunRow(Base):
     environment: Mapped[str] = mapped_column(String(32), nullable=False)
     service_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     alert_names: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    context_facts: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False)
     package_versions: Mapped[dict[str, int]] = mapped_column(JSON, nullable=False)
     succeeded_count: Mapped[int] = mapped_column(nullable=False)
     skipped_count: Mapped[int] = mapped_column(nullable=False)
