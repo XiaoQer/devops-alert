@@ -5,25 +5,12 @@ import math
 import statistics
 from typing import Literal, TypedDict
 
-from pydantic import BaseModel, ConfigDict, Field
-
 from incident_intelligence.adapters.monitoring_http import (
+    AdapterEvidenceResult,
     MonitoringHttpTransport,
     MonitoringPermanentError,
 )
-from incident_intelligence.domain.evidence import EvidenceItemState
 from incident_intelligence.services.evidence_planning import EvidenceQueryRequest
-
-
-class AdapterEvidenceResult(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    state: EvidenceItemState
-    normalized_result: dict[str, object] = Field(default_factory=dict)
-    baseline_summary: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
-    fault_summary: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
-    interpretation: str | None = None
-    error_code: str | None = None
 
 
 class _NormalizedSeries(TypedDict):

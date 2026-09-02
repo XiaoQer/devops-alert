@@ -8,6 +8,10 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from pydantic import BaseModel, ConfigDict, Field
+
+from incident_intelligence.domain.evidence import EvidenceItemState
+
 
 class MonitoringRetryableError(RuntimeError):
     pass
@@ -15,6 +19,17 @@ class MonitoringRetryableError(RuntimeError):
 
 class MonitoringPermanentError(RuntimeError):
     pass
+
+
+class AdapterEvidenceResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    state: EvidenceItemState
+    normalized_result: dict[str, object] = Field(default_factory=dict)
+    baseline_summary: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+    fault_summary: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+    interpretation: str | None = None
+    error_code: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
