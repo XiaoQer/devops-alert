@@ -6,7 +6,7 @@
 - 一个 Vue 3 前端；
 - 一个 MySQL 8.4 数据库。
 
-当前包含 Incident 评估 Worker 和飞书通知 Worker；没有诊断 Worker 或 AI Worker。飞书通知采用持久化 Outbox、租约和有界重试，飞书事件与卡片动作通过独立回调入口同步到 Incident。
+当前包含 Incident 评估 Worker、监控取证 Worker 和飞书通知 Worker；没有诊断 Worker 或 AI Worker。取证 Worker 只执行版本化预定义只读查询，飞书通知采用持久化 Outbox、租约和有界重试。
 
 ## 数据流
 
@@ -32,6 +32,10 @@ Alertmanager Watchdog 心跳忽略
 发布或停用规则
           ↓
 Incident 评估 Worker 创建或更新正式 Incident
+          ↓
+新 Incident 同事务创建唯一自动 EvidenceRun 与取证任务
+          ↓
+监控取证 Worker 按环境采集 Prometheus、ELK、SkyWalking 标准证据
           ↓
 Incident 查询、确认、解决与飞书群路由配置
           ↓
@@ -80,6 +84,10 @@ Incident 查询、确认、解决与飞书群路由配置
 
 描述某个环境应通知到的固定飞书事故群。停用路由可以保留配置但不占用环境启用边界；启用前只检查环境变量中的应用凭据是否完整，数据库和 API 均不保存或返回 Secret。
 
+### EvidenceRun 与 EvidenceItem
+
+EvidenceRun 描述一次自动或人工取证运行，保存固定锚点、最长两小时窗口、Incident 安全上下文和取证包版本。EvidenceItem 是不可变标准证据；三个来源可独立失败，运行状态可为成功、部分成功或失败。用户和 AI 均不能提交监控查询文本。
+
 ## 事务与并发
 
 - SignalEvent、Alert 投影、接入结果和审计在同一事务提交或回滚；
@@ -89,6 +97,8 @@ Incident 查询、确认、解决与飞书群路由配置
 - 历史回填按稳定顺序和有界批次执行，可重复运行。
 - 规则修改、发布、停用、复制和删除草稿使用版本号与幂等键，避免并发页面互相覆盖；
 - 规则试运行最多读取 10,001 条记录以识别截断，最多返回 100 个命中和每个命中 10 个示例 Alert。
+- 新 Incident、自动 EvidenceRun 和取证任务在同一事务提交；同一 Incident 只允许一个自动运行和一个活动运行；
+- 取证任务使用持久化租约、最多五次重试和唯一证据键，进程中断后可回收，已成功证据不会重复写入。
 
 ## API 边界
 
@@ -101,6 +111,8 @@ Incident 查询、确认、解决与飞书群路由配置
 - `/api/v1/alerts/timeseries`
 - `/api/v1/incident-rules`
 - `/api/v1/incidents`
+- `/api/v1/incidents/{incident_id}/evidence-runs`
+- `/api/v1/monitoring-data-sources`
 - `/api/v1/incident-notification-routes`
 - `/health/live`
 - `/health/ready`
