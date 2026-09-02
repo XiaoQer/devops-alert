@@ -689,12 +689,9 @@ class MonitoringDataSourceRow(Base):
             "environment", "source_type", "enabled_slot", name="monitoring_source_enabled"
         ),
         CheckConstraint(ENVIRONMENT_CHECK, name="environment"),
+        CheckConstraint(f"source_type IN ({MONITORING_SOURCE_TYPE_VALUES})", name="source_type"),
         CheckConstraint(
-            f"source_type IN ({MONITORING_SOURCE_TYPE_VALUES})", name="source_type"
-        ),
-        CheckConstraint(
-            "(enabled = 1 AND enabled_slot = 1) OR "
-            "(enabled = 0 AND enabled_slot IS NULL)",
+            "(enabled = 1 AND enabled_slot = 1) OR (enabled = 0 AND enabled_slot IS NULL)",
             name="enabled_slot",
         ),
         CheckConstraint("version >= 1", name="version"),
@@ -817,12 +814,8 @@ class EvidenceCollectionTaskRow(Base):
     __tablename__ = "evidence_collection_tasks"
     __table_args__ = (
         UniqueConstraint("evidence_run_id", name="evidence_task_run"),
-        CheckConstraint(
-            "state IN ('PENDING', 'LEASED', 'SUCCEEDED', 'FAILED')", name="state"
-        ),
-        CheckConstraint(
-            "attempt_count >= 0 AND attempt_count <= 5", name="attempts"
-        ),
+        CheckConstraint("state IN ('PENDING', 'LEASED', 'SUCCEEDED', 'FAILED')", name="state"),
+        CheckConstraint("attempt_count >= 0 AND attempt_count <= 5", name="attempts"),
         CheckConstraint(
             "(state = 'LEASED' AND lease_owner IS NOT NULL AND lease_until IS NOT NULL) "
             "OR (state <> 'LEASED' AND lease_owner IS NULL AND lease_until IS NULL)",
@@ -852,8 +845,7 @@ class EvidenceCollectionOperationRow(Base):
     __table_args__ = (
         UniqueConstraint("scope", "idempotency_key_hash", name="evidence_operation_key"),
         CheckConstraint(
-            "char_length(idempotency_key_hash) = 64 AND "
-            "char_length(command_fingerprint) = 64",
+            "char_length(idempotency_key_hash) = 64 AND char_length(command_fingerprint) = 64",
             name="hashes",
         ),
         _mysql_table_options(),
