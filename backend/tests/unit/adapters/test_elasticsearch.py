@@ -3,8 +3,13 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
+import pytest
+
 from incident_intelligence.adapters.elasticsearch import ElasticsearchEvidenceAdapter
-from incident_intelligence.adapters.monitoring_http import MonitoringHttpResponse
+from incident_intelligence.adapters.monitoring_http import (
+    MonitoringHttpResponse,
+    MonitoringPermanentError,
+)
 from incident_intelligence.domain.evidence import build_evidence_window
 from incident_intelligence.services.evidence_planning import EvidenceQueryRequest
 
@@ -23,6 +28,14 @@ class _FakeTransport:
             headers={"content-type": "application/json"},
             body=json.dumps(self.payload).encode(),
         )
+
+
+class _RawTransport:
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+
+    def request(self, *args: object, **kwargs: object) -> MonitoringHttpResponse:
+        return MonitoringHttpResponse(status_code=200, headers={}, body=self.body)
 
 
 def test_elasticsearch_uses_fixed_filters_and_whitelisted_source_fields() -> None:
@@ -75,6 +88,72 @@ def test_elasticsearch_caps_untrusted_response_to_fifty_samples() -> None:
 
     assert len(result.normalized_result["samples"]) == 50
     assert result.normalized_result["truncated"] is True
+
+
+def test_elasticsearch_returns_bounded_empty_and_missing_target_results() -> None:
+    adapter = ElasticsearchEvidenceAdapter(
+        base_url="http://elasticsearch:9200",
+        index="logs-*",
+        field_mapping=_field_mapping(),
+        transport=_FakeTransport({"hits": {"total": 0, "hits": []}}),
+    )
+
+    empty = adapter.collect(_request())
+    missing = adapter.collect(_request().model_copy(update={"pre_result_state": "MISSING_TARGET"}))
+
+    assert empty.state == "NO_DATA"
+    assert missing.state == "MISSING_TARGET"
+
+
+@pytest.mark.parametrize(
+    ("index", "mapping", "error_code"),
+    (
+        ("unsafe index", None, "elasticsearch_index_invalid"),
+        ("logs-*", {"timestamp": "@timestamp"}, "elasticsearch_mapping_incomplete"),
+    ),
+)
+def test_elasticsearch_rejects_unsafe_local_configuration(
+    index: str,
+    mapping: dict[str, str] | None,
+    error_code: str,
+) -> None:
+    with pytest.raises(MonitoringPermanentError, match=error_code):
+        ElasticsearchEvidenceAdapter(
+            base_url="http://elasticsearch:9200",
+            index=index,
+            field_mapping=_field_mapping() if mapping is None else mapping,
+            transport=_FakeTransport({}),
+        )
+
+
+@pytest.mark.parametrize(
+    "body",
+    (b"not-json", b"[]", b'{"hits": {"hits": "invalid"}}'),
+)
+def test_elasticsearch_rejects_invalid_responses(body: bytes) -> None:
+    adapter = ElasticsearchEvidenceAdapter(
+        base_url="http://elasticsearch:9200",
+        index="logs-*",
+        field_mapping=_field_mapping(),
+        transport=_RawTransport(body),
+    )
+
+    with pytest.raises(MonitoringPermanentError):
+        adapter.collect(_request())
+
+
+def test_elasticsearch_ignores_invalid_hits_and_uses_total_fallback() -> None:
+    response = _response()
+    response["hits"]["hits"].insert(0, None)
+    response["hits"]["total"] = "unknown"
+    result = ElasticsearchEvidenceAdapter(
+        base_url="http://elasticsearch:9200",
+        index="logs-*",
+        field_mapping=_field_mapping(),
+        transport=_FakeTransport(response),
+    ).collect(_request())
+
+    assert result.normalized_result["total"] == 2
 
 
 def _request() -> EvidenceQueryRequest:

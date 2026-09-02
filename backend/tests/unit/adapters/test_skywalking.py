@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
-from incident_intelligence.adapters.monitoring_http import MonitoringHttpResponse
+import pytest
+
+from incident_intelligence.adapters.monitoring_http import (
+    MonitoringHttpResponse,
+    MonitoringPermanentError,
+)
 from incident_intelligence.adapters.skywalking import SkyWalkingEvidenceAdapter
 from incident_intelligence.domain.evidence import build_evidence_window
 from incident_intelligence.services.evidence_planning import EvidenceQueryRequest
@@ -23,6 +28,14 @@ class _FakeTransport:
             headers={"content-type": "application/json"},
             body=json.dumps(self.payload).encode(),
         )
+
+
+class _RawTransport:
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+
+    def request(self, *args: object, **kwargs: object) -> MonitoringHttpResponse:
+        return MonitoringHttpResponse(status_code=200, headers={}, body=self.body)
 
 
 def test_skywalking_uses_graphql_variables_instead_of_interpolating_service() -> None:
@@ -91,10 +104,69 @@ def test_skywalking_graphql_errors_are_safe_failure() -> None:
     assert "unsafe-secret" not in repr(result)
 
 
+def test_skywalking_supports_endpoint_topology_empty_and_missing_target_results() -> None:
+    endpoint = SkyWalkingEvidenceAdapter(
+        base_url="http://skywalking:12800",
+        graphql_path="/graphql",
+        transport=_FakeTransport({"data": {"getEndpoints": [{"id": "1", "name": "/pay"}]}}),
+    ).collect(_request("sw.http.endpoints", controlled_query="endpoint_ranking"))
+    topology = SkyWalkingEvidenceAdapter(
+        base_url="http://skywalking:12800",
+        graphql_path="/graphql",
+        transport=_FakeTransport({"data": {"getServiceTopologyByName": {"nodes": []}}}),
+    ).collect(_request("sw.mysql.dependencies", controlled_query="mysql_dependency_ranking"))
+    empty_trace = SkyWalkingEvidenceAdapter(
+        base_url="http://skywalking:12800",
+        graphql_path="/graphql",
+        transport=_FakeTransport({"data": {"queryBasicTraces": {"traces": []}}}),
+    ).collect(_request("sw.http.failed-traces"))
+    missing = SkyWalkingEvidenceAdapter(
+        base_url="http://skywalking:12800",
+        graphql_path="/graphql",
+        transport=_FakeTransport({}),
+    ).collect(
+        _request("sw.service.health").model_copy(update={"pre_result_state": "MISSING_TARGET"})
+    )
+
+    assert endpoint.state == "SUCCEEDED"
+    assert topology.state == "SUCCEEDED"
+    assert empty_trace.state == "NO_DATA"
+    assert missing.state == "MISSING_TARGET"
+
+
+def test_skywalking_rejects_unsafe_path_and_unknown_template() -> None:
+    with pytest.raises(MonitoringPermanentError, match="skywalking_graphql_path_invalid"):
+        SkyWalkingEvidenceAdapter(
+            base_url="http://skywalking:12800",
+            graphql_path="unsafe",
+            transport=_FakeTransport({}),
+        )
+    adapter = SkyWalkingEvidenceAdapter(
+        base_url="http://skywalking:12800",
+        graphql_path="/graphql",
+        transport=_FakeTransport({}),
+    )
+    with pytest.raises(MonitoringPermanentError, match="skywalking_template_unsupported"):
+        adapter.collect(_request("sw.unknown", controlled_query="unknown"))
+
+
+@pytest.mark.parametrize("body", (b"not-json", b"[]", b'{"data": null}'))
+def test_skywalking_rejects_invalid_response_contracts(body: bytes) -> None:
+    adapter = SkyWalkingEvidenceAdapter(
+        base_url="http://skywalking:12800",
+        graphql_path="/graphql",
+        transport=_RawTransport(body),
+    )
+
+    with pytest.raises(MonitoringPermanentError):
+        adapter.collect(_request("sw.service.health"))
+
+
 def _request(
     query_name: str,
     *,
     service: str = "checkout",
+    controlled_query: str | None = None,
 ) -> EvidenceQueryRequest:
     evidence_type = "TRACE_SUMMARY" if query_name.endswith("failed-traces") else "METRIC_COMPARISON"
     return EvidenceQueryRequest(
@@ -107,9 +179,8 @@ def _request(
         source_type="SKYWALKING",
         evidence_type=evidence_type,
         query_name=query_name,
-        controlled_query="failed_traces"
-        if query_name.endswith("failed-traces")
-        else "service_health",
+        controlled_query=controlled_query
+        or ("failed_traces" if query_name.endswith("failed-traces") else "service_health"),
         parameters={"environment": "testing", "service": service},
         window=build_evidence_window(NOW, NOW),
     )

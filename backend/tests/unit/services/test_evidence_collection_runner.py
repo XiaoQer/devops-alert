@@ -25,6 +25,19 @@ def test_runner_processes_due_tasks_and_counts_partial_as_completed() -> None:
     assert processor.processed == ["evtask_11111111111111111111111111111111"]
 
 
+def test_runner_counts_retry_and_isolates_unexpected_task_failure() -> None:
+    repository = _FakeTaskRepository(("retry", "fail"))
+    runner = EvidenceCollectionRunner(
+        uow_factory=lambda: _FakeUnitOfWork(repository),
+        processor=_MixedProcessor(),
+        clock=lambda: NOW,
+    )
+
+    result = runner.run_once(limit=10)
+
+    assert (result.scanned, result.completed, result.retried, result.failed) == (2, 0, 1, 1)
+
+
 class _FakeProcessor:
     def __init__(self) -> None:
         self.processed: list[str] = []
@@ -35,6 +48,17 @@ class _FakeProcessor:
             task_id=task_id,
             evidence_run_id="evr_22222222222222222222222222222222",
             outcome="PARTIAL",
+        )
+
+
+class _MixedProcessor:
+    def process(self, task_id: str) -> EvidenceCollectionResult:
+        if task_id == "fail":
+            raise RuntimeError("safe test failure")
+        return EvidenceCollectionResult(
+            task_id=task_id,
+            evidence_run_id="evr_22222222222222222222222222222222",
+            outcome="RETRY_SCHEDULED",
         )
 
 

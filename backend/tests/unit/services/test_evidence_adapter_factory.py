@@ -4,8 +4,10 @@ from datetime import UTC, datetime
 
 import pytest
 
+from incident_intelligence.adapters.elasticsearch import ElasticsearchEvidenceAdapter
 from incident_intelligence.adapters.monitoring_http import MonitoringPermanentError
 from incident_intelligence.adapters.prometheus import PrometheusEvidenceAdapter
+from incident_intelligence.adapters.skywalking import SkyWalkingEvidenceAdapter
 from incident_intelligence.persistence.evidence_repository import MonitoringDataSourceRecord
 from incident_intelligence.services.evidence_adapter_factory import MonitoringEvidenceAdapterFactory
 from incident_intelligence.services.monitoring_data_sources import MonitoringCredentialResolver
@@ -28,15 +30,55 @@ def test_factory_rejects_a_configured_but_missing_credential() -> None:
         factory.create(_source(credential_env_key="II_PROM_TOKEN"))
 
 
-def _source(*, credential_env_key: str | None) -> MonitoringDataSourceRecord:
+@pytest.mark.parametrize(
+    ("source_type", "field_mapping", "adapter_type"),
+    (
+        (
+            "ELASTICSEARCH",
+            {
+                "index": "logs-*",
+                "timestamp": "@timestamp",
+                "service": "service.name",
+                "environment": "environment",
+                "message": "message",
+            },
+            ElasticsearchEvidenceAdapter,
+        ),
+        ("SKYWALKING", {"graphql_path": "/graphql"}, SkyWalkingEvidenceAdapter),
+    ),
+)
+def test_factory_builds_each_supported_monitoring_adapter(
+    source_type: str,
+    field_mapping: dict[str, str],
+    adapter_type: type,
+) -> None:
+    factory = MonitoringEvidenceAdapterFactory(credential_resolver=MonitoringCredentialResolver({}))
+
+    adapter = factory.create(
+        _source(
+            credential_env_key=None,
+            source_type=source_type,
+            field_mapping=field_mapping,
+        )
+    )
+
+    assert isinstance(adapter, adapter_type)
+
+
+def _source(
+    *,
+    credential_env_key: str | None,
+    source_type: str = "PROMETHEUS",
+    field_mapping: dict[str, str] | None = None,
+) -> MonitoringDataSourceRecord:
     return MonitoringDataSourceRecord(
         id="mds_11111111111111111111111111111111",
         name="Prometheus",
         environment="testing",
-        source_type="PROMETHEUS",
+        source_type=source_type,
         base_url="http://prometheus:9090",
         credential_env_key=credential_env_key,
-        field_mapping={},
+        field_mapping=field_mapping or {},
         verify_tls=True,
         enabled=True,
         version=1,

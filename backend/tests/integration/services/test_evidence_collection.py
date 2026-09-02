@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy import MetaData, Table, func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from incident_intelligence.adapters.monitoring_http import AdapterEvidenceResult
+from incident_intelligence.adapters.monitoring_http import (
+    AdapterEvidenceResult,
+    MonitoringPermanentError,
+    MonitoringRetryableError,
+)
 from incident_intelligence.domain.evidence import (
     EvidenceContext,
     EvidenceRun,
@@ -28,7 +33,11 @@ from incident_intelligence.persistence.models import (
 from incident_intelligence.persistence.session import make_session_factory
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.evidence_collection import EvidenceCollectionService
-from incident_intelligence.services.incident_evidence import IncidentEvidenceService
+from incident_intelligence.services.incident_evidence import (
+    EvidenceRunAlreadyActive,
+    EvidenceRunNotFound,
+    IncidentEvidenceService,
+)
 
 NOW = datetime(2026, 9, 2, 10, 0, tzinfo=UTC)
 INCIDENT_ID = "inc_11111111111111111111111111111111"
@@ -49,8 +58,31 @@ class _SuccessfulAdapter:
 
 class _FakeAdapterFactory:
     def create(self, source):
-        assert source.source_type == "PROMETHEUS"
+        assert source.source_type in {"PROMETHEUS", "ELASTICSEARCH", "SKYWALKING"}
         return _SuccessfulAdapter()
+
+
+class _RetryingAdapter:
+    def collect(self, request):
+        del request
+        raise MonitoringRetryableError("network_timeout")
+
+
+class _RetryingAdapterFactory:
+    def create(self, source):
+        del source
+        return _RetryingAdapter()
+
+
+class _UnexpectedAdapterFactory:
+    def create(self, source):
+        raise AssertionError(f"不应创建适配器: {source.source_type}")
+
+
+class _PermanentFailureFactory:
+    def create(self, source):
+        del source
+        raise MonitoringPermanentError("http_authentication_failed")
 
 
 def test_collection_preserves_prometheus_results_when_other_sources_are_missing(
@@ -128,7 +160,163 @@ def test_manual_collection_request_is_idempotent_and_keeps_history(
     assert detail.items == ()
 
 
-def _seed(engine: Engine) -> None:
+def test_retryable_monitoring_failure_reschedules_task(migrated_engine: Engine) -> None:
+    _seed(migrated_engine)
+    service = EvidenceCollectionService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(make_session_factory(migrated_engine)),
+        adapter_factory=_RetryingAdapterFactory(),
+        clock=lambda: NOW,
+        owner="worker-1",
+    )
+
+    result = service.process(TASK_ID)
+
+    assert result.outcome == "RETRY_SCHEDULED"
+    with Session(migrated_engine) as session:
+        task = session.get(EvidenceCollectionTaskRow, TASK_ID)
+        assert task is not None
+        assert task.state == "PENDING"
+        assert task.attempt_count == 1
+        assert task.last_error_code == "network_timeout"
+
+
+def test_missing_sources_finish_as_failed_and_replay_without_duplicate_items(
+    migrated_engine: Engine,
+) -> None:
+    _seed(migrated_engine, add_source=False)
+    service = EvidenceCollectionService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(make_session_factory(migrated_engine)),
+        adapter_factory=_UnexpectedAdapterFactory(),
+        clock=lambda: NOW,
+        owner="worker-1",
+    )
+
+    first = service.process(TASK_ID)
+    replay = service.process(TASK_ID)
+
+    assert first.outcome == "FAILED"
+    assert first.skipped_count >= 4
+    assert replay.replayed is True
+
+
+def test_missing_service_target_is_recorded_without_calling_sources(
+    migrated_engine: Engine,
+) -> None:
+    _seed(migrated_engine, service_name=None)
+    service = EvidenceCollectionService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(make_session_factory(migrated_engine)),
+        adapter_factory=_UnexpectedAdapterFactory(),
+        clock=lambda: NOW,
+        owner="worker-1",
+    )
+
+    result = service.process(TASK_ID)
+
+    assert result.outcome == "FAILED"
+    assert result.missing_count >= 4
+
+
+def test_manual_request_rejects_active_run_and_cross_incident_lookup(
+    migrated_engine: Engine,
+) -> None:
+    _seed(migrated_engine)
+    service = IncidentEvidenceService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(make_session_factory(migrated_engine)),
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(EvidenceRunAlreadyActive) as active:
+        service.request_manual(
+            INCIDENT_ID,
+            idempotency_key="manual-active",
+            actor="tester",
+            request_id="req-1",
+        )
+    assert active.value.active_run_id == RUN_ID
+    with pytest.raises(EvidenceRunNotFound):
+        service.get_run("inc_99999999999999999999999999999999", RUN_ID)
+
+
+def test_all_configured_sources_can_finish_a_successful_run(migrated_engine: Engine) -> None:
+    _seed(migrated_engine)
+    with Session(migrated_engine) as session:
+        sources = MonitoringDataSourceRepository(session)
+        sources.insert(
+            _source(
+                "mds_99999999999999999999999999999991",
+                "ELASTICSEARCH",
+                {"index": "logs-*"},
+            )
+        )
+        sources.insert(
+            _source(
+                "mds_99999999999999999999999999999992",
+                "SKYWALKING",
+                {"graphql_path": "/graphql"},
+            )
+        )
+        session.commit()
+    sequence = iter(range(200, 300))
+    service = EvidenceCollectionService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(make_session_factory(migrated_engine)),
+        adapter_factory=_FakeAdapterFactory(),
+        clock=lambda: NOW,
+        id_factory=lambda prefix: f"{prefix}_{next(sequence):032x}",
+        owner="worker-1",
+    )
+
+    result = service.process(TASK_ID)
+
+    assert result.outcome == "SUCCEEDED"
+    assert result.failed_count == 0
+    assert result.skipped_count == 0
+
+
+def test_last_retry_becomes_failed_evidence_instead_of_an_endless_task(
+    migrated_engine: Engine,
+) -> None:
+    _seed(migrated_engine)
+    with Session(migrated_engine) as session:
+        task = session.get(EvidenceCollectionTaskRow, TASK_ID)
+        assert task is not None
+        task.attempt_count = 4
+        session.commit()
+    service = EvidenceCollectionService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(make_session_factory(migrated_engine)),
+        adapter_factory=_RetryingAdapterFactory(),
+        clock=lambda: NOW,
+        owner="worker-1",
+    )
+
+    result = service.process(TASK_ID)
+
+    assert result.outcome == "FAILED"
+    assert result.failed_count >= 1
+
+
+def test_permanent_adapter_configuration_error_is_saved_as_failed_evidence(
+    migrated_engine: Engine,
+) -> None:
+    _seed(migrated_engine)
+    service = EvidenceCollectionService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(make_session_factory(migrated_engine)),
+        adapter_factory=_PermanentFailureFactory(),
+        clock=lambda: NOW,
+        owner="worker-1",
+    )
+
+    result = service.process(TASK_ID)
+
+    assert result.outcome == "FAILED"
+    assert result.failed_count >= 1
+
+
+def _seed(
+    engine: Engine,
+    *,
+    add_source: bool = True,
+    service_name: str | None = "checkout",
+) -> None:
     with Session(engine) as session:
         rules = Table("incident_rules", MetaData(), autoload_with=session.bind)
         incidents = Table("operational_incidents", MetaData(), autoload_with=session.bind)
@@ -191,7 +379,7 @@ def _seed(engine: Engine) -> None:
             window=build_evidence_window(NOW, NOW),
             context=EvidenceContext(
                 environment="testing",
-                service_name="checkout",
+                service_name=service_name,
                 alert_names=("HighErrorRate",),
             ),
             requested_by="incident-evaluation",
@@ -213,25 +401,34 @@ def _seed(engine: Engine) -> None:
                 updated_at=NOW,
             )
         )
-        MonitoringDataSourceRepository(session).insert(
-            MonitoringDataSourceRecord(
-                id="mds_88888888888888888888888888888888",
-                name="Prometheus",
-                environment="testing",
-                source_type="PROMETHEUS",
-                base_url="http://prometheus:9090",
-                credential_env_key=None,
-                field_mapping={},
-                verify_tls=True,
-                enabled=True,
-                version=1,
-                last_test_state=None,
-                last_test_latency_ms=None,
-                last_compatible_version=None,
-                last_test_error_code=None,
-                last_tested_at=None,
-                created_at=NOW,
-                updated_at=NOW,
+        if add_source:
+            MonitoringDataSourceRepository(session).insert(
+                _source("mds_88888888888888888888888888888888", "PROMETHEUS", {})
             )
-        )
         session.commit()
+
+
+def _source(
+    source_id: str,
+    source_type: str,
+    field_mapping: dict[str, str],
+) -> MonitoringDataSourceRecord:
+    return MonitoringDataSourceRecord(
+        id=source_id,
+        name=source_type,
+        environment="testing",
+        source_type=source_type,
+        base_url=f"http://{source_type.casefold()}:8080",
+        credential_env_key=None,
+        field_mapping=field_mapping,
+        verify_tls=True,
+        enabled=True,
+        version=1,
+        last_test_state=None,
+        last_test_latency_ms=None,
+        last_compatible_version=None,
+        last_test_error_code=None,
+        last_tested_at=None,
+        created_at=NOW,
+        updated_at=NOW,
+    )

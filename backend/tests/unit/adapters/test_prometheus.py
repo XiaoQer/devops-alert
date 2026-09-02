@@ -30,6 +30,14 @@ class _FakeTransport:
         )
 
 
+class _RawTransport:
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+
+    def request(self, *args: object, **kwargs: object) -> MonitoringHttpResponse:
+        return MonitoringHttpResponse(status_code=200, headers={}, body=self.body)
+
+
 def test_prometheus_posts_bounded_range_query_and_normalizes_points() -> None:
     transport = _FakeTransport(_matrix_response(series=1))
     adapter = PrometheusEvidenceAdapter(
@@ -74,6 +82,44 @@ def test_prometheus_treats_nan_as_missing_instead_of_statistic() -> None:
     result = adapter.collect(_request())
 
     assert result.normalized_result["series"][0]["points"] == [[int(NOW.timestamp()) + 15, 2.5]]
+
+
+def test_prometheus_distinguishes_missing_target_empty_data_and_missing_baseline() -> None:
+    adapter = PrometheusEvidenceAdapter(
+        base_url="http://prometheus:9090",
+        transport=_FakeTransport(_matrix_response(series=0)),
+    )
+    missing = adapter.collect(_request().model_copy(update={"pre_result_state": "MISSING_TARGET"}))
+    empty = adapter.collect(_request())
+    response = _matrix_response(series=1)
+    response["data"]["result"][0]["values"] = [[NOW.timestamp(), "2.0"]]
+    no_baseline = PrometheusEvidenceAdapter(
+        base_url="http://prometheus:9090",
+        transport=_FakeTransport(response),
+    ).collect(_request())
+
+    assert missing.state == "MISSING_TARGET"
+    assert empty.state == "NO_DATA"
+    assert no_baseline.state == "INSUFFICIENT_BASELINE"
+
+
+@pytest.mark.parametrize(
+    "body",
+    (
+        b"not-json",
+        b'{"status":"error"}',
+        b'{"status":"success","data":{"resultType":"vector","result":[]}}',
+        b'{"status":"success","data":{"resultType":"matrix","result":{}}}',
+    ),
+)
+def test_prometheus_rejects_invalid_response_contracts(body: bytes) -> None:
+    adapter = PrometheusEvidenceAdapter(
+        base_url="http://prometheus:9090",
+        transport=_RawTransport(body),
+    )
+
+    with pytest.raises(MonitoringPermanentError):
+        adapter.collect(_request())
 
 
 def _request(service: str = "checkout") -> EvidenceQueryRequest:

@@ -13,8 +13,11 @@ from incident_intelligence.domain.evidence import (
 )
 from incident_intelligence.main import create_app
 from incident_intelligence.services.incident_evidence import (
+    EvidenceIdempotencyConflict,
+    EvidenceRunAlreadyActive,
     EvidenceRunDetail,
     EvidenceRunMutationResult,
+    EvidenceRunNotFound,
     EvidenceRunPage,
 )
 from incident_intelligence.settings import Settings
@@ -53,6 +56,33 @@ def test_incident_evidence_endpoints_are_authenticated_and_bodyless_for_manual_r
     assert service.manual_calls == [(INCIDENT_ID, "manual-1", "manual-api-client")]
 
 
+def test_incident_evidence_endpoints_return_safe_conflicts_and_not_found(
+    migrated_engine: Engine,
+) -> None:
+    app = create_app(_settings(migrated_engine), engine=migrated_engine)
+    app.state.incident_evidence_service = _FailingEvidenceService()
+    headers = {"Authorization": "Bearer api-token", "Idempotency-Key": "manual-1"}
+
+    with TestClient(app) as client:
+        active = client.post(
+            f"/api/v1/incidents/{INCIDENT_ID}/evidence-runs",
+            headers=headers,
+        )
+        missing = client.get(
+            f"/api/v1/incidents/{INCIDENT_ID}/evidence-runs",
+            headers={"Authorization": "Bearer api-token"},
+        )
+        conflict = client.get(
+            f"/api/v1/incidents/{INCIDENT_ID}/evidence-runs/{RUN_ID}",
+            headers={"Authorization": "Bearer api-token"},
+        )
+
+    assert active.status_code == 409
+    assert active.json()["details"] == {"active_run_id": RUN_ID}
+    assert missing.status_code == 404
+    assert conflict.status_code == 409
+
+
 class _FakeEvidenceService:
     def __init__(self) -> None:
         self.manual_calls: list[tuple[str, str, str]] = []
@@ -76,6 +106,17 @@ class _FakeEvidenceService:
         assert request_id.startswith("req_")
         self.manual_calls.append((incident_id, idempotency_key, actor))
         return EvidenceRunMutationResult(run=_run(), replayed=False)
+
+
+class _FailingEvidenceService:
+    def request_manual(self, *args, **kwargs):
+        raise EvidenceRunAlreadyActive(RUN_ID)
+
+    def list_runs(self, *args, **kwargs):
+        raise EvidenceRunNotFound()
+
+    def get_run(self, *args, **kwargs):
+        raise EvidenceIdempotencyConflict()
 
 
 def _run() -> EvidenceRun:
