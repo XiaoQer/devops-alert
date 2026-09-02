@@ -32,6 +32,12 @@ EvidenceItemState = Literal[
     "FAILED",
 ]
 MonitoringSourceType = Literal["PROMETHEUS", "ELASTICSEARCH", "SKYWALKING"]
+EvidenceSourceType = Literal[
+    "PROMETHEUS",
+    "ELASTICSEARCH",
+    "SKYWALKING",
+    "PLATFORM",
+]
 EvidenceType = Literal[
     "METRIC_TIMESERIES",
     "METRIC_COMPARISON",
@@ -120,7 +126,7 @@ class EvidenceItem(_FrozenEvidenceModel):
     evidence_run_id: str = Field(pattern=r"^evr_[0-9a-f]{32}$")
     evidence_key: EvidenceKey
     display_name: EvidenceDisplayName
-    source_type: MonitoringSourceType
+    source_type: EvidenceSourceType
     state: EvidenceItemState
     package_id: EvidenceIdentifier
     package_version: int = Field(ge=1)

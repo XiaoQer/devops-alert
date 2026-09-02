@@ -778,7 +778,8 @@ class EvidenceItemRow(Base):
     __table_args__ = (
         UniqueConstraint("evidence_run_id", "evidence_key", name="evidence_item_key"),
         CheckConstraint(
-            f"source_type IN ({MONITORING_SOURCE_TYPE_VALUES})", name="source_type"
+            f"source_type IN ({MONITORING_SOURCE_TYPE_VALUES}, 'PLATFORM')",
+            name="source_type",
         ),
         CheckConstraint(f"state IN ({EVIDENCE_ITEM_STATE_VALUES})", name="state"),
         CheckConstraint(f"evidence_type IN ({EVIDENCE_TYPE_VALUES})", name="evidence_type"),

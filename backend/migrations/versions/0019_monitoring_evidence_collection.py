@@ -221,7 +221,7 @@ def _create_evidence_items() -> None:
         sa.Column("error_code", sa.String(64), nullable=True),
         sa.Column("created_at", utc_datetime(), nullable=False),
         sa.CheckConstraint(
-            "source_type IN ('PROMETHEUS', 'ELASTICSEARCH', 'SKYWALKING')",
+            "source_type IN ('PROMETHEUS', 'ELASTICSEARCH', 'SKYWALKING', 'PLATFORM')",
             name="ck_incident_evidence_items_source_type",
         ),
         sa.CheckConstraint(
