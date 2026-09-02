@@ -2,13 +2,13 @@
 
 ## 状态
 
-设计已确认，等待用户审阅正式规格。
+正式规格已确认，实施计划已完成，等待分阶段开发与验收。
 
 ## 背景与目标
 
 平台已经能够从真实 Alert 创建正式 Incident，但当前 Incident 只展示触发告警和人工处置记录，不能自动保存故障发生时的监控证据。本规格建立异步自动取证基线：使用 Prometheus、ELK 和 SkyWalking 的版本化只读查询，把指标、日志、链路和确定性跨源关联转换成标准证据，并在 Incident 中集中展示。
 
-完整设计见 `docs/superpowers/specs/2026-09-02-monitoring-evidence-collection-design.md`。
+完整设计见 `docs/superpowers/specs/2026-09-02-monitoring-evidence-collection-design.md`，实施计划见 `docs/superpowers/plans/2026-09-02-monitoring-evidence-collection.md`。
 
 ## 范围
 
