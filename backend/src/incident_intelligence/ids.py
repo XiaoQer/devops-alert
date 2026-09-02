@@ -32,6 +32,11 @@ IdPrefix = Literal[
     "inr",
     "ift",
     "fer",
+    "mds",
+    "evr",
+    "evitem",
+    "evtask",
+    "evop",
 ]
 
 

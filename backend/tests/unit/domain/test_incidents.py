@@ -122,6 +122,30 @@ def test_create_incident_builds_backend_owned_title_counts_and_activity() -> Non
     assert change.changed is True
 
 
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "EVIDENCE_COLLECTION_COMPLETED",
+        "EVIDENCE_COLLECTION_PARTIAL",
+        "EVIDENCE_COLLECTION_FAILED",
+    ],
+)
+def test_incident_activity_accepts_deterministic_evidence_outcomes(kind: str) -> None:
+    activity = IncidentActivity.model_validate(
+        {
+            "id": CREATED_ACTIVITY_ID,
+            "incident_id": INCIDENT_ID,
+            "kind": kind,
+            "occurred_at": NOW,
+            "actor_type": "SYSTEM",
+            "actor": "evidence-collection",
+            "summary": "监控取证已完成",
+        }
+    )
+
+    assert activity.kind == kind
+
+
 def test_create_incident_rejects_empty_alert_membership() -> None:
     with pytest.raises(ValueError, match="incident_alerts_required"):
         create_incident(

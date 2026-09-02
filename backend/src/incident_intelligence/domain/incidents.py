@@ -25,6 +25,9 @@ IncidentActivityKind = Literal[
     "RESOLVED",
     "FEISHU_MESSAGE_RECORDED",
     "NOTIFICATION_FAILED",
+    "EVIDENCE_COLLECTION_COMPLETED",
+    "EVIDENCE_COLLECTION_PARTIAL",
+    "EVIDENCE_COLLECTION_FAILED",
 ]
 IncidentActorType = Literal["SYSTEM", "USER", "FEISHU"]
 ActivityMetadataValue = str | int | bool
