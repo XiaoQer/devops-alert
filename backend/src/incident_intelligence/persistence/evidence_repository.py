@@ -165,6 +165,25 @@ class EvidenceRunRepository:
         )
         return None if row is None else _run_domain(row)
 
+    def update(self, run: EvidenceRun, *, expected_version: int) -> bool:
+        row = _run_row(run)
+        values = {
+            column.name: getattr(row, column.name)
+            for column in EvidenceRunRow.__table__.columns
+            if column.name not in {"id", "incident_id", "trigger_kind", "automatic_slot"}
+        }
+        result = cast(
+            CursorResult[Any],
+            self._session.execute(
+                update(EvidenceRunRow)
+                .where(EvidenceRunRow.id == run.id)
+                .where(EvidenceRunRow.version == expected_version)
+                .values(**values)
+            ),
+        )
+        self._session.flush()
+        return result.rowcount == 1
+
     def append_item(self, item: EvidenceItem) -> None:
         self._session.add(_item_row(item))
         self._session.flush()
@@ -190,6 +209,58 @@ class EvidenceTaskRepository:
     def get(self, task_id: str) -> EvidenceTaskRecord | None:
         row = self._session.get(EvidenceCollectionTaskRow, task_id)
         return None if row is None else _task_record(row)
+
+    def list_due(self, *, now: datetime, limit: int) -> tuple[str, ...]:
+        if not 1 <= limit <= 100:
+            raise ValueError("取证任务批次大小必须为 1 到 100")
+        rows = self._session.scalars(
+            select(EvidenceCollectionTaskRow.id)
+            .where(EvidenceCollectionTaskRow.state == "PENDING")
+            .where(EvidenceCollectionTaskRow.next_attempt_at <= now)
+            .where(EvidenceCollectionTaskRow.attempt_count < 5)
+            .order_by(
+                EvidenceCollectionTaskRow.next_attempt_at,
+                EvidenceCollectionTaskRow.created_at,
+                EvidenceCollectionTaskRow.id,
+            )
+            .limit(limit)
+        )
+        return tuple(rows)
+
+    def requeue_expired(self, *, now: datetime) -> int:
+        result = cast(
+            CursorResult[Any],
+            self._session.execute(
+                update(EvidenceCollectionTaskRow)
+                .where(EvidenceCollectionTaskRow.state == "LEASED")
+                .where(EvidenceCollectionTaskRow.lease_until < now)
+                .where(EvidenceCollectionTaskRow.attempt_count < 5)
+                .values(
+                    state="PENDING",
+                    next_attempt_at=now,
+                    lease_owner=None,
+                    lease_until=None,
+                    last_error_code="worker_lease_expired",
+                    updated_at=now,
+                )
+            ),
+        )
+        self._session.execute(
+            update(EvidenceCollectionTaskRow)
+            .where(EvidenceCollectionTaskRow.state == "LEASED")
+            .where(EvidenceCollectionTaskRow.lease_until < now)
+            .where(EvidenceCollectionTaskRow.attempt_count >= 5)
+            .values(
+                state="FAILED",
+                lease_owner=None,
+                lease_until=None,
+                last_error_code="worker_lease_expired",
+                completed_at=now,
+                updated_at=now,
+            )
+        )
+        self._session.flush()
+        return result.rowcount
 
     def claim_due(
         self,

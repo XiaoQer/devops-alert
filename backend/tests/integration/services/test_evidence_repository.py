@@ -81,6 +81,68 @@ def test_task_claim_and_completion_require_current_lease_owner(
         assert completed.lease_owner is None
 
 
+def test_run_update_and_due_task_listing_are_optimistic_and_bounded(
+    migrated_engine: Engine,
+) -> None:
+    with Session(migrated_engine) as session:
+        _insert_incident(session)
+        runs = EvidenceRunRepository(session)
+        tasks = EvidenceTaskRepository(session)
+        run = _run()
+        runs.insert(run)
+        task = EvidenceTaskRecord(
+            id="evtask_44444444444444444444444444444444",
+            evidence_run_id=RUN_ID,
+            state="PENDING",
+            attempt_count=0,
+            next_attempt_at=NOW,
+            lease_owner=None,
+            lease_until=None,
+            last_error_code=None,
+            completed_at=None,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        tasks.insert(task)
+
+        running = run.model_copy(update={"state": "RUNNING", "started_at": NOW, "version": 2})
+        assert runs.update(running, expected_version=1)
+        assert not runs.update(running, expected_version=1)
+        assert tasks.list_due(now=NOW, limit=10) == (task.id,)
+        session.commit()
+
+
+def test_expired_task_lease_returns_to_pending_queue(migrated_engine: Engine) -> None:
+    with Session(migrated_engine) as session:
+        _insert_incident(session)
+        EvidenceRunRepository(session).insert(_run())
+        tasks = EvidenceTaskRepository(session)
+        task = EvidenceTaskRecord(
+            id="evtask_44444444444444444444444444444444",
+            evidence_run_id=RUN_ID,
+            state="PENDING",
+            attempt_count=0,
+            next_attempt_at=NOW,
+            lease_owner=None,
+            lease_until=None,
+            last_error_code=None,
+            completed_at=None,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        tasks.insert(task)
+        assert tasks.claim_due(
+            task.id,
+            owner="crashed-worker",
+            now=NOW,
+            lease_until=NOW + timedelta(seconds=30),
+        )
+
+        assert tasks.requeue_expired(now=NOW + timedelta(seconds=31)) == 1
+        assert tasks.list_due(now=NOW + timedelta(seconds=31), limit=10) == (task.id,)
+        session.commit()
+
+
 def _run() -> EvidenceRun:
     return EvidenceRun(
         id=RUN_ID,

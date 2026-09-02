@@ -14,6 +14,9 @@ def test_incident_worker_settings_have_safe_bounded_defaults() -> None:
     assert settings.incident_worker_lease_seconds == 60
     assert settings.incident_worker_max_attempts == 5
     assert settings.incident_worker_batch_size == 20
+    assert settings.evidence_worker_poll_seconds == 2
+    assert settings.evidence_worker_lease_seconds == 120
+    assert settings.evidence_worker_batch_size == 5
 
 
 @pytest.mark.parametrize(
@@ -23,6 +26,9 @@ def test_incident_worker_settings_have_safe_bounded_defaults() -> None:
         ("incident_worker_lease_seconds", 9),
         ("incident_worker_max_attempts", 11),
         ("incident_worker_batch_size", 101),
+        ("evidence_worker_poll_seconds", 0),
+        ("evidence_worker_lease_seconds", 9),
+        ("evidence_worker_batch_size", 101),
     ),
 )
 def test_incident_worker_settings_reject_out_of_bounds_values(

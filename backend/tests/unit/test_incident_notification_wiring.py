@@ -19,3 +19,5 @@ def test_app_wires_outbound_feishu_notification_worker() -> None:
 
     assert app.state.incident_notification_service is not None
     assert app.state.incident_notification_runner is not None
+    assert app.state.evidence_collection_service is not None
+    assert app.state.evidence_collection_runner is not None

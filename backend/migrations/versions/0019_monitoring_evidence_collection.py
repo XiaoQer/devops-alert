@@ -48,6 +48,13 @@ def downgrade() -> None:
     op.drop_table("incident_evidence_runs")
     op.drop_index("ix_monitoring_data_sources_environment", table_name="monitoring_data_sources")
     op.drop_table("monitoring_data_sources")
+    op.execute(
+        sa.text(
+            "DELETE FROM operational_incident_activities "
+            "WHERE kind IN ('EVIDENCE_COLLECTION_COMPLETED', "
+            "'EVIDENCE_COLLECTION_PARTIAL', 'EVIDENCE_COLLECTION_FAILED')"
+        )
+    )
     _extend_incident_activity_kinds(include_evidence=False)
 
 

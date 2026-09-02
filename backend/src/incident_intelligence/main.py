@@ -14,6 +14,13 @@ from incident_intelligence.persistence.session import get_engine, make_session_f
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.alert_center import AlertCenterService
 from incident_intelligence.services.alert_sources import AlertSourceService
+from incident_intelligence.services.evidence_adapter_factory import (
+    MonitoringEvidenceAdapterFactory,
+)
+from incident_intelligence.services.evidence_collection import EvidenceCollectionService
+from incident_intelligence.services.evidence_collection_runner import (
+    EvidenceCollectionRunner,
+)
 from incident_intelligence.services.feishu_events import FeishuEventService
 from incident_intelligence.services.incident_evaluation import IncidentEvaluationService
 from incident_intelligence.services.incident_evaluation_runner import (
@@ -71,6 +78,16 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
         lease_seconds=resolved_settings.incident_worker_lease_seconds,
         max_attempts=min(resolved_settings.incident_worker_max_attempts, 5),
     )
+    evidence_collection_service = EvidenceCollectionService(
+        uow_factory=uow_factory,
+        adapter_factory=MonitoringEvidenceAdapterFactory(),
+        owner="evidence-collection",
+        lease_seconds=resolved_settings.evidence_worker_lease_seconds,
+    )
+    evidence_collection_runner = EvidenceCollectionRunner(
+        uow_factory=uow_factory,
+        processor=evidence_collection_service,
+    )
     incident_service = IncidentService(uow_factory=uow_factory)
     feishu_event_service = _feishu_event_service(
         resolved_settings,
@@ -85,6 +102,7 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
             resolved_settings,
             incident_evaluation_runner,
             incident_notification_runner,
+            evidence_collection_runner,
         ),
     )
     app.state.settings = resolved_settings
@@ -94,6 +112,8 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
     app.state.incident_evaluation_runner = incident_evaluation_runner
     app.state.incident_notification_service = incident_notification_service
     app.state.incident_notification_runner = incident_notification_runner
+    app.state.evidence_collection_service = evidence_collection_service
+    app.state.evidence_collection_runner = evidence_collection_runner
     app.state.feishu_event_service = feishu_event_service
     app.state.alert_source_service = AlertSourceService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
@@ -138,6 +158,7 @@ def _lifespan(
     settings: Settings,
     evaluation_runner: IncidentEvaluationRunner,
     notification_runner: IncidentNotificationRunner,
+    evidence_runner: EvidenceCollectionRunner,
 ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -151,6 +172,7 @@ def _lifespan(
             tasks.append(
                 asyncio.create_task(_run_notification_worker(settings, notification_runner, stop))
             )
+            tasks.append(asyncio.create_task(_run_evidence_worker(settings, evidence_runner, stop)))
         try:
             yield
         finally:
@@ -198,6 +220,26 @@ async def _run_notification_worker(
             await asyncio.wait_for(
                 stop.wait(),
                 timeout=settings.incident_worker_poll_seconds,
+            )
+
+
+async def _run_evidence_worker(
+    settings: Settings,
+    runner: EvidenceCollectionRunner,
+    stop: asyncio.Event,
+) -> None:
+    while not stop.is_set():
+        try:
+            await asyncio.to_thread(
+                runner.run_once,
+                limit=settings.evidence_worker_batch_size,
+            )
+        except Exception:
+            LOGGER.exception("Incident 监控取证批次执行失败")
+        with suppress(TimeoutError):
+            await asyncio.wait_for(
+                stop.wait(),
+                timeout=settings.evidence_worker_poll_seconds,
             )
 
 

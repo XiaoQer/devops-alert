@@ -40,19 +40,9 @@ class Settings(BaseSettings):
     incident_worker_lease_seconds: int = Field(default=60, ge=10, le=300)
     incident_worker_max_attempts: int = Field(default=5, ge=1, le=10)
     incident_worker_batch_size: int = Field(default=20, ge=1, le=100)
-    correlation_runner_enabled: bool = True
-    correlation_poll_interval_seconds: float = Field(default=1.0, ge=0.1, le=60)
-    correlation_lease_seconds: int = Field(default=30, ge=5, le=300)
-    correlation_batch_size: int = Field(default=10, ge=1, le=50)
-    alert_group_backfill_batch_size: int = Field(default=100, ge=1, le=100)
-    alert_grouping_runner_enabled: bool = True
-    alert_grouping_poll_interval_seconds: float = Field(default=1.0, ge=0.1, le=60)
-    alert_grouping_lease_seconds: int = Field(default=30, ge=5, le=300)
-    alert_grouping_batch_size: int = Field(default=10, ge=1, le=50)
-    alert_event_lifecycle_runner_enabled: bool = True
-    alert_event_lifecycle_poll_interval_seconds: float = Field(default=1.0, ge=0.1, le=60)
-    alert_event_lifecycle_lease_seconds: int = Field(default=30, ge=5, le=300)
-    alert_event_lifecycle_batch_size: int = Field(default=10, ge=1, le=50)
+    evidence_worker_poll_seconds: int = Field(default=2, ge=1, le=60)
+    evidence_worker_lease_seconds: int = Field(default=120, ge=10, le=600)
+    evidence_worker_batch_size: int = Field(default=5, ge=1, le=100)
 
     @field_validator("database_url")
     @classmethod
