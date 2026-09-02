@@ -14,9 +14,7 @@ NOW = datetime(2026, 9, 2, 10, 0, tzinfo=UTC)
 
 
 def test_factory_builds_prometheus_adapter_without_a_credential() -> None:
-    factory = MonitoringEvidenceAdapterFactory(
-        credential_resolver=MonitoringCredentialResolver({})
-    )
+    factory = MonitoringEvidenceAdapterFactory(credential_resolver=MonitoringCredentialResolver({}))
 
     adapter = factory.create(_source(credential_env_key=None))
 
@@ -24,9 +22,7 @@ def test_factory_builds_prometheus_adapter_without_a_credential() -> None:
 
 
 def test_factory_rejects_a_configured_but_missing_credential() -> None:
-    factory = MonitoringEvidenceAdapterFactory(
-        credential_resolver=MonitoringCredentialResolver({})
-    )
+    factory = MonitoringEvidenceAdapterFactory(credential_resolver=MonitoringCredentialResolver({}))
 
     with pytest.raises(MonitoringPermanentError, match="monitoring_credential_missing"):
         factory.create(_source(credential_env_key="II_PROM_TOKEN"))
