@@ -12,6 +12,9 @@ from incident_intelligence.api.routes.incident_notification_routes import (
 )
 from incident_intelligence.api.routes.incident_rules import router as incident_rules_router
 from incident_intelligence.api.routes.incidents import router as incidents_router
+from incident_intelligence.api.routes.monitoring_data_sources import (
+    router as monitoring_data_sources_router,
+)
 
 
 def create_router(engine: Engine) -> APIRouter:
@@ -22,6 +25,7 @@ def create_router(engine: Engine) -> APIRouter:
     router.include_router(incident_rules_router)
     router.include_router(incident_notification_routes_router)
     router.include_router(incidents_router)
+    router.include_router(monitoring_data_sources_router)
     router.include_router(feishu_router)
     router.include_router(alertmanager_router)
     router.include_router(cloudevents_router)

@@ -30,6 +30,7 @@ from incident_intelligence.services.incident_notifications import (
 )
 from incident_intelligence.services.incident_rules import IncidentRuleService
 from incident_intelligence.services.incidents import IncidentService
+from incident_intelligence.services.monitoring_data_sources import MonitoringDataSourceService
 from incident_intelligence.services.signal_intake import SignalIntakeService
 from incident_intelligence.services.source_authentication import SourceAuthenticationService
 from incident_intelligence.services.source_receipts import SourceReceiptService
@@ -106,6 +107,9 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
         capability=resolved_settings.feishu_capability(),
     )
     app.state.incident_service = incident_service
+    app.state.monitoring_data_source_service = MonitoringDataSourceService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
+    )
     app.state.source_authentication_service = SourceAuthenticationService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )

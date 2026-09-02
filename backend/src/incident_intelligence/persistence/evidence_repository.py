@@ -99,6 +99,27 @@ class MonitoringDataSourceRepository:
         )
         return tuple(_source_record(row) for row in rows)
 
+    def update(
+        self,
+        source: MonitoringDataSourceRecord,
+        *,
+        expected_version: int,
+    ) -> bool:
+        values = source.__dict__.copy()
+        values.pop("id")
+        values["enabled_slot"] = 1 if source.enabled else None
+        result = cast(
+            CursorResult[Any],
+            self._session.execute(
+                update(MonitoringDataSourceRow)
+                .where(MonitoringDataSourceRow.id == source.id)
+                .where(MonitoringDataSourceRow.version == expected_version)
+                .values(**values)
+            ),
+        )
+        self._session.flush()
+        return result.rowcount == 1
+
     def find_enabled(
         self,
         *,

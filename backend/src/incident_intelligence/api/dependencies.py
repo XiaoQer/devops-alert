@@ -16,6 +16,7 @@ from incident_intelligence.services.incident_notification_routes import (
 )
 from incident_intelligence.services.incident_rules import IncidentRuleService
 from incident_intelligence.services.incidents import IncidentService
+from incident_intelligence.services.monitoring_data_sources import MonitoringDataSourceService
 from incident_intelligence.services.signal_intake import SignalIntakeService
 from incident_intelligence.services.source_authentication import SourceAuthenticationService
 from incident_intelligence.services.source_receipts import SourceReceiptService
@@ -94,6 +95,13 @@ def get_incident_notification_route_service(
 
 def get_incident_service(request: Request) -> IncidentService:
     return cast(IncidentService, request.app.state.incident_service)
+
+
+def get_monitoring_data_source_service(request: Request) -> MonitoringDataSourceService:
+    return cast(
+        MonitoringDataSourceService,
+        request.app.state.monitoring_data_source_service,
+    )
 
 
 def get_feishu_event_service(request: Request) -> FeishuEventService:
