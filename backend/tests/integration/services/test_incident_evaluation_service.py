@@ -23,6 +23,8 @@ from incident_intelligence.persistence.incident_repository import (
 from incident_intelligence.persistence.incident_rule_repository import IncidentRuleRepository
 from incident_intelligence.persistence.models import (
     AlertLifecycleRow,
+    EvidenceCollectionTaskRow,
+    EvidenceRunRow,
     IncidentEvaluationJobRow,
     IncidentNotificationOutboxRow,
     OperationalIncidentActivityRow,
@@ -81,6 +83,21 @@ def test_published_rule_hit_creates_formal_incident_and_links_window_alerts(
         assert notification.incident_id == result.incident_ids[0]
         assert notification.kind == "CREATE_CARD"
         assert notification.state == "PENDING"
+
+        evidence_run = session.scalar(select(EvidenceRunRow))
+        assert evidence_run is not None
+        assert evidence_run.incident_id == result.incident_ids[0]
+        assert evidence_run.trigger_kind == "AUTOMATIC"
+        assert evidence_run.state == "QUEUED"
+        assert evidence_run.anchor_at == NOW - timedelta(minutes=2)
+        assert evidence_run.environment == "production"
+        assert evidence_run.service_name == "checkout"
+        assert evidence_run.alert_names == ["ErrorRate", "HighLatency"]
+
+        evidence_task = session.scalar(select(EvidenceCollectionTaskRow))
+        assert evidence_task is not None
+        assert evidence_task.evidence_run_id == evidence_run.id
+        assert evidence_task.state == "PENDING"
 
 
 def test_draft_rule_is_not_evaluated(migrated_engine: Engine) -> None:
@@ -145,6 +162,8 @@ def test_two_matching_jobs_converge_to_one_unresolved_incident(
     with Session(migrated_engine) as session:
         assert session.scalar(select(func.count()).select_from(OperationalIncidentRow)) == 1
         assert session.scalar(select(func.count()).select_from(OperationalIncidentAlertRow)) == 2
+        assert session.scalar(select(func.count()).select_from(EvidenceRunRow)) == 1
+        assert session.scalar(select(func.count()).select_from(EvidenceCollectionTaskRow)) == 1
 
 
 def test_all_linked_alerts_recovered_records_once_without_resolving_incident(

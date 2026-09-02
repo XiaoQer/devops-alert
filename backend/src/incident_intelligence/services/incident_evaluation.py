@@ -7,6 +7,11 @@ from hashlib import sha256
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.exc import IntegrityError
 
+from incident_intelligence.domain.evidence import (
+    EvidenceContext,
+    EvidenceRun,
+    build_evidence_window,
+)
 from incident_intelligence.domain.incident_rule_evaluation import (
     AlertEvaluationFact,
     EvaluationMatch,
@@ -25,6 +30,10 @@ from incident_intelligence.domain.incidents import (
 from incident_intelligence.domain.models import Environment
 from incident_intelligence.ids import IdPrefix, new_id
 from incident_intelligence.persistence.alert_center_repository import AlertRepository
+from incident_intelligence.persistence.evidence_repository import (
+    EvidenceRunRepository,
+    EvidenceTaskRecord,
+)
 from incident_intelligence.persistence.incident_repository import (
     IncidentEvaluationJobRecord,
     IncidentEvaluationJobRepository,
@@ -54,6 +63,7 @@ class IncidentEvaluationService:
         uow_factory: Callable[[], SqlAlchemyUnitOfWork],
         clock: Callable[[], datetime] | None = None,
         id_factory: Callable[[IdPrefix], str] = new_id,
+        evidence_id_factory: Callable[[IdPrefix], str] = new_id,
         reference_factory: Callable[[datetime], str] | None = None,
         owner: str = "incident-evaluation",
         lease_seconds: int = 60,
@@ -61,6 +71,7 @@ class IncidentEvaluationService:
         self._uow_factory = uow_factory
         self._clock = clock or (lambda: datetime.now(UTC))
         self._id_factory = id_factory
+        self._evidence_id_factory = evidence_id_factory
         self._reference_factory = reference_factory
         self._owner = owner
         self._lease_seconds = lease_seconds
@@ -111,6 +122,7 @@ class IncidentEvaluationService:
 
             incidents = _incidents(uow)
             notifications = _notifications(uow)
+            evidence_runs = _evidence_runs(uow)
             affected: list[str] = []
             created = False
             for rule in rules:
@@ -135,6 +147,7 @@ class IncidentEvaluationService:
                     incident, was_created = self._apply_match(
                         incidents=incidents,
                         notifications=notifications,
+                        evidence_runs=evidence_runs,
                         alerts=alerts,
                         rule_id=rule.id,
                         rule_version=rule.version,
@@ -174,6 +187,7 @@ class IncidentEvaluationService:
         *,
         incidents: IncidentRepository,
         notifications: IncidentNotificationRepository,
+        evidence_runs: EvidenceRunRepository,
         alerts: AlertRepository,
         rule_id: str,
         rule_version: int,
@@ -229,6 +243,12 @@ class IncidentEvaluationService:
                 activities=change.activities,
                 now=now,
             )
+            self._enqueue_automatic_evidence(
+                evidence_runs,
+                incident=change.incident,
+                members=members,
+                now=now,
+            )
             return change.incident, True
 
         existing_ids = incidents.list_alert_ids(existing.id)
@@ -271,6 +291,50 @@ class IncidentEvaluationService:
             now=now,
         )
         return change.incident, False
+
+    def _enqueue_automatic_evidence(
+        self,
+        repository: EvidenceRunRepository,
+        *,
+        incident: Incident,
+        members: tuple[AlertEvaluationFact, ...],
+        now: datetime,
+    ) -> None:
+        anchor_at = min(member.first_received_at for member in members)
+        service_names = {member.service for member in members if member.service is not None}
+        service_name = next(iter(service_names)) if len(service_names) == 1 else None
+        run_id = self._evidence_id_factory("evr")
+        run = EvidenceRun(
+            id=run_id,
+            incident_id=incident.id,
+            trigger="AUTOMATIC",
+            state="QUEUED",
+            anchor_at=anchor_at,
+            window=build_evidence_window(anchor_at, now),
+            context=EvidenceContext(
+                environment=incident.environment,
+                service_name=service_name,
+                alert_names=tuple(sorted({member.alert_name for member in members})),
+            ),
+            requested_by="incident-evaluation",
+            created_at=now,
+        )
+        repository.insert_run_with_task(
+            run,
+            EvidenceTaskRecord(
+                id=self._evidence_id_factory("evtask"),
+                evidence_run_id=run_id,
+                state="PENDING",
+                attempt_count=0,
+                next_attempt_at=now,
+                lease_owner=None,
+                lease_until=None,
+                last_error_code=None,
+                completed_at=None,
+                created_at=now,
+                updated_at=now,
+            ),
+        )
 
     def _enqueue_notifications(
         self,
@@ -392,3 +456,9 @@ def _notifications(uow: SqlAlchemyUnitOfWork) -> IncidentNotificationRepository:
     if uow.incident_notifications is None:
         raise RuntimeError("工作单元没有可用 Incident 通知仓储")
     return uow.incident_notifications
+
+
+def _evidence_runs(uow: SqlAlchemyUnitOfWork) -> EvidenceRunRepository:
+    if uow.evidence_runs is None:
+        raise RuntimeError("工作单元没有可用取证运行仓储")
+    return uow.evidence_runs
