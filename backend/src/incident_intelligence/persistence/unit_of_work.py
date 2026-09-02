@@ -9,6 +9,12 @@ from incident_intelligence.persistence.alert_lifecycle_repository import (
     AlertLifecycleRepository,
 )
 from incident_intelligence.persistence.alert_source_repository import AlertSourceRepository
+from incident_intelligence.persistence.evidence_repository import (
+    EvidenceOperationRepository,
+    EvidenceRunRepository,
+    EvidenceTaskRepository,
+    MonitoringDataSourceRepository,
+)
 from incident_intelligence.persistence.incident_repository import (
     FeishuEventReceiptRepository,
     IncidentEvaluationJobRepository,
@@ -42,6 +48,10 @@ class SqlAlchemyUnitOfWork:
         ) = None
         self.incident_feishu_threads: IncidentFeishuThreadRepository | None = None
         self.feishu_event_receipts: FeishuEventReceiptRepository | None = None
+        self.monitoring_data_sources: MonitoringDataSourceRepository | None = None
+        self.evidence_runs: EvidenceRunRepository | None = None
+        self.evidence_tasks: EvidenceTaskRepository | None = None
+        self.evidence_operations: EvidenceOperationRepository | None = None
 
     def __enter__(self) -> SqlAlchemyUnitOfWork:
         self.session = self._session_factory()
@@ -60,6 +70,10 @@ class SqlAlchemyUnitOfWork:
         )
         self.incident_feishu_threads = IncidentFeishuThreadRepository(self.session)
         self.feishu_event_receipts = FeishuEventReceiptRepository(self.session)
+        self.monitoring_data_sources = MonitoringDataSourceRepository(self.session)
+        self.evidence_runs = EvidenceRunRepository(self.session)
+        self.evidence_tasks = EvidenceTaskRepository(self.session)
+        self.evidence_operations = EvidenceOperationRepository(self.session)
         return self
 
     def commit(self) -> None:

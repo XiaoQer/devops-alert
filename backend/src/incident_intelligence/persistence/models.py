@@ -64,9 +64,22 @@ OPERATIONAL_INCIDENT_STATE_VALUES = "'OPEN', 'ACKNOWLEDGED', 'RESOLVED'"
 OPERATIONAL_INCIDENT_ACTIVITY_VALUES = (
     "'INCIDENT_CREATED', 'ALERTS_LINKED', 'SEVERITY_ESCALATED', "
     "'ALL_ALERTS_RECOVERED', 'ACKNOWLEDGED', 'RESOLVED', "
-    "'FEISHU_MESSAGE_RECORDED', 'NOTIFICATION_FAILED'"
+    "'FEISHU_MESSAGE_RECORDED', 'NOTIFICATION_FAILED', "
+    "'EVIDENCE_COLLECTION_COMPLETED', 'EVIDENCE_COLLECTION_PARTIAL', "
+    "'EVIDENCE_COLLECTION_FAILED'"
 )
 INCIDENT_ASYNC_STATE_VALUES = "'PENDING', 'LEASED', 'SUCCEEDED', 'FAILED'"
+MONITORING_SOURCE_TYPE_VALUES = "'PROMETHEUS', 'ELASTICSEARCH', 'SKYWALKING'"
+EVIDENCE_RUN_STATE_VALUES = "'QUEUED', 'RUNNING', 'SUCCEEDED', 'PARTIAL', 'FAILED'"
+EVIDENCE_ITEM_STATE_VALUES = (
+    "'SUCCEEDED', 'NO_DATA', 'INSUFFICIENT_BASELINE', 'MISSING_TARGET', "
+    "'SKIPPED_DEPENDENCY', 'FAILED'"
+)
+EVIDENCE_TYPE_VALUES = (
+    "'METRIC_TIMESERIES', 'METRIC_COMPARISON', 'LOG_AGGREGATION', 'LOG_SAMPLE', "
+    "'ENDPOINT_RANKING', 'DEPENDENCY_RANKING', 'TRACE_SUMMARY', "
+    "'CROSS_SOURCE_CORRELATION'"
+)
 
 
 def _mysql_table_options() -> dict[str, str]:
@@ -667,6 +680,193 @@ class OperationalIncidentActivityRow(Base):
     actor: Mapped[str] = mapped_column(String(128), nullable=False)
     summary: Mapped[str] = mapped_column(String(4_000), nullable=False)
     activity_metadata: Mapped[dict[str, object]] = mapped_column("metadata", JSON, nullable=False)
+
+
+class MonitoringDataSourceRow(Base):
+    __tablename__ = "monitoring_data_sources"
+    __table_args__ = (
+        UniqueConstraint(
+            "environment", "source_type", "enabled_slot", name="monitoring_source_enabled"
+        ),
+        CheckConstraint(ENVIRONMENT_CHECK, name="environment"),
+        CheckConstraint(
+            f"source_type IN ({MONITORING_SOURCE_TYPE_VALUES})", name="source_type"
+        ),
+        CheckConstraint(
+            "(enabled = 1 AND enabled_slot = 1) OR "
+            "(enabled = 0 AND enabled_slot IS NULL)",
+            name="enabled_slot",
+        ),
+        CheckConstraint("version >= 1", name="version"),
+        Index("ix_monitoring_data_sources_environment", "environment", "source_type"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    base_url: Mapped[str] = mapped_column(String(2_000), nullable=False)
+    credential_env_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    field_mapping: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False)
+    verify_tls: Mapped[bool] = mapped_column(nullable=False)
+    enabled: Mapped[bool] = mapped_column(nullable=False)
+    enabled_slot: Mapped[int | None] = mapped_column(nullable=True)
+    version: Mapped[int] = mapped_column(nullable=False)
+    last_test_state: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    last_test_latency_ms: Mapped[int | None] = mapped_column(nullable=True)
+    last_compatible_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_test_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_tested_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class EvidenceRunRow(Base):
+    __tablename__ = "incident_evidence_runs"
+    __table_args__ = (
+        UniqueConstraint("incident_id", "automatic_slot", name="incident_auto_evidence_run"),
+        CheckConstraint(f"state IN ({EVIDENCE_RUN_STATE_VALUES})", name="state"),
+        CheckConstraint("trigger_kind IN ('AUTOMATIC', 'MANUAL')", name="trigger_kind"),
+        CheckConstraint(
+            "(trigger_kind = 'AUTOMATIC' AND automatic_slot = 1) OR "
+            "(trigger_kind = 'MANUAL' AND automatic_slot IS NULL)",
+            name="automatic_slot",
+        ),
+        CheckConstraint(ENVIRONMENT_CHECK, name="environment"),
+        CheckConstraint(
+            "succeeded_count >= 0 AND skipped_count >= 0 AND missing_count >= 0 "
+            "AND failed_count >= 0 AND version >= 1",
+            name="counts",
+        ),
+        Index("ix_incident_evidence_runs_incident", "incident_id", "created_at", "id"),
+        Index("ix_incident_evidence_runs_state", "state", "created_at"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(
+        ForeignKey("operational_incidents.id", ondelete="CASCADE"), nullable=False
+    )
+    trigger_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    automatic_slot: Mapped[int | None] = mapped_column(nullable=True)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    anchor_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    baseline_start: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    baseline_end: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    fault_start: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    fault_end: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    service_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    alert_names: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    package_versions: Mapped[dict[str, int]] = mapped_column(JSON, nullable=False)
+    succeeded_count: Mapped[int] = mapped_column(nullable=False)
+    skipped_count: Mapped[int] = mapped_column(nullable=False)
+    missing_count: Mapped[int] = mapped_column(nullable=False)
+    failed_count: Mapped[int] = mapped_column(nullable=False)
+    failure_summary: Mapped[str | None] = mapped_column(String(1_000), nullable=True)
+    requested_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    version: Mapped[int] = mapped_column(nullable=False)
+
+
+class EvidenceItemRow(Base):
+    __tablename__ = "incident_evidence_items"
+    __table_args__ = (
+        UniqueConstraint("evidence_run_id", "evidence_key", name="evidence_item_key"),
+        CheckConstraint(
+            f"source_type IN ({MONITORING_SOURCE_TYPE_VALUES})", name="source_type"
+        ),
+        CheckConstraint(f"state IN ({EVIDENCE_ITEM_STATE_VALUES})", name="state"),
+        CheckConstraint(f"evidence_type IN ({EVIDENCE_TYPE_VALUES})", name="evidence_type"),
+        CheckConstraint("package_version >= 1 AND template_version >= 1", name="versions"),
+        Index("ix_incident_evidence_items_run", "evidence_run_id", "created_at", "id"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(39), primary_key=True)
+    evidence_run_id: Mapped[str] = mapped_column(
+        ForeignKey("incident_evidence_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    evidence_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    package_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    package_version: Mapped[int] = mapped_column(nullable=False)
+    template_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    template_version: Mapped[int] = mapped_column(nullable=False)
+    evidence_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    query_started_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    query_ended_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    step_seconds: Mapped[int | None] = mapped_column(nullable=True)
+    query_parameters: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    baseline_summary: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    fault_summary: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    interpretation: Mapped[str | None] = mapped_column(String(2_000), nullable=True)
+    normalized_result: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class EvidenceCollectionTaskRow(Base):
+    __tablename__ = "evidence_collection_tasks"
+    __table_args__ = (
+        UniqueConstraint("evidence_run_id", name="evidence_task_run"),
+        CheckConstraint(
+            "state IN ('PENDING', 'LEASED', 'SUCCEEDED', 'FAILED')", name="state"
+        ),
+        CheckConstraint(
+            "attempt_count >= 0 AND attempt_count <= 5", name="attempts"
+        ),
+        CheckConstraint(
+            "(state = 'LEASED' AND lease_owner IS NOT NULL AND lease_until IS NOT NULL) "
+            "OR (state <> 'LEASED' AND lease_owner IS NULL AND lease_until IS NULL)",
+            name="lease",
+        ),
+        Index("ix_evidence_collection_tasks_claim", "state", "next_attempt_at", "created_at"),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(39), primary_key=True)
+    evidence_run_id: Mapped[str] = mapped_column(
+        ForeignKey("incident_evidence_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(nullable=False)
+    next_attempt_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class EvidenceCollectionOperationRow(Base):
+    __tablename__ = "evidence_collection_operations"
+    __table_args__ = (
+        UniqueConstraint("scope", "idempotency_key_hash", name="evidence_operation_key"),
+        CheckConstraint(
+            "char_length(idempotency_key_hash) = 64 AND "
+            "char_length(command_fingerprint) = 64",
+            name="hashes",
+        ),
+        _mysql_table_options(),
+    )
+
+    id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    scope: Mapped[str] = mapped_column(String(96), nullable=False)
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    command_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_run_id: Mapped[str] = mapped_column(
+        ForeignKey("incident_evidence_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 class IncidentEvaluationJobRow(Base):
