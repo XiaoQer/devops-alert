@@ -28,6 +28,7 @@ from incident_intelligence.persistence.models import (
 from incident_intelligence.persistence.session import make_session_factory
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.evidence_collection import EvidenceCollectionService
+from incident_intelligence.services.incident_evidence import IncidentEvidenceService
 
 NOW = datetime(2026, 9, 2, 10, 0, tzinfo=UTC)
 INCIDENT_ID = "inc_11111111111111111111111111111111"
@@ -84,6 +85,47 @@ def test_collection_preserves_prometheus_results_when_other_sources_are_missing(
         )
         assert activity is not None
         assert activity.incident_id == INCIDENT_ID
+
+
+def test_manual_collection_request_is_idempotent_and_keeps_history(
+    migrated_engine: Engine,
+) -> None:
+    _seed(migrated_engine)
+    sequence = iter(range(100, 200))
+    collection = EvidenceCollectionService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(make_session_factory(migrated_engine)),
+        adapter_factory=_FakeAdapterFactory(),
+        clock=lambda: NOW,
+        id_factory=lambda prefix: f"{prefix}_{next(sequence):032x}",
+        owner="worker-1",
+    )
+    collection.process(TASK_ID)
+    service = IncidentEvidenceService(
+        uow_factory=lambda: SqlAlchemyUnitOfWork(make_session_factory(migrated_engine)),
+        clock=lambda: NOW,
+        id_factory=lambda prefix: f"{prefix}_{next(sequence):032x}",
+    )
+
+    first = service.request_manual(
+        INCIDENT_ID,
+        idempotency_key="manual-1",
+        actor="tester",
+        request_id="req-1",
+    )
+    replay = service.request_manual(
+        INCIDENT_ID,
+        idempotency_key="manual-1",
+        actor="tester",
+        request_id="req-2",
+    )
+
+    assert first.replayed is False
+    assert replay.replayed is True
+    assert replay.run.id == first.run.id
+    assert service.list_runs(INCIDENT_ID).total == 2
+    detail = service.get_run(INCIDENT_ID, first.run.id)
+    assert detail.run.trigger == "MANUAL"
+    assert detail.items == ()
 
 
 def _seed(engine: Engine) -> None:

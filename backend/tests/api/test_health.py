@@ -91,6 +91,12 @@ def test_health_exposes_bounded_worker_status_without_secrets(
         "last_error_code": None,
     }
     assert body["incident_notification"] == body["incident_evaluation"]
+    assert body["evidence_collection"] == body["incident_evaluation"]
+    assert body["monitoring_sources"] == {
+        "PROMETHEUS": {"configured": False, "last_connection_state": None},
+        "ELASTICSEARCH": {"configured": False, "last_connection_state": None},
+        "SKYWALKING": {"configured": False, "last_connection_state": None},
+    }
     assert body["feishu"] == {"configured": True}
     rendered = json.dumps(body)
     assert settings.api_token.get_secret_value() not in rendered

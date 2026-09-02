@@ -17,17 +17,26 @@ class ApiError(Exception):
     status_code: int
     code: str
     message: str
+    details: dict[str, str] | None = None
 
 
-def error_response(status_code: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse(status_code=status_code, content={"code": code, "message": message})
+def error_response(
+    status_code: int,
+    code: str,
+    message: str,
+    details: dict[str, str] | None = None,
+) -> JSONResponse:
+    content: dict[str, object] = {"code": code, "message": message}
+    if details is not None:
+        content["details"] = details
+    return JSONResponse(status_code=status_code, content=content)
 
 
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def handle_api_error(request: Request, error: ApiError) -> JSONResponse:
         del request
-        return error_response(error.status_code, error.code, error.message)
+        return error_response(error.status_code, error.code, error.message, error.details)
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(

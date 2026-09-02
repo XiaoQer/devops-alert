@@ -26,6 +26,7 @@ from incident_intelligence.services.incident_evaluation import IncidentEvaluatio
 from incident_intelligence.services.incident_evaluation_runner import (
     IncidentEvaluationRunner,
 )
+from incident_intelligence.services.incident_evidence import IncidentEvidenceService
 from incident_intelligence.services.incident_notification_routes import (
     IncidentNotificationRouteService,
 )
@@ -127,6 +128,7 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
         capability=resolved_settings.feishu_capability(),
     )
     app.state.incident_service = incident_service
+    app.state.incident_evidence_service = IncidentEvidenceService(uow_factory=uow_factory)
     app.state.monitoring_data_source_service = MonitoringDataSourceService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, cast
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
@@ -155,11 +155,49 @@ class EvidenceRunRepository:
         row = self._session.scalar(statement)
         return None if row is None else _run_domain(row)
 
-    def find_active(self, incident_id: str) -> EvidenceRun | None:
-        row = self._session.scalar(
+    def find_active(
+        self,
+        incident_id: str,
+        *,
+        for_update: bool = False,
+    ) -> EvidenceRun | None:
+        statement = (
             select(EvidenceRunRow)
             .where(EvidenceRunRow.incident_id == incident_id)
             .where(EvidenceRunRow.state.in_(("QUEUED", "RUNNING")))
+            .order_by(EvidenceRunRow.created_at.desc(), EvidenceRunRow.id.desc())
+            .limit(1)
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        row = self._session.scalar(statement)
+        return None if row is None else _run_domain(row)
+
+    def list_for_incident(
+        self,
+        incident_id: str,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[tuple[EvidenceRun, ...], int]:
+        rows = self._session.scalars(
+            select(EvidenceRunRow)
+            .where(EvidenceRunRow.incident_id == incident_id)
+            .order_by(EvidenceRunRow.created_at.desc(), EvidenceRunRow.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        total = self._session.scalar(
+            select(func.count())
+            .select_from(EvidenceRunRow)
+            .where(EvidenceRunRow.incident_id == incident_id)
+        )
+        return tuple(_run_domain(row) for row in rows), int(total or 0)
+
+    def latest_for_incident(self, incident_id: str) -> EvidenceRun | None:
+        row = self._session.scalar(
+            select(EvidenceRunRow)
+            .where(EvidenceRunRow.incident_id == incident_id)
             .order_by(EvidenceRunRow.created_at.desc(), EvidenceRunRow.id.desc())
             .limit(1)
         )

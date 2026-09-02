@@ -24,6 +24,7 @@ from incident_intelligence.persistence.alert_center_repository import (
     AlertRecord,
     AlertRepository,
 )
+from incident_intelligence.persistence.evidence_repository import EvidenceRunRepository
 from incident_intelligence.persistence.incident_repository import (
     IncidentFeishuThreadRepository,
     IncidentNotificationRecord,
@@ -87,6 +88,17 @@ class FeishuCollaborationView(BaseModel):
     last_error_code: str | None
 
 
+class LatestEvidenceRunView(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str
+    state: str
+    succeeded_count: int
+    missing_count: int
+    failed_count: int
+    completed_at: UtcAwareDatetime | None
+
+
 class IncidentDetailView(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -98,6 +110,7 @@ class IncidentDetailView(BaseModel):
     activities: tuple[IncidentActivity, ...]
     activities_truncated: bool
     feishu: FeishuCollaborationView
+    latest_evidence_run: LatestEvidenceRunView | None
 
 
 class IncidentMutationResult(BaseModel):
@@ -195,6 +208,7 @@ class IncidentService:
             route = _routes(uow).find_enabled(incident.environment)
             thread = _threads(uow).get_by_incident(incident_id)
             notification = _notifications(uow).latest_for_incident(incident_id)
+            evidence_run = _evidence_runs(uow).latest_for_incident(incident_id)
             return IncidentDetailView(
                 incident=incident,
                 rule_name=rule.name,
@@ -217,6 +231,18 @@ class IncidentService:
                         if notification is None
                         else notification.last_error_code
                     ),
+                ),
+                latest_evidence_run=(
+                    None
+                    if evidence_run is None
+                    else LatestEvidenceRunView(
+                        id=evidence_run.id,
+                        state=evidence_run.state,
+                        succeeded_count=evidence_run.succeeded_count,
+                        missing_count=evidence_run.missing_count,
+                        failed_count=evidence_run.failed_count,
+                        completed_at=evidence_run.completed_at,
+                    )
                 ),
             )
 
@@ -456,6 +482,12 @@ def _threads(uow: SqlAlchemyUnitOfWork) -> IncidentFeishuThreadRepository:
     return uow.incident_feishu_threads
 
 
+def _evidence_runs(uow: SqlAlchemyUnitOfWork) -> EvidenceRunRepository:
+    if uow.evidence_runs is None:
+        raise RuntimeError("工作单元没有可用取证运行仓储")
+    return uow.evidence_runs
+
+
 def _alert_view(record: AlertRecord) -> IncidentAlertView:
     alert = record.alert
     return IncidentAlertView(
@@ -497,4 +529,5 @@ __all__ = [
     "IncidentService",
     "IncidentStateConflict",
     "IncidentVersionConflict",
+    "LatestEvidenceRunView",
 ]

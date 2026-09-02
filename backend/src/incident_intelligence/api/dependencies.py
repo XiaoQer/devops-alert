@@ -11,6 +11,7 @@ from incident_intelligence.api.errors import ApiError
 from incident_intelligence.services.alert_center import AlertCenterService
 from incident_intelligence.services.alert_sources import AlertSourceService
 from incident_intelligence.services.feishu_events import FeishuEventService
+from incident_intelligence.services.incident_evidence import IncidentEvidenceService
 from incident_intelligence.services.incident_notification_routes import (
     IncidentNotificationRouteService,
 )
@@ -95,6 +96,10 @@ def get_incident_notification_route_service(
 
 def get_incident_service(request: Request) -> IncidentService:
     return cast(IncidentService, request.app.state.incident_service)
+
+
+def get_incident_evidence_service(request: Request) -> IncidentEvidenceService:
+    return cast(IncidentEvidenceService, request.app.state.incident_evidence_service)
 
 
 def get_monitoring_data_source_service(request: Request) -> MonitoringDataSourceService:

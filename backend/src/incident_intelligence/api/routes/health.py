@@ -11,8 +11,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from incident_intelligence.persistence.models import (
+    EvidenceCollectionTaskRow,
     IncidentEvaluationJobRow,
     IncidentNotificationOutboxRow,
+    MonitoringDataSourceRow,
 )
 
 
@@ -42,6 +44,13 @@ class FeishuHealthSummary(BaseModel):
     configured: bool
 
 
+class MonitoringSourceHealthSummary(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    configured: bool
+    last_connection_state: str | None
+
+
 class PlatformHealthResponse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -49,6 +58,8 @@ class PlatformHealthResponse(BaseModel):
     database: Literal["available", "unavailable"]
     incident_evaluation: WorkerHealthSummary | None
     incident_notification: WorkerHealthSummary | None
+    evidence_collection: WorkerHealthSummary | None
+    monitoring_sources: dict[str, MonitoringSourceHealthSummary] | None
     feishu: FeishuHealthSummary
 
 
@@ -75,6 +86,8 @@ def create_health_router(engine: Engine) -> APIRouter:
         try:
             evaluation = _worker_summary(engine, IncidentEvaluationJobRow)
             notification = _worker_summary(engine, IncidentNotificationOutboxRow)
+            evidence = _worker_summary(engine, EvidenceCollectionTaskRow)
+            monitoring_sources = _monitoring_source_summary(engine)
         except (OSError, SQLAlchemyError):
             response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
             return PlatformHealthResponse(
@@ -82,6 +95,8 @@ def create_health_router(engine: Engine) -> APIRouter:
                 database="unavailable",
                 incident_evaluation=None,
                 incident_notification=None,
+                evidence_collection=None,
+                monitoring_sources=None,
                 feishu=FeishuHealthSummary(configured=configured),
             )
         return PlatformHealthResponse(
@@ -89,6 +104,8 @@ def create_health_router(engine: Engine) -> APIRouter:
             database="available",
             incident_evaluation=evaluation,
             incident_notification=notification,
+            evidence_collection=evidence,
+            monitoring_sources=monitoring_sources,
             feishu=FeishuHealthSummary(configured=configured),
         )
 
@@ -97,7 +114,9 @@ def create_health_router(engine: Engine) -> APIRouter:
 
 def _worker_summary(
     engine: Engine,
-    row: type[IncidentEvaluationJobRow] | type[IncidentNotificationOutboxRow],
+    row: type[IncidentEvaluationJobRow]
+    | type[IncidentNotificationOutboxRow]
+    | type[EvidenceCollectionTaskRow],
 ) -> WorkerHealthSummary:
     with Session(engine) as session:
         counts = session.execute(
@@ -123,3 +142,24 @@ def _worker_summary(
         last_success_at=counts[4],
         last_error_code=last_error_code,
     )
+
+
+def _monitoring_source_summary(
+    engine: Engine,
+) -> dict[str, MonitoringSourceHealthSummary]:
+    source_types = ("PROMETHEUS", "ELASTICSEARCH", "SKYWALKING")
+    with Session(engine) as session:
+        rows = tuple(
+            session.scalars(
+                select(MonitoringDataSourceRow)
+                .where(MonitoringDataSourceRow.enabled.is_(True))
+                .order_by(MonitoringDataSourceRow.updated_at.desc())
+            )
+        )
+    return {
+        source_type: MonitoringSourceHealthSummary(
+            configured=bool(matches := [row for row in rows if row.source_type == source_type]),
+            last_connection_state=(None if not matches else matches[0].last_test_state),
+        )
+        for source_type in source_types
+    }
