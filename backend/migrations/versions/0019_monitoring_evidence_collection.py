@@ -100,17 +100,17 @@ def _create_monitoring_data_sources() -> None:
         sa.Column("updated_at", utc_datetime(), nullable=False),
         sa.CheckConstraint(
             "environment REGEXP '^[a-z][a-z0-9-]{0,31}$'",
-            name="ck_monitoring_data_sources_environment",
+            name=op.f("ck_monitoring_data_sources_environment"),
         ),
         sa.CheckConstraint(
             "source_type IN ('PROMETHEUS', 'ELASTICSEARCH', 'SKYWALKING')",
-            name="ck_monitoring_data_sources_source_type",
+            name=op.f("ck_monitoring_data_sources_source_type"),
         ),
         sa.CheckConstraint(
             "(enabled = 1 AND enabled_slot = 1) OR (enabled = 0 AND enabled_slot IS NULL)",
-            name="ck_monitoring_data_sources_enabled_slot",
+            name=op.f("ck_monitoring_data_sources_enabled_slot"),
         ),
-        sa.CheckConstraint("version >= 1", name="ck_monitoring_data_sources_version"),
+        sa.CheckConstraint("version >= 1", name=op.f("ck_monitoring_data_sources_version")),
         sa.PrimaryKeyConstraint("id", name="pk_monitoring_data_sources"),
         sa.UniqueConstraint(
             "environment", "source_type", "enabled_slot", name="monitoring_source_enabled"
@@ -154,25 +154,25 @@ def _create_evidence_runs() -> None:
         sa.Column("version", sa.Integer(), nullable=False),
         sa.CheckConstraint(
             "state IN ('QUEUED', 'RUNNING', 'SUCCEEDED', 'PARTIAL', 'FAILED')",
-            name="ck_incident_evidence_runs_state",
+            name=op.f("ck_incident_evidence_runs_state"),
         ),
         sa.CheckConstraint(
             "trigger_kind IN ('AUTOMATIC', 'MANUAL')",
-            name="ck_incident_evidence_runs_trigger_kind",
+            name=op.f("ck_incident_evidence_runs_trigger_kind"),
         ),
         sa.CheckConstraint(
             "(trigger_kind = 'AUTOMATIC' AND automatic_slot = 1) OR "
             "(trigger_kind = 'MANUAL' AND automatic_slot IS NULL)",
-            name="ck_incident_evidence_runs_automatic_slot",
+            name=op.f("ck_incident_evidence_runs_automatic_slot"),
         ),
         sa.CheckConstraint(
             "environment REGEXP '^[a-z][a-z0-9-]{0,31}$'",
-            name="ck_incident_evidence_runs_environment",
+            name=op.f("ck_incident_evidence_runs_environment"),
         ),
         sa.CheckConstraint(
             "succeeded_count >= 0 AND skipped_count >= 0 AND missing_count >= 0 "
             "AND failed_count >= 0 AND version >= 1",
-            name="ck_incident_evidence_runs_counts",
+            name=op.f("ck_incident_evidence_runs_counts"),
         ),
         sa.ForeignKeyConstraint(
             ["incident_id"],
@@ -222,22 +222,22 @@ def _create_evidence_items() -> None:
         sa.Column("created_at", utc_datetime(), nullable=False),
         sa.CheckConstraint(
             "source_type IN ('PROMETHEUS', 'ELASTICSEARCH', 'SKYWALKING', 'PLATFORM')",
-            name="ck_incident_evidence_items_source_type",
+            name=op.f("ck_incident_evidence_items_source_type"),
         ),
         sa.CheckConstraint(
             "state IN ('SUCCEEDED', 'NO_DATA', 'INSUFFICIENT_BASELINE', "
             "'MISSING_TARGET', 'SKIPPED_DEPENDENCY', 'FAILED')",
-            name="ck_incident_evidence_items_state",
+            name=op.f("ck_incident_evidence_items_state"),
         ),
         sa.CheckConstraint(
             "evidence_type IN ('METRIC_TIMESERIES', 'METRIC_COMPARISON', "
             "'LOG_AGGREGATION', 'LOG_SAMPLE', 'ENDPOINT_RANKING', "
             "'DEPENDENCY_RANKING', 'TRACE_SUMMARY', 'CROSS_SOURCE_CORRELATION')",
-            name="ck_incident_evidence_items_evidence_type",
+            name=op.f("ck_incident_evidence_items_evidence_type"),
         ),
         sa.CheckConstraint(
             "package_version >= 1 AND template_version >= 1",
-            name="ck_incident_evidence_items_versions",
+            name=op.f("ck_incident_evidence_items_versions"),
         ),
         sa.ForeignKeyConstraint(
             ["evidence_run_id"],
@@ -272,16 +272,16 @@ def _create_evidence_tasks() -> None:
         sa.Column("updated_at", utc_datetime(), nullable=False),
         sa.CheckConstraint(
             "state IN ('PENDING', 'LEASED', 'SUCCEEDED', 'FAILED')",
-            name="ck_evidence_collection_tasks_state",
+            name=op.f("ck_evidence_collection_tasks_state"),
         ),
         sa.CheckConstraint(
             "attempt_count >= 0 AND attempt_count <= 5",
-            name="ck_evidence_collection_tasks_attempts",
+            name=op.f("ck_evidence_collection_tasks_attempts"),
         ),
         sa.CheckConstraint(
             "(state = 'LEASED' AND lease_owner IS NOT NULL AND lease_until IS NOT NULL) "
             "OR (state <> 'LEASED' AND lease_owner IS NULL AND lease_until IS NULL)",
-            name="ck_evidence_collection_tasks_lease",
+            name=op.f("ck_evidence_collection_tasks_lease"),
         ),
         sa.ForeignKeyConstraint(
             ["evidence_run_id"],
@@ -313,7 +313,7 @@ def _create_evidence_operations() -> None:
         sa.Column("completed_at", utc_datetime(), nullable=False),
         sa.CheckConstraint(
             "char_length(idempotency_key_hash) = 64 AND char_length(command_fingerprint) = 64",
-            name="ck_evidence_collection_operations_hashes",
+            name=op.f("ck_evidence_collection_operations_hashes"),
         ),
         sa.ForeignKeyConstraint(
             ["evidence_run_id"],
