@@ -6,6 +6,7 @@ import { fetchAlert, fetchAlerts, fetchAlertTrend } from "./api/alerts";
 import { fetchAlertSources } from "./api/alertSources";
 import { fetchIncidentRules } from "./api/incidentRules";
 import { fetchIncidents } from "./api/incidents";
+import { fetchMonitoringDataSources } from "./api/monitoringDataSources";
 import styles from "./styles.css?inline";
 
 vi.mock("./api/alerts", () => ({ fetchAlert: vi.fn(), fetchAlerts: vi.fn(), fetchAlertTrend: vi.fn() }));
@@ -20,6 +21,12 @@ vi.mock("./api/incidentRules", async (importOriginal) => ({
 vi.mock("./api/incidents", async (importOriginal) => ({
   ...(await importOriginal()),
   fetchIncidents: vi.fn(),
+}));
+vi.mock("./api/monitoringDataSources", () => ({
+  fetchMonitoringDataSources: vi.fn(),
+  createMonitoringDataSource: vi.fn(),
+  updateMonitoringDataSource: vi.fn(),
+  testMonitoringDataSource: vi.fn(),
 }));
 
 const alert = {
@@ -42,18 +49,20 @@ beforeEach(() => {
   fetchAlertSources.mockResolvedValue({ items: [], total: 0 });
   fetchIncidentRules.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
   fetchIncidents.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+  fetchMonitoringDataSources.mockResolvedValue({ items: [], total: 0 });
 });
 
 describe("最小告警接入平台", () => {
-  it("展示告警中心、Incident 中心、Incident 规则和接入源管理四个入口", async () => {
+  it("展示告警、Incident、规则、告警接入源和监控数据源五个入口", async () => {
     const wrapper = mount(App);
     await flushPromises();
     const navigation = wrapper.get('[aria-label="主导航"]');
-    expect(navigation.findAll("button")).toHaveLength(4);
+    expect(navigation.findAll("button")).toHaveLength(5);
     expect(navigation.text()).toContain("告警中心");
     expect(navigation.text()).toContain("Incident 中心");
     expect(navigation.text()).toContain("Incident 规则");
     expect(navigation.text()).toContain("接入源管理");
+    expect(navigation.text()).toContain("监控数据源");
     for (const removed of ["事故中心", "批次", "关联任务", "服务目录", "AI"])
       expect(navigation.text()).not.toContain(removed);
   });

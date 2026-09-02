@@ -287,10 +287,21 @@ class MonitoringDataSourceService:
             if record is None:
                 raise MonitoringDataSourceNotFound()
             source = _to_domain(record)
-        return self._connection_tester.test(
+        result = self._connection_tester.test(
             source,
             credential=self._credential_resolver.resolve(source),
         )
+        with self._uow_factory() as uow:
+            _sources(uow).record_connection_test(
+                source_id,
+                state=result.state,
+                latency_ms=result.latency_ms,
+                compatible_version=result.compatible_version,
+                error_code=result.error_code,
+                tested_at=self._clock().astimezone(UTC),
+            )
+            uow.commit()
+        return result
 
     def _view(self, source: MonitoringDataSource) -> MonitoringDataSourceView:
         return MonitoringDataSourceView(

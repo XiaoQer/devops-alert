@@ -9,6 +9,7 @@ from sqlalchemy.engine import Engine
 from incident_intelligence.persistence.session import make_session_factory
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.monitoring_data_sources import (
+    ConnectionTestResult,
     MonitoringCredentialResolver,
     MonitoringDataSource,
     MonitoringDataSourceConflict,
@@ -97,10 +98,60 @@ def test_source_rejects_unsafe_base_urls(base_url: str) -> None:
         )
 
 
-def _service(engine: Engine) -> MonitoringDataSourceService:
+def test_connection_result_is_persisted_without_changing_configuration_version(
+    migrated_engine: Engine,
+) -> None:
+    service = _service(
+        migrated_engine,
+        connection_tester=_AvailableConnectionTester(),
+    )
+    source = service.create(
+        name="测试 Prometheus",
+        environment="testing",
+        source_type="PROMETHEUS",
+        base_url="http://prometheus:9090",
+        credential_env_key=None,
+        field_mapping={},
+        verify_tls=True,
+        enabled=True,
+    )
+
+    result = service.test_connection(source.id)
+    persisted = service.list().items[0]
+
+    assert result.state == "AVAILABLE"
+    assert persisted.version == 1
+    assert persisted.last_test_state == "AVAILABLE"
+    assert persisted.last_test_latency_ms == 23
+    assert persisted.last_compatible_version == "2.54.1"
+    assert persisted.last_test_error_code is None
+    assert persisted.last_tested_at == NOW
+
+
+class _AvailableConnectionTester:
+    def test(
+        self,
+        source: MonitoringDataSource,
+        *,
+        credential: str | None,
+    ) -> ConnectionTestResult:
+        del source, credential
+        return ConnectionTestResult(
+            state="AVAILABLE",
+            latency_ms=23,
+            compatible_version="2.54.1",
+        )
+
+
+def _service(
+    engine: Engine,
+    *,
+    connection_tester=None,
+) -> MonitoringDataSourceService:
     factory = make_session_factory(engine)
     return MonitoringDataSourceService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(factory),
         credential_resolver=MonitoringCredentialResolver({}),
+        connection_tester=connection_tester,
         clock=lambda: NOW,
     )

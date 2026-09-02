@@ -7,6 +7,8 @@ from fastapi import FastAPI
 from sqlalchemy.engine import Engine
 
 from incident_intelligence.adapters.feishu import FeishuClient, FeishuConfig
+from incident_intelligence.adapters.monitoring_connection import HttpMonitoringConnectionTester
+from incident_intelligence.adapters.monitoring_http import UrllibMonitoringTransport
 from incident_intelligence.api.errors import install_error_handlers
 from incident_intelligence.api.middleware import RequestBodyLimitMiddleware
 from incident_intelligence.api.router import create_router
@@ -130,7 +132,10 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
     app.state.incident_service = incident_service
     app.state.incident_evidence_service = IncidentEvidenceService(uow_factory=uow_factory)
     app.state.monitoring_data_source_service = MonitoringDataSourceService(
-        uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
+        uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory),
+        connection_tester=HttpMonitoringConnectionTester(
+            transport=UrllibMonitoringTransport(),
+        ),
     )
     app.state.source_authentication_service = SourceAuthenticationService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)

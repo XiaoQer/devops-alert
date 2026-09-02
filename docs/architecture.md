@@ -88,6 +88,8 @@ Incident 查询、确认、解决与飞书群路由配置
 
 EvidenceRun 描述一次自动或人工取证运行，保存固定锚点、最长两小时窗口、Incident 安全上下文和取证包版本。EvidenceItem 是不可变标准证据；三个来源可独立失败，运行状态可为成功、部分成功或失败。用户和 AI 均不能提交监控查询文本。
 
+监控数据源连接检测使用固定只读协议：Prometheus 构建信息、Elasticsearch 集群信息和 SkyWalking GraphQL 版本查询。检测必须验证产品响应结构，最近状态、耗时、兼容版本、稳定错误码和时间写入数据源记录；Secret 仍只从运行环境解析。
+
 ## 事务与并发
 
 - SignalEvent、Alert 投影、接入结果和审计在同一事务提交或回滚；

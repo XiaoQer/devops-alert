@@ -134,6 +134,33 @@ class MonitoringDataSourceRepository:
         )
         return None if row is None else _source_record(row)
 
+    def record_connection_test(
+        self,
+        source_id: str,
+        *,
+        state: str,
+        latency_ms: int | None,
+        compatible_version: str | None,
+        error_code: str | None,
+        tested_at: datetime,
+    ) -> bool:
+        result = cast(
+            CursorResult[Any],
+            self._session.execute(
+                update(MonitoringDataSourceRow)
+                .where(MonitoringDataSourceRow.id == source_id)
+                .values(
+                    last_test_state=state,
+                    last_test_latency_ms=latency_ms,
+                    last_compatible_version=compatible_version,
+                    last_test_error_code=error_code,
+                    last_tested_at=tested_at,
+                )
+            ),
+        )
+        self._session.flush()
+        return result.rowcount == 1
+
 
 class EvidenceRunRepository:
     def __init__(self, session: Session) -> None:
