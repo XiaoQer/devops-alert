@@ -1,10 +1,11 @@
 export class ApiError extends Error {
-  constructor(code, userMessage, status = 0) {
+  constructor(code, userMessage, status = 0, details = null) {
     super(userMessage);
     this.name = "ApiError";
     this.code = code;
     this.userMessage = userMessage;
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -23,6 +24,7 @@ export async function requestJson(path, options = {}, messages = {}) {
           body.code,
           typeof body?.message === "string" ? body.message : (messages.error ?? "数据暂时不可用，请稍后重试"),
           response.status,
+          typeof body?.details === "object" ? body.details : null,
         );
       }
       if (response.status >= 500) {

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch } from "vue";
 import { PhBellRinging, PhCheckCircle, PhClockCounterClockwise, PhX } from "@phosphor-icons/vue";
+import IncidentEvidence from "./IncidentEvidence.vue";
 
 const props = defineProps({
   detail: { type: Object, required: true },
@@ -10,7 +11,8 @@ const props = defineProps({
 });
 defineEmits(["close", "acknowledge", "resolve", "update:resolutionSummary"]);
 const resolving = ref(false);
-watch(() => props.detail.incident.id, () => { resolving.value = false; });
+const activeTab = ref("current");
+watch(() => props.detail.incident.id, () => { resolving.value = false; activeTab.value = "current"; });
 watch(() => props.detail.incident.state, (state) => {
   if (state === "RESOLVED") resolving.value = false;
 });
@@ -33,8 +35,12 @@ watch(() => props.detail.incident.state, (state) => {
       <div><span>{{ resolutionSummary.length }} / 2000</span><button type="button" class="button secondary" @click="resolving = false">取消</button><button type="submit" class="button primary" :disabled="operationState === 'pending'">确认解决</button></div>
     </form>
 
-    <div class="incident-detail-columns">
-      <section class="incident-detail-column current">
+    <nav class="incident-detail-tabs" aria-label="Incident 详情分区">
+      <button v-for="tab in [{ id: 'current', label: '当前情况' }, { id: 'alerts', label: `关联告警 ${detail.alerts.length}` }, { id: 'evidence', label: '监控取证' }, { id: 'activity', label: '处置与飞书' }]" :key="tab.id" type="button" :class="{ active: activeTab === tab.id }" @click="activeTab = tab.id">{{ tab.label }}</button>
+    </nav>
+
+    <div class="incident-detail-tab-content">
+      <section v-show="activeTab === 'current'" class="incident-detail-column current">
         <header><PhBellRinging :size="18" /><h3>当前情况</h3></header>
         <dl class="incident-current-facts">
           <div><dt>状态</dt><dd>{{ detail.incident.stateLabel }}</dd></div>
@@ -48,7 +54,7 @@ watch(() => props.detail.incident.state, (state) => {
         <article v-if="detail.incident.resolution_summary" class="incident-rule-explanation"><span>解决说明</span><p>{{ detail.incident.resolution_summary }}</p></article>
       </section>
 
-      <section class="incident-detail-column alerts">
+      <section v-show="activeTab === 'alerts'" class="incident-detail-column alerts">
         <header><h3>关联告警</h3><span>{{ detail.alerts.length }} 条</span></header>
         <p v-if="!detail.alerts.length" class="incident-column-empty">当前没有可展示的关联告警</p>
         <details v-for="alert in detail.alerts" :key="alert.id" class="incident-alert-record">
@@ -59,7 +65,11 @@ watch(() => props.detail.incident.state, (state) => {
         <small v-if="detail.alerts_truncated" class="incident-truncated">关联告警较多，当前只展示前 500 条</small>
       </section>
 
-      <section class="incident-detail-column activity">
+      <section v-if="activeTab === 'evidence'" class="incident-detail-column evidence-panel">
+        <IncidentEvidence :incident-id="detail.incident.id" />
+      </section>
+
+      <section v-show="activeTab === 'activity'" class="incident-detail-column activity">
         <header><PhClockCounterClockwise :size="18" /><h3>处置与飞书</h3></header>
         <div class="feishu-status-line"><span>飞书协同</span><strong>{{ detail.feishu.statusLabel }}</strong><small v-if="detail.feishu.route_name">{{ detail.feishu.route_name }}</small></div>
         <p v-if="!detail.activities.length" class="incident-column-empty">还没有处置记录</p>

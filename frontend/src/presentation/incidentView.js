@@ -12,6 +12,9 @@ const activityKindLabels = {
   RESOLVED: "Incident 已解决",
   FEISHU_MESSAGE_RECORDED: "飞书沟通已记录",
   NOTIFICATION_FAILED: "飞书通知失败",
+  EVIDENCE_COLLECTION_COMPLETED: "监控取证已完成",
+  EVIDENCE_COLLECTION_PARTIAL: "监控取证部分完成",
+  EVIDENCE_COLLECTION_FAILED: "监控取证未完成",
 };
 const actorLabels = { SYSTEM: "平台", USER: "处置人员", FEISHU: "飞书群成员" };
 
