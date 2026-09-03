@@ -1,3 +1,5 @@
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -50,8 +52,8 @@ class _SuccessfulAdapter:
         return AdapterEvidenceResult(
             state="SUCCEEDED",
             normalized_result={"query": request.query_name},
-            baseline_summary={"sample_count": 2},
-            fault_summary={"sample_count": 3},
+            baseline_summary={"sample_count": 2, "average": 1.0},
+            fault_summary={"sample_count": 3, "average": 0.8},
             interpretation="已取得指标数据。",
         )
 
@@ -110,6 +112,15 @@ def test_collection_preserves_prometheus_results_when_other_sources_are_missing(
         task = session.get(EvidenceCollectionTaskRow, TASK_ID)
         assert task is not None and task.state == "SUCCEEDED"
         assert session.scalar(select(func.count()).select_from(EvidenceItemRow)) >= 4
+        availability = session.scalar(
+            select(EvidenceItemRow).where(
+                EvidenceItemRow.template_id == "prom.service.availability"
+            )
+        )
+        assert availability is not None
+        assert availability.interpretation == (
+            "故障前服务可用性平均值为 1，故障期间为 0.8，下降了 0.2。"
+        )
         activity = session.scalar(
             select(OperationalIncidentActivityRow).where(
                 OperationalIncidentActivityRow.kind == "EVIDENCE_COLLECTION_PARTIAL"

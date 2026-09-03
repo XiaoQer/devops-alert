@@ -31,6 +31,7 @@ from incident_intelligence.persistence.evidence_repository import (
 )
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.evidence_correlation import EvidenceCorrelationService
+from incident_intelligence.services.evidence_interpretation import interpret_evidence_result
 from incident_intelligence.services.evidence_planning import (
     EvidenceExecutionPlan,
     EvidencePlanningService,
@@ -318,7 +319,13 @@ def _item_from_result(
         query_parameters={key: value for key, value in request.parameters.items()},
         baseline_summary=result.baseline_summary,
         fault_summary=result.fault_summary,
-        interpretation=result.interpretation,
+        interpretation=interpret_evidence_result(
+            query_name=request.query_name,
+            state=result.state,
+            baseline_summary=result.baseline_summary,
+            fault_summary=result.fault_summary,
+            fallback=result.interpretation,
+        ),
         normalized_result=result.normalized_result,
         error_code=result.error_code,
         created_at=now,

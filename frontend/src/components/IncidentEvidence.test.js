@@ -22,6 +22,15 @@ it("部分成功同时显示成功证据和缺失来源", () => {
   expect(wrapper.text()).toContain("查询失败");
 });
 
+it("在原始证据前集中展示可复核的监控事实", () => {
+  const wrapper = mount(IncidentEvidence, { props: { incidentId: "inc_1", providedState: readyState() } });
+
+  const facts = wrapper.get('[data-testid="evidence-key-facts"]');
+  expect(facts.text()).toContain("监控事实");
+  expect(facts.text()).toContain("故障前服务可用性平均值为 1，故障期间为 0.8");
+  expect(facts.text()).not.toContain("链路数据暂时不可用");
+});
+
 function readyState() {
   return {
     runs: ref([{ id: "evr_1", stateLabel: "部分证据缺失", createdAtLabel: "09/02 10:00:00" }]),
@@ -37,6 +46,9 @@ function readyState() {
       items: [
         { id: "a", display_name: "失败 Trace", source_type: "SKYWALKING", sourceLabel: "SkyWalking", state: "FAILED", stateLabel: "查询失败", needsAttention: true, tone: "attention", interpretation: "链路数据暂时不可用。", baseline_summary: {}, fault_summary: {} },
         { id: "b", display_name: "服务可用性", source_type: "PROMETHEUS", sourceLabel: "Prometheus", state: "SUCCEEDED", stateLabel: "已取得数据", needsAttention: false, tone: "normal", interpretation: "已获取指标趋势。", baseline_summary: { average: 1 }, fault_summary: { average: 0.8 } },
+      ],
+      keyFacts: [
+        { id: "b", title: "服务可用性", sourceLabel: "Prometheus", text: "故障前服务可用性平均值为 1，故障期间为 0.8。" },
       ],
     }),
     state: ref("ready"), error: ref(""), mutationState: ref("idle"), mutationError: ref(""),

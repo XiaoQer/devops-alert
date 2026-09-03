@@ -45,6 +45,15 @@ function chooseRun(event) { evidence.selectRun(event.target.value); }
           <div><span :class="['evidence-run-state', evidence.detail.value.run.state.toLowerCase()]">{{ evidence.detail.value.run.stateLabel }}</span><strong>{{ evidence.detail.value.run.triggerLabel }}</strong></div>
           <p>取得 {{ evidence.detail.value.run.succeeded_count }} 项 · 缺失 {{ evidence.detail.value.run.missing_count + evidence.detail.value.run.skipped_count }} 项 · 失败 {{ evidence.detail.value.run.failed_count }} 项</p>
         </div>
+        <section v-if="evidence.detail.value.keyFacts?.length" class="evidence-key-facts" data-testid="evidence-key-facts">
+          <header><PhChartLine :size="16" /><h4>监控事实</h4><span>以下内容仅来自已取得的数据</span></header>
+          <ul>
+            <li v-for="fact in evidence.detail.value.keyFacts" :key="fact.id">
+              <div><strong>{{ fact.title }}</strong><small>{{ fact.sourceLabel }}</small></div>
+              <p>{{ fact.text }}</p>
+            </li>
+          </ul>
+        </section>
         <div class="evidence-findings-heading"><PhChartLine :size="17" /><h4>取证结果</h4><span>{{ orderedItems.length }} 项</span></div>
         <div v-if="orderedItems.length" class="evidence-findings">
           <EvidenceFinding v-for="(item, index) in orderedItems" :key="item.id || item.evidence_key" :item="item" :open="firstAttentionIndex >= 0 ? index === firstAttentionIndex : index === 0" />

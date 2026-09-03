@@ -43,10 +43,20 @@ export function toEvidenceItemView(item = {}) {
 }
 
 export function toEvidenceDetailView(detail = {}) {
+  const items = (detail.items ?? []).map(toEvidenceItemView);
   return {
     ...detail,
     run: toEvidenceRunView(detail.run),
-    items: (detail.items ?? []).map(toEvidenceItemView),
+    items,
+    keyFacts: items
+      .filter((item) => item.state === "SUCCEEDED" && item.evidence_type === "METRIC_COMPARISON" && typeof item.interpretation === "string" && item.interpretation.trim())
+      .slice(0, 5)
+      .map((item) => ({
+        id: item.id || item.evidence_key,
+        title: item.display_name,
+        text: item.interpretation,
+        sourceLabel: item.sourceLabel,
+      })),
   };
 }
 
