@@ -36,6 +36,7 @@ class MonitoringEvidenceAdapterFactory:
                 base_url=source.base_url,
                 transport=self._transport,
                 credential=credential,
+                label_mapping=source.field_mapping,
             )
         if source.source_type == "ELASTICSEARCH":
             index = source.field_mapping.get("index")

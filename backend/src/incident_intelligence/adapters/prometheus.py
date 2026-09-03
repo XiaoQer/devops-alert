@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import statistics
 from typing import Literal, TypedDict
 
@@ -25,12 +26,14 @@ class PrometheusEvidenceAdapter:
         base_url: str,
         transport: MonitoringHttpTransport,
         credential: str | None = None,
+        label_mapping: dict[str, str] | None = None,
         timeout_seconds: float = 10,
         max_response_bytes: int = 2_000_000,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._transport = transport
         self._credential = credential
+        self._label_mapping = dict(label_mapping or {})
         self._timeout_seconds = timeout_seconds
         self._max_response_bytes = max_response_bytes
 
@@ -42,7 +45,11 @@ class PrometheusEvidenceAdapter:
                 state="MISSING_TARGET",
                 interpretation="缺少服务标识。未执行 Prometheus 查询。",
             )
-        query = _render_controlled_query(request.controlled_query, request.parameters)
+        query = _render_controlled_query(
+            request.controlled_query,
+            request.parameters,
+            self._label_mapping,
+        )
         total_seconds = max(
             1,
             int((request.window.fault_end - request.window.baseline_start).total_seconds()),
@@ -69,14 +76,43 @@ class PrometheusEvidenceAdapter:
         return _parse_matrix(response.body, request)
 
 
-def _render_controlled_query(template: str, parameters: dict[str, str]) -> str:
-    rendered = template
+def _render_controlled_query(
+    template: str,
+    parameters: dict[str, str],
+    label_mapping: dict[str, str],
+) -> str:
+    service_label = label_mapping.get("service", "service")
+    environment_label = label_mapping.get("environment")
+    if not _is_prometheus_label_name(service_label) or (
+        environment_label is not None and not _is_prometheus_label_name(environment_label)
+    ):
+        raise MonitoringPermanentError("prometheus_label_name_invalid")
+
+    service = parameters.get("service")
+    environment = parameters.get("environment")
+    service_matcher = "" if service is None else f'{service_label}="{_escape_label_value(service)}"'
+    environment_matcher = (
+        ""
+        if environment_label is None or environment is None
+        else f'{environment_label}="{_escape_label_value(environment)}",'
+    )
+    rendered = template.replace("${environment_matcher}", environment_matcher).replace(
+        "${service_matcher}", service_matcher
+    )
     for key, value in parameters.items():
-        safe_value = value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+        safe_value = _escape_label_value(value)
         rendered = rendered.replace(f"${{{key}}}", safe_value)
     if "${" in rendered:
         raise MonitoringPermanentError("query_parameter_missing")
     return rendered
+
+
+def _escape_label_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+
+def _is_prometheus_label_name(value: str) -> bool:
+    return re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", value) is not None
 
 
 def _parse_matrix(body: bytes, request: EvidenceQueryRequest) -> AdapterEvidenceResult:

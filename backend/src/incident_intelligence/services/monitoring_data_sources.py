@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -92,6 +93,11 @@ class MonitoringDataSource(BaseModel):
             raise ValueError("monitoring_field_mapping_unsupported")
         if any(not 1 <= len(value.strip()) <= 256 for value in self.field_mapping.values()):
             raise ValueError("monitoring_field_mapping_value_invalid")
+        if self.source_type == "PROMETHEUS" and any(
+            re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", value) is None
+            for value in self.field_mapping.values()
+        ):
+            raise ValueError("monitoring_prometheus_label_name_invalid")
         return self
 
 

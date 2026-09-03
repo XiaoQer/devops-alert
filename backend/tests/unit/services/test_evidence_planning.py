@@ -28,9 +28,9 @@ def test_plan_selects_common_http_and_mysql_without_duplicate_queries() -> None:
     plan = planner.plan(context, build_evidence_window(NOW, NOW))
 
     assert plan.pack_versions == (
-        "common-service:v1",
-        "http:v1",
-        "mysql:v1",
+        "common-service:v2",
+        "http:v2",
+        "mysql:v2",
     )
     assert len({item.execution_key for item in plan.items}) == len(plan.items)
     assert all(item.parameters["service"] == "checkout" for item in plan.items)

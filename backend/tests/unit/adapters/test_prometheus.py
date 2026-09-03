@@ -58,6 +58,38 @@ def test_prometheus_posts_bounded_range_query_and_normalizes_points() -> None:
     assert len(result.normalized_result["series"]) == 1
 
 
+def test_prometheus_omits_unmapped_environment_and_defaults_service_label() -> None:
+    transport = _FakeTransport(_matrix_response(series=1))
+    adapter = PrometheusEvidenceAdapter(
+        base_url="http://prometheus:9090",
+        transport=transport,
+        label_mapping={},
+    )
+
+    adapter.collect(_request())
+
+    form = transport.requests[0]["form"]
+    assert isinstance(form, dict)
+    assert form["query"] == ('rate(process_cpu_seconds_total{service="checkout"}[5m])')
+
+
+def test_prometheus_uses_configured_environment_and_service_labels() -> None:
+    transport = _FakeTransport(_matrix_response(series=1))
+    adapter = PrometheusEvidenceAdapter(
+        base_url="http://prometheus:9090",
+        transport=transport,
+        label_mapping={"environment": "cluster", "service": "service_name"},
+    )
+
+    adapter.collect(_request())
+
+    form = transport.requests[0]["form"]
+    assert isinstance(form, dict)
+    assert form["query"] == (
+        'rate(process_cpu_seconds_total{cluster="testing",service_name="checkout"}[5m])'
+    )
+
+
 def test_prometheus_rejects_more_than_twenty_series() -> None:
     adapter = PrometheusEvidenceAdapter(
         base_url="http://prometheus:9090",
@@ -134,7 +166,7 @@ def _request(service: str = "checkout") -> EvidenceQueryRequest:
         evidence_type="METRIC_TIMESERIES",
         query_name="prom.service.cpu",
         controlled_query=(
-            'rate(process_cpu_seconds_total{environment="${environment}",service="${service}"}[5m])'
+            "rate(process_cpu_seconds_total{${environment_matcher}${service_matcher}}[5m])"
         ),
         parameters={"environment": "testing", "service": service},
         window=build_evidence_window(NOW, NOW),

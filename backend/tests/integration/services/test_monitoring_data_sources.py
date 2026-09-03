@@ -98,6 +98,25 @@ def test_source_rejects_unsafe_base_urls(base_url: str) -> None:
         )
 
 
+@pytest.mark.parametrize("label_name", ['service}" or on() vector(1)', " service "])
+def test_prometheus_source_rejects_unsafe_label_mapping(label_name: str) -> None:
+    with pytest.raises(ValidationError, match="monitoring_prometheus_label_name_invalid"):
+        MonitoringDataSource(
+            id="mds_11111111111111111111111111111111",
+            name="测试 Prometheus",
+            environment="testing",
+            source_type="PROMETHEUS",
+            base_url="http://prometheus:9090",
+            credential_env_key=None,
+            field_mapping={"service": label_name},
+            verify_tls=True,
+            enabled=True,
+            version=1,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+
+
 def test_connection_result_is_persisted_without_changing_configuration_version(
     migrated_engine: Engine,
 ) -> None:

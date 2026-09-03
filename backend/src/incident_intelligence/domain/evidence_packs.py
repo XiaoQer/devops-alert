@@ -106,11 +106,12 @@ def _template(
     display_name: str,
     controlled_query: str,
     *,
+    version: int = 1,
     threshold: EvidenceThreshold | None = None,
 ) -> EvidenceQueryTemplate:
     return EvidenceQueryTemplate(
         id=template_id,
-        version=1,
+        version=version,
         source_type=source_type,
         evidence_type=evidence_type,
         display_name=display_name,
@@ -124,7 +125,7 @@ def _template(
 def _common_pack() -> EvidencePack:
     return EvidencePack(
         id="common-service",
-        version=1,
+        version=2,
         priority=0,
         alert_name_patterns=(),
         templates=(
@@ -133,7 +134,8 @@ def _common_pack() -> EvidencePack:
                 "PROMETHEUS",
                 "METRIC_COMPARISON",
                 "服务可用性",
-                'avg(up{environment="${environment}",service="${service}"})',
+                "avg(up{${environment_matcher}${service_matcher}})",
+                version=2,
                 threshold=EvidenceThreshold(operator="LT", value=1),
             ),
             _template(
@@ -141,7 +143,9 @@ def _common_pack() -> EvidencePack:
                 "PROMETHEUS",
                 "METRIC_TIMESERIES",
                 "CPU 使用趋势",
-                'sum(rate(container_cpu_usage_seconds_total{environment="${environment}",service="${service}"}[5m]))',
+                "sum(rate(container_cpu_usage_seconds_total{"
+                "${environment_matcher}${service_matcher}}[5m]))",
+                version=2,
             ),
             _template(
                 "elk.service.errors",
@@ -164,7 +168,7 @@ def _common_pack() -> EvidencePack:
 def _http_pack() -> EvidencePack:
     return EvidencePack(
         id="http",
-        version=1,
+        version=2,
         priority=10,
         alert_name_patterns=(r"http", r"latency", r"request", r"5xx", r"errorrate"),
         templates=(
@@ -173,10 +177,10 @@ def _http_pack() -> EvidencePack:
                 "PROMETHEUS",
                 "METRIC_COMPARISON",
                 "HTTP 错误率",
-                'sum(rate(http_requests_total{environment="${environment}",'
-                'service="${service}",status=~"5.."}[5m])) / '
-                'sum(rate(http_requests_total{environment="${environment}",'
-                'service="${service}"}[5m]))',
+                "sum(rate(http_requests_total{${environment_matcher}${service_matcher},"
+                'status=~"5.."}[5m])) / '
+                "sum(rate(http_requests_total{${environment_matcher}${service_matcher}}[5m]))",
+                version=2,
             ),
             _template(
                 "prom.http.latency",
@@ -185,7 +189,8 @@ def _http_pack() -> EvidencePack:
                 "HTTP 延迟",
                 "histogram_quantile(0.95,"
                 "sum(rate(http_request_duration_seconds_bucket{"
-                'environment="${environment}",service="${service}"}[5m])) by (le))',
+                "${environment_matcher}${service_matcher}}[5m])) by (le))",
+                version=2,
             ),
             _template(
                 "sw.http.endpoints",
@@ -208,7 +213,7 @@ def _http_pack() -> EvidencePack:
 def _jvm_pack() -> EvidencePack:
     return EvidencePack(
         id="jvm",
-        version=1,
+        version=2,
         priority=20,
         alert_name_patterns=(r"jvm", r"gc", r"heap", r"thread"),
         fact_matches={"runtime": ("java", "jvm")},
@@ -218,21 +223,24 @@ def _jvm_pack() -> EvidencePack:
                 "PROMETHEUS",
                 "METRIC_TIMESERIES",
                 "JVM 堆内存",
-                'jvm_memory_used_bytes{environment="${environment}",service="${service}",area="heap"}',
+                'jvm_memory_used_bytes{${environment_matcher}${service_matcher},area="heap"}',
+                version=2,
             ),
             _template(
                 "prom.jvm.gc",
                 "PROMETHEUS",
                 "METRIC_COMPARISON",
                 "GC 暂停",
-                'rate(jvm_gc_pause_seconds_sum{environment="${environment}",service="${service}"}[5m])',
+                "rate(jvm_gc_pause_seconds_sum{${environment_matcher}${service_matcher}}[5m])",
+                version=2,
             ),
             _template(
                 "prom.jvm.threads",
                 "PROMETHEUS",
                 "METRIC_TIMESERIES",
                 "JVM 线程数",
-                'jvm_threads_live_threads{environment="${environment}",service="${service}"}',
+                "jvm_threads_live_threads{${environment_matcher}${service_matcher}}",
+                version=2,
             ),
         ),
     )
@@ -241,7 +249,7 @@ def _jvm_pack() -> EvidencePack:
 def _mysql_pack() -> EvidencePack:
     return EvidencePack(
         id="mysql",
-        version=1,
+        version=2,
         priority=30,
         alert_name_patterns=(r"mysql", r"database", r"rowlock", r"lockwait", r"dbpool"),
         fact_matches={"component": ("mysql",), "database_system": ("mysql",)},
@@ -251,14 +259,35 @@ def _mysql_pack() -> EvidencePack:
                 "PROMETHEUS",
                 "METRIC_TIMESERIES",
                 "数据库连接池",
-                'db_client_connections_usage{environment="${environment}",service="${service}"}',
+                "db_client_connections_usage{${environment_matcher}${service_matcher}}",
+                version=2,
             ),
             _template(
-                "prom.mysql.lock-waits",
+                "prom.mysql.row-lock-current-waits",
+                "PROMETHEUS",
+                "METRIC_TIMESERIES",
+                "MySQL 当前行锁等待",
+                "mysql_global_status_innodb_row_lock_current_waits"
+                "{${environment_matcher}${service_matcher}}",
+                version=2,
+            ),
+            _template(
+                "prom.mysql.row-lock-waits-increase",
                 "PROMETHEUS",
                 "METRIC_COMPARISON",
-                "MySQL 锁等待",
-                'mysql_info_schema_innodb_metrics_lock_timeouts_total{environment="${environment}",service="${service}"}',
+                "MySQL 行锁等待增量",
+                "increase(mysql_global_status_innodb_row_lock_waits"
+                "{${environment_matcher}${service_matcher}}[5m])",
+                version=2,
+            ),
+            _template(
+                "prom.mysql.row-lock-time-increase",
+                "PROMETHEUS",
+                "METRIC_COMPARISON",
+                "MySQL 行锁等待耗时增量",
+                "increase(mysql_global_status_innodb_row_lock_time"
+                "{${environment_matcher}${service_matcher}}[5m])",
+                version=2,
             ),
             _template(
                 "elk.mysql.errors",

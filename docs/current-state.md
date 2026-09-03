@@ -105,6 +105,8 @@
 - EvidenceRun、EvidenceItem、两小时取证窗口、部分成功状态和持久化租约模型；
 - Prometheus、Elasticsearch、SkyWalking 监控数据源管理 API；凭据只保存环境变量引用；
 - `common-service`、HTTP、JVM、MySQL 四类版本化预定义取证包；
+- Prometheus v2 取证模板按数据源标签映射生成选择器：服务标签默认 `service`，未配置环境标签映射时不强制过滤环境；
+- MySQL v2 取证包采集当前行锁等待、累计行锁等待增量和累计行锁等待耗时增量；
 - Prometheus 有界指标采集、ELK 白名单日志采集与敏感信息清理、SkyWalking GraphQL 变量化链路采集；
 - Trace ID 与日志的确定性跨源关联，且禁止输出根因、置信度或自动修复结论；
 - MySQL 迁移、唯一启用来源、唯一自动运行、唯一证据键和任务租约边界。
@@ -118,8 +120,7 @@
 
 尚未完成：
 
-- 测试环境 Prometheus 已完成真实连接和 Incident 重新取证联调；Elasticsearch 与 SkyWalking 本机端口未运行，尚未完成真实联调；
-- 当前真实 Incident 使用演示服务标识，Prometheus 查询成功但没有匹配序列；不能宣称已采集到有效故障指标；
+- 测试环境 Prometheus 已完成真实连接和 MySQL Incident 重新取证联调；Elasticsearch 与 SkyWalking 本机端口未运行，尚未完成真实联调；
 - 真实浏览器下的新 Incident 自动取证、历史切换和单源失败页面流程仍待用户验收。
 
 ## 最新验证证据
@@ -131,4 +132,5 @@
 - 2026-09-02，监控取证领域、MySQL 仓储、数据源 API、取证包、Prometheus、ELK、SkyWalking 和跨源关联定向测试通过；统一校验的格式与严格类型检查通过。
 - 2026-09-02，统一后端验证 456 项测试全部通过，覆盖率 90.16%；格式、严格类型检查和 MySQL 迁移升降级通过。
 - 2026-09-02，前端 83 项测试全部通过，生产构建成功。
-- 2026-09-02，本机 Prometheus 3.4.2 连接检测通过；现有 staging Incident 重新取证完成为部分成功，4 项 Prometheus 查询返回 NO_DATA，4 项未配置的 Elasticsearch/SkyWalking 查询安全跳过。
+- 2026-09-03，统一后端验证 462 项测试全部通过，覆盖率 90.16%；格式和严格类型检查通过。
+- 2026-09-03，本机 Prometheus 3.4.2 对 `INC-20260902-002` 完成 v2 重新取证：服务可用性与三项 MySQL 行锁指标取得真实数据；基线当前等待为 0，故障期当前等待峰值 1、等待增量峰值约 1.06、等待耗时增量峰值约 51,766 毫秒；未配置的 Elasticsearch/SkyWalking 查询安全跳过。
