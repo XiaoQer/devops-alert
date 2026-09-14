@@ -9,6 +9,11 @@ from incident_intelligence.persistence.alert_lifecycle_repository import (
     AlertLifecycleRepository,
 )
 from incident_intelligence.persistence.alert_source_repository import AlertSourceRepository
+from incident_intelligence.persistence.diagnosis_repository import (
+    DiagnosisOperationRepository,
+    DiagnosisRunRepository,
+    DiagnosisTaskRepository,
+)
 from incident_intelligence.persistence.evidence_repository import (
     EvidenceOperationRepository,
     EvidenceRunRepository,
@@ -52,6 +57,9 @@ class SqlAlchemyUnitOfWork:
         self.evidence_runs: EvidenceRunRepository | None = None
         self.evidence_tasks: EvidenceTaskRepository | None = None
         self.evidence_operations: EvidenceOperationRepository | None = None
+        self.diagnosis_runs: DiagnosisRunRepository | None = None
+        self.diagnosis_tasks: DiagnosisTaskRepository | None = None
+        self.diagnosis_operations: DiagnosisOperationRepository | None = None
 
     def __enter__(self) -> SqlAlchemyUnitOfWork:
         self.session = self._session_factory()
@@ -74,6 +82,9 @@ class SqlAlchemyUnitOfWork:
         self.evidence_runs = EvidenceRunRepository(self.session)
         self.evidence_tasks = EvidenceTaskRepository(self.session)
         self.evidence_operations = EvidenceOperationRepository(self.session)
+        self.diagnosis_runs = DiagnosisRunRepository(self.session)
+        self.diagnosis_tasks = DiagnosisTaskRepository(self.session)
+        self.diagnosis_operations = DiagnosisOperationRepository(self.session)
         return self
 
     def commit(self) -> None:

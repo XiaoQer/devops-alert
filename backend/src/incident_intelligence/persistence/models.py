@@ -871,7 +871,7 @@ class IncidentDiagnosisRunRow(Base):
         CheckConstraint(f"state IN ({DIAGNOSIS_RUN_STATE_VALUES})", name="state"),
         CheckConstraint("version >= 1", name="version"),
         CheckConstraint(
-            "(state IN ('QUEUED','RUNNING') AND active_slot = 1) OR "
+            "(state IN ('QUEUED','RUNNING') AND active_slot <=> 1) OR "
             "(state NOT IN ('QUEUED','RUNNING') AND active_slot IS NULL)",
             name="active_slot",
         ),

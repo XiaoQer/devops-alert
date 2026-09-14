@@ -50,6 +50,11 @@ def upgrade() -> None:
             "state IN ('QUEUED','RUNNING','REPORT_READY','REVIEW_REQUIRED','FAILED')",
             name="ck_incident_diagnosis_runs_state",
         ),
+        sa.CheckConstraint(
+            "(state IN ('QUEUED','RUNNING') AND active_slot <=> 1) OR "
+            "(state NOT IN ('QUEUED','RUNNING') AND active_slot IS NULL)",
+            name="ck_incident_diagnosis_runs_active_slot",
+        ),
         sa.UniqueConstraint("incident_id", "active_slot", name="incident_active_diagnosis_run"),
         **OPTIONS,
     )
