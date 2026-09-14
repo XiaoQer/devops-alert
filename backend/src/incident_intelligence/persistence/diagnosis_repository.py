@@ -336,6 +336,7 @@ def _snapshot_row(snapshot: DiagnosisSnapshot) -> IncidentDiagnosisSnapshotRow:
         incident_snapshot={
             "incident_id": snapshot.incident_id,
             "evidence_run_id": snapshot.evidence_run_id,
+            "alert_facts": [fact.model_dump(mode="json") for fact in snapshot.alert_facts],
         },
         evidence_snapshot={
             "references": [
@@ -366,6 +367,7 @@ def _snapshot_domain(row: IncidentDiagnosisSnapshotRow) -> DiagnosisSnapshot:
             "environment": scope_snapshot["environment"],
             "service_name": scope_snapshot["service_name"],
             "alert_names": tuple(_snapshot_list(scope_snapshot, "alert_names")),
+            "alert_facts": tuple(_snapshot_list(incident_snapshot, "alert_facts")),
             "evidence_references": tuple(_snapshot_list(evidence_snapshot, "references")),
             "knowledge_references": tuple(_snapshot_list(scope_snapshot, "knowledge_references")),
             "created_at": row.created_at,

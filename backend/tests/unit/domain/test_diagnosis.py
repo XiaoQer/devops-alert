@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from incident_intelligence.domain.diagnosis import (
+    DiagnosisAlertFact,
     DiagnosisReference,
     DiagnosisSnapshot,
     validate_candidate_report,
@@ -105,6 +106,24 @@ def test_report_rejects_suggested_action_that_contains_an_executable_command() -
 
     assert result.accepted is False
     assert result.reason_code == "diagnosis_action_not_human_only"
+
+
+def test_snapshot_keeps_a_bounded_safe_projection_of_linked_alerts() -> None:
+    snapshot = _snapshot().model_copy(
+        update={
+            "alert_facts": (
+                DiagnosisAlertFact(
+                    id=f"alt_{'6' * 32}",
+                    alert_name="MySQLRowLockWaitActive",
+                    state="ACTIVE",
+                    severity="high",
+                    first_received_at=NOW,
+                ),
+            )
+        }
+    )
+
+    assert snapshot.alert_facts[0].alert_name == "MySQLRowLockWaitActive"
 
 
 def _snapshot() -> DiagnosisSnapshot:

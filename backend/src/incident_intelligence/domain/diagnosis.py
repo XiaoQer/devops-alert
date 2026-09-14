@@ -9,6 +9,7 @@ from incident_intelligence.domain.models import (
     AlertName,
     Environment,
     ServiceName,
+    Severity,
     UtcAwareDatetime,
 )
 
@@ -40,6 +41,14 @@ class DiagnosisReference(_FrozenDiagnosisModel):
     content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+class DiagnosisAlertFact(_FrozenDiagnosisModel):
+    id: str = Field(pattern=r"^alt_[0-9a-f]{32}$")
+    alert_name: AlertName
+    state: Literal["ACTIVE", "RESOLVED"]
+    severity: Severity
+    first_received_at: UtcAwareDatetime
+
+
 class DiagnosisSnapshot(_FrozenDiagnosisModel):
     diagnosis_run_id: str = Field(pattern=r"^drun_[0-9a-f]{32}$")
     incident_id: str = Field(pattern=r"^inc_[0-9a-f]{32}$")
@@ -47,6 +56,7 @@ class DiagnosisSnapshot(_FrozenDiagnosisModel):
     environment: Environment
     service_name: ServiceName | None
     alert_names: tuple[AlertName, ...] = Field(max_length=200)
+    alert_facts: tuple[DiagnosisAlertFact, ...] = Field(default=(), max_length=500)
     evidence_references: tuple[DiagnosisReference, ...] = Field(max_length=100)
     knowledge_references: tuple[DiagnosisReference, ...] = Field(default=(), max_length=100)
     created_at: UtcAwareDatetime

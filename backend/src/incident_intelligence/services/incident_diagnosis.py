@@ -9,12 +9,14 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.exc import IntegrityError
 
 from incident_intelligence.domain.diagnosis import (
+    DiagnosisAlertFact,
     DiagnosisReference,
     DiagnosisRun,
     DiagnosisSnapshot,
 )
 from incident_intelligence.domain.evidence import EvidenceItem
 from incident_intelligence.ids import IdPrefix, new_id
+from incident_intelligence.persistence.alert_center_repository import AlertRepository
 from incident_intelligence.persistence.diagnosis_repository import (
     DiagnosisOperationRecord,
     DiagnosisOperationRepository,
@@ -110,6 +112,12 @@ class IncidentDiagnosisService:
                     raise DiagnosisEvidenceRunInvalid("diagnosis_evidence_run_not_found")
                 if evidence_run.state not in {"SUCCEEDED", "PARTIAL"}:
                     raise DiagnosisEvidenceRunInvalid("diagnosis_evidence_run_not_ready")
+                alert_ids = _incidents(uow).list_alert_ids(incident_id)
+                if len(alert_ids) > 500:
+                    raise DiagnosisEvidenceRunInvalid("diagnosis_alerts_exceed_limit")
+                alert_facts = _alerts(uow).list_evaluation_facts_by_ids(alert_ids)
+                if any(fact.environment != incident.environment for fact in alert_facts):
+                    raise DiagnosisEvidenceRunInvalid("diagnosis_alert_scope_invalid")
 
                 now = self._clock().astimezone(UTC)
                 run = DiagnosisRun(
@@ -127,6 +135,16 @@ class IncidentDiagnosisService:
                     environment=incident.environment,
                     service_name=evidence_run.context.service_name,
                     alert_names=evidence_run.context.alert_names,
+                    alert_facts=tuple(
+                        DiagnosisAlertFact(
+                            id=fact.id,
+                            alert_name=fact.alert_name,
+                            state=fact.state,
+                            severity=fact.severity,
+                            first_received_at=fact.first_received_at,
+                        )
+                        for fact in alert_facts
+                    ),
                     evidence_references=_evidence_references(
                         _evidence_runs(uow).list_items(evidence_run_id, limit=101)
                     ),
@@ -233,6 +251,12 @@ def _evidence_runs(uow: SqlAlchemyUnitOfWork) -> EvidenceRunRepository:
     if uow.evidence_runs is None:
         raise RuntimeError("取证运行仓储尚未初始化")
     return uow.evidence_runs
+
+
+def _alerts(uow: SqlAlchemyUnitOfWork) -> AlertRepository:
+    if uow.alerts is None:
+        raise RuntimeError("告警仓储尚未初始化")
+    return uow.alerts
 
 
 def _runs(uow: SqlAlchemyUnitOfWork) -> DiagnosisRunRepository:
