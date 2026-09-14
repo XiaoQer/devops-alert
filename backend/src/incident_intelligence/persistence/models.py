@@ -80,6 +80,7 @@ EVIDENCE_TYPE_VALUES = (
     "'ENDPOINT_RANKING', 'DEPENDENCY_RANKING', 'TRACE_SUMMARY', "
     "'CROSS_SOURCE_CORRELATION'"
 )
+DIAGNOSIS_RUN_STATE_VALUES = "'QUEUED', 'RUNNING', 'REPORT_READY', 'REVIEW_REQUIRED', 'FAILED'"
 
 
 def _mysql_table_options() -> dict[str, str]:
@@ -861,6 +862,108 @@ class EvidenceCollectionOperationRow(Base):
     actor: Mapped[str] = mapped_column(String(128), nullable=False)
     request_id: Mapped[str] = mapped_column(String(64), nullable=False)
     completed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class IncidentDiagnosisRunRow(Base):
+    __tablename__ = "incident_diagnosis_runs"
+    __table_args__ = (
+        UniqueConstraint("incident_id", "active_slot", name="incident_active_diagnosis_run"),
+        CheckConstraint(f"state IN ({DIAGNOSIS_RUN_STATE_VALUES})", name="state"),
+        CheckConstraint("version >= 1", name="version"),
+        CheckConstraint(
+            "(state IN ('QUEUED','RUNNING') AND active_slot = 1) OR "
+            "(state NOT IN ('QUEUED','RUNNING') AND active_slot IS NULL)",
+            name="active_slot",
+        ),
+        Index("ix_incident_diagnosis_runs_incident", "incident_id", "created_at", "id"),
+        Index("ix_incident_diagnosis_runs_state", "state", "created_at"),
+        _mysql_table_options(),
+    )
+    id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(
+        ForeignKey("operational_incidents.id", ondelete="CASCADE"), nullable=False
+    )
+    evidence_run_id: Mapped[str] = mapped_column(
+        ForeignKey("incident_evidence_runs.id", ondelete="RESTRICT"), nullable=False
+    )
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    active_slot: Mapped[int | None] = mapped_column(nullable=True)
+    requested_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    version: Mapped[int] = mapped_column(nullable=False)
+
+
+class IncidentDiagnosisSnapshotRow(Base):
+    __tablename__ = "incident_diagnosis_snapshots"
+    id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    diagnosis_run_id: Mapped[str] = mapped_column(
+        ForeignKey("incident_diagnosis_runs.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    incident_snapshot: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    evidence_snapshot: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    scope_snapshot: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class IncidentDiagnosisTaskRow(Base):
+    __tablename__ = "incident_diagnosis_tasks"
+    __table_args__ = (
+        UniqueConstraint("diagnosis_run_id", name="diagnosis_task_run"),
+        _mysql_table_options(),
+    )
+    id: Mapped[str] = mapped_column(String(38), primary_key=True)
+    diagnosis_run_id: Mapped[str] = mapped_column(
+        ForeignKey("incident_diagnosis_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(nullable=False)
+    next_attempt_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class IncidentDiagnosisToolReceiptRow(Base):
+    __tablename__ = "incident_diagnosis_tool_receipts"
+    __table_args__ = (
+        UniqueConstraint("diagnosis_run_id", "tool_key", name="diagnosis_tool_receipt_key"),
+        _mysql_table_options(),
+    )
+    id: Mapped[str] = mapped_column(String(38), primary_key=True)
+    diagnosis_run_id: Mapped[str] = mapped_column(
+        ForeignKey("incident_diagnosis_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    tool_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    result_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class IncidentDiagnosisReportRow(Base):
+    __tablename__ = "incident_diagnosis_reports"
+    diagnosis_run_id: Mapped[str] = mapped_column(
+        ForeignKey("incident_diagnosis_runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    report: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class IncidentDiagnosisOperationRow(Base):
+    __tablename__ = "incident_diagnosis_operations"
+    __table_args__ = (
+        UniqueConstraint("scope", "idempotency_key_hash", name="diagnosis_operation_key"),
+        _mysql_table_options(),
+    )
+    id: Mapped[str] = mapped_column(String(38), primary_key=True)
+    scope: Mapped[str] = mapped_column(String(96), nullable=False)
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    diagnosis_run_id: Mapped[str] = mapped_column(
+        ForeignKey("incident_diagnosis_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 class IncidentEvaluationJobRow(Base):
