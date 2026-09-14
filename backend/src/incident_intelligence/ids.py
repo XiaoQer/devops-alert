@@ -37,6 +37,11 @@ IdPrefix = Literal[
     "evitem",
     "evtask",
     "evop",
+    "drun",
+    "dtask",
+    "dreport",
+    "dtool",
+    "dtoken",
 ]
 
 
