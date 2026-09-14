@@ -1,8 +1,8 @@
-# Dify 受控 Incident 诊断 Agent
+# 平台主控的 Dify Incident 诊断执行器
 
 ## 状态
 
-实施中：已完成 DiagnosisRun 的领域契约、MySQL 运行/快照/任务/幂等持久化，以及基于既有 EvidenceRun 的人工输入快照。尚未创建 Dify 应用、知识库、诊断 API、Worker 或前端入口。
+实施中：已完成 DiagnosisRun 的领域契约、MySQL 运行/快照/任务/幂等持久化，以及基于既有 EvidenceRun 的人工输入快照。架构以平台主程序为唯一控制面，Dify 仅为受控、无状态的 Workflow 执行器。尚未创建 Dify 应用、知识库、诊断 API、Worker 或前端入口。
 
 ## 背景与目标
 
