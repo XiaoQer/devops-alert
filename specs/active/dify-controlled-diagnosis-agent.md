@@ -2,7 +2,7 @@
 
 ## 状态
 
-设计草案，待用户审阅；尚未创建 Dify 应用、知识库、诊断 API、Worker 或前端入口。
+实施中：已完成 DiagnosisRun 的领域契约、MySQL 运行/快照/任务/幂等持久化，以及基于既有 EvidenceRun 的人工输入快照。尚未创建 Dify 应用、知识库、诊断 API、Worker 或前端入口。
 
 ## 背景与目标
 

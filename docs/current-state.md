@@ -1,5 +1,19 @@
 # 当前状态
 
+## 2026-09-14 受控诊断运行基础
+
+当前可用：
+
+- 独立的 `DiagnosisRun` 领域状态、不可变引用快照、报告引用校验和人工建议安全约束；
+- MySQL 同事务保存诊断运行、输入快照、持久化后台任务和幂等操作；
+- 同一 Incident 最多存在一个排队或运行中的诊断，重复人工请求会安全重放；
+- 操作员可以从一个已成功或部分成功的既有 EvidenceRun 手动创建诊断输入快照；快照固定 Incident 环境、服务、告警名称和最多 100 条 EvidenceItem 的内容指纹。
+
+尚未完成：
+
+- Diagnosis Worker、Dify 调用、能力令牌、平台只读工具、知识库、诊断 API 与前端入口均未启用；
+- 诊断运行当前不会读取 Dify、Prometheus、Elasticsearch、SkyWalking、飞书、Kubernetes 或故障注入平台。
+
 ## 2026-08-31 Alert 生命周期与手动 Incident 规则
 
 当前可用：
