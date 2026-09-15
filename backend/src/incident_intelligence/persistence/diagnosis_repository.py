@@ -14,6 +14,7 @@ from incident_intelligence.persistence.models import (
     IncidentDiagnosisRunRow,
     IncidentDiagnosisSnapshotRow,
     IncidentDiagnosisTaskRow,
+    IncidentDiagnosisToolReceiptRow,
 )
 
 DiagnosisTaskState = Literal["PENDING", "LEASED", "SUCCEEDED", "FAILED"]
@@ -39,6 +40,19 @@ class DiagnosisOperationRecord:
     scope: str
     idempotency_key_hash: str
     diagnosis_run_id: str
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class DiagnosisToolReceiptRecord:
+    id: str
+    diagnosis_run_id: str
+    tool_key: str
+    call_index: int
+    request_hash: str
+    result_hash: str | None
+    truncated: bool
+    error_code: str | None
     created_at: datetime
 
 
@@ -296,6 +310,26 @@ class DiagnosisTaskRepository:
         return result.rowcount == 1
 
 
+class DiagnosisToolReceiptRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def insert(self, receipt: DiagnosisToolReceiptRecord) -> None:
+        self._session.add(IncidentDiagnosisToolReceiptRow(**asdict(receipt)))
+        self._session.flush()
+
+    def list_for_run(self, diagnosis_run_id: str) -> tuple[DiagnosisToolReceiptRecord, ...]:
+        rows = self._session.scalars(
+            select(IncidentDiagnosisToolReceiptRow)
+            .where(IncidentDiagnosisToolReceiptRow.diagnosis_run_id == diagnosis_run_id)
+            .order_by(
+                IncidentDiagnosisToolReceiptRow.created_at,
+                IncidentDiagnosisToolReceiptRow.id,
+            )
+        )
+        return tuple(_tool_receipt_record(row) for row in rows)
+
+
 class DiagnosisOperationRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -427,5 +461,19 @@ def _operation_record(row: IncidentDiagnosisOperationRow) -> DiagnosisOperationR
         scope=row.scope,
         idempotency_key_hash=row.idempotency_key_hash,
         diagnosis_run_id=row.diagnosis_run_id,
+        created_at=row.created_at,
+    )
+
+
+def _tool_receipt_record(row: IncidentDiagnosisToolReceiptRow) -> DiagnosisToolReceiptRecord:
+    return DiagnosisToolReceiptRecord(
+        id=row.id,
+        diagnosis_run_id=row.diagnosis_run_id,
+        tool_key=row.tool_key,
+        call_index=row.call_index,
+        request_hash=row.request_hash,
+        result_hash=row.result_hash,
+        truncated=row.truncated,
+        error_code=row.error_code,
         created_at=row.created_at,
     )

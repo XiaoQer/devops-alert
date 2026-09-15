@@ -112,9 +112,23 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("tool_key", sa.String(128), nullable=False),
-        sa.Column("result_hash", sa.String(64), nullable=False),
+        sa.Column("call_index", sa.Integer(), nullable=False),
+        sa.Column("request_hash", sa.String(64), nullable=False),
+        sa.Column("result_hash", sa.String(64)),
+        sa.Column("truncated", sa.Boolean(), nullable=False),
+        sa.Column("error_code", sa.String(64)),
         sa.Column("created_at", _dt(), nullable=False),
-        sa.UniqueConstraint("diagnosis_run_id", "tool_key", name="diagnosis_tool_receipt_key"),
+        sa.CheckConstraint(
+            "call_index >= 1 AND char_length(request_hash) = 64 AND "
+            "(result_hash IS NULL OR char_length(result_hash) = 64)",
+            name="ck_incident_diagnosis_tool_receipts_audit_hashes",
+        ),
+        sa.UniqueConstraint(
+            "diagnosis_run_id",
+            "tool_key",
+            "call_index",
+            name="diagnosis_tool_receipt_key",
+        ),
         **OPTIONS,
     )
     op.create_table(

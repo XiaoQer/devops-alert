@@ -930,7 +930,17 @@ class IncidentDiagnosisTaskRow(Base):
 class IncidentDiagnosisToolReceiptRow(Base):
     __tablename__ = "incident_diagnosis_tool_receipts"
     __table_args__ = (
-        UniqueConstraint("diagnosis_run_id", "tool_key", name="diagnosis_tool_receipt_key"),
+        UniqueConstraint(
+            "diagnosis_run_id",
+            "tool_key",
+            "call_index",
+            name="diagnosis_tool_receipt_key",
+        ),
+        CheckConstraint(
+            "call_index >= 1 AND char_length(request_hash) = 64 AND "
+            "(result_hash IS NULL OR char_length(result_hash) = 64)",
+            name="audit_hashes",
+        ),
         _mysql_table_options(),
     )
     id: Mapped[str] = mapped_column(String(38), primary_key=True)
@@ -938,7 +948,11 @@ class IncidentDiagnosisToolReceiptRow(Base):
         ForeignKey("incident_diagnosis_runs.id", ondelete="CASCADE"), nullable=False
     )
     tool_key: Mapped[str] = mapped_column(String(128), nullable=False)
-    result_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    call_index: Mapped[int] = mapped_column(nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    truncated: Mapped[bool] = mapped_column(nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 

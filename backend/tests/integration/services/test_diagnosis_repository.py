@@ -20,6 +20,8 @@ from incident_intelligence.domain.evidence import (
 from incident_intelligence.persistence.diagnosis_repository import (
     DiagnosisRunRepository,
     DiagnosisTaskRecord,
+    DiagnosisToolReceiptRecord,
+    DiagnosisToolReceiptRepository,
 )
 from incident_intelligence.persistence.evidence_repository import EvidenceRunRepository
 
@@ -109,6 +111,33 @@ def test_repository_rejects_a_stale_diagnosis_state_transition(
         repository = DiagnosisRunRepository(session)
         assert repository.get(DIAGNOSIS_RUN_ID) == completed
         assert repository.find_active(INCIDENT_ID) is None
+
+
+def test_tool_receipt_keeps_a_hashed_audit_without_capability_token(
+    migrated_engine: Engine,
+) -> None:
+    _seed_parent_rows(migrated_engine)
+    _insert_queued_run(migrated_engine)
+    receipt = DiagnosisToolReceiptRecord(
+        id=f"dtool_{'6' * 32}",
+        diagnosis_run_id=DIAGNOSIS_RUN_ID,
+        tool_key="get_diagnosis_snapshot",
+        call_index=1,
+        request_hash="a" * 64,
+        result_hash="b" * 64,
+        truncated=False,
+        error_code=None,
+        created_at=NOW,
+    )
+
+    with Session(migrated_engine) as session:
+        repository = DiagnosisToolReceiptRepository(session)
+        repository.insert(receipt)
+        session.commit()
+
+    with Session(migrated_engine) as session:
+        receipts = DiagnosisToolReceiptRepository(session).list_for_run(DIAGNOSIS_RUN_ID)
+        assert receipts == (receipt,)
 
 
 def _insert_queued_run(engine: Engine) -> DiagnosisRun:
