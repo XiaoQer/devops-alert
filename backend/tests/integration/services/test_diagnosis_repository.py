@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from incident_intelligence.domain.diagnosis import (
     DiagnosisReference,
+    DiagnosisReport,
     DiagnosisRun,
     DiagnosisSnapshot,
     transition_diagnosis_run,
@@ -18,6 +19,7 @@ from incident_intelligence.domain.evidence import (
     build_evidence_window,
 )
 from incident_intelligence.persistence.diagnosis_repository import (
+    DiagnosisReportRepository,
     DiagnosisRunRepository,
     DiagnosisTaskRecord,
     DiagnosisToolReceiptRecord,
@@ -138,6 +140,27 @@ def test_tool_receipt_keeps_a_hashed_audit_without_capability_token(
     with Session(migrated_engine) as session:
         receipts = DiagnosisToolReceiptRepository(session).list_for_run(DIAGNOSIS_RUN_ID)
         assert receipts == (receipt,)
+
+
+def test_repository_persists_a_diagnosis_report_for_one_run(
+    migrated_engine: Engine,
+) -> None:
+    _seed_parent_rows(migrated_engine)
+    _insert_queued_run(migrated_engine)
+    report = DiagnosisReport(
+        confirmed_facts=(),
+        hypotheses=(),
+        references=(),
+        unknowns=("当前没有可用监控证据。",),
+        suggested_human_actions=("请人工补充取证后重新发起分析。",),
+    )
+
+    with Session(migrated_engine) as session:
+        DiagnosisReportRepository(session).insert(DIAGNOSIS_RUN_ID, report, created_at=NOW)
+        session.commit()
+
+    with Session(migrated_engine) as session:
+        assert DiagnosisReportRepository(session).get(DIAGNOSIS_RUN_ID) == report
 
 
 def _insert_queued_run(engine: Engine) -> DiagnosisRun:

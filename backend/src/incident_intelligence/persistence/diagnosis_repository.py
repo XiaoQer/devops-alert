@@ -8,9 +8,10 @@ from sqlalchemy import func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
-from incident_intelligence.domain.diagnosis import DiagnosisRun, DiagnosisSnapshot
+from incident_intelligence.domain.diagnosis import DiagnosisReport, DiagnosisRun, DiagnosisSnapshot
 from incident_intelligence.persistence.models import (
     IncidentDiagnosisOperationRow,
+    IncidentDiagnosisReportRow,
     IncidentDiagnosisRunRow,
     IncidentDiagnosisSnapshotRow,
     IncidentDiagnosisTaskRow,
@@ -328,6 +329,31 @@ class DiagnosisToolReceiptRepository:
             )
         )
         return tuple(_tool_receipt_record(row) for row in rows)
+
+
+class DiagnosisReportRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def insert(
+        self,
+        diagnosis_run_id: str,
+        report: DiagnosisReport,
+        *,
+        created_at: datetime,
+    ) -> None:
+        self._session.add(
+            IncidentDiagnosisReportRow(
+                diagnosis_run_id=diagnosis_run_id,
+                report=report.model_dump(mode="json"),
+                created_at=created_at,
+            )
+        )
+        self._session.flush()
+
+    def get(self, diagnosis_run_id: str) -> DiagnosisReport | None:
+        row = self._session.get(IncidentDiagnosisReportRow, diagnosis_run_id)
+        return None if row is None else DiagnosisReport.model_validate(row.report)
 
 
 class DiagnosisOperationRepository:
