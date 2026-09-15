@@ -12,12 +12,13 @@
 - 可选本地演示 Worker 通过平台签发的短期能力凭证，顺序读取冻结快照和其内一项证据，生成受平台 JSON/引用校验约束的结构化草案；工具调用只保存有界回执摘要。
 - 可选真实 Dify Worker 固定调用一个由 API Key 绑定的 Workflow，且只传入 `diagnosis_run_id`、短期能力令牌和输出契约版本；调用限时 90 秒、响应限 64 KB，429、超时、网络和 5xx 错误最多重试两次。
 - 平台健康接口会显示 Dify 是否启用、配置是否完整、Workflow 显示标识和缺失的环境变量名称；不会返回 API Key、能力令牌或 Dify 响应正文。
+- 本机 Docker Desktop Kubernetes 已部署独立 Dify Community Edition：Helm release 为 `incident-dify`，命名空间为 `dify-system`，Chart `0.39.0-rc1`、Dify `1.17.0`，入口为 `http://dify.localhost/install`。API、Worker、PostgreSQL、Redis、Weaviate、Sandbox 与 Plugin Daemon 均为单副本，所有 PVC 使用 `hostpath` 的 RWO 持久卷。
 - Incident 详情已有“智能分析”页签；操作员选择一次已完成或部分成功的取证后手动启动，页面仅展示运行状态、可信报告、人工复核或失败状态，不展示模型思维过程。
 - 本地演示需显式开启 `II_DIAGNOSIS_DEMO_ENABLED` 并配置运行环境中的能力签名 Secret；未配置时创建仍安全入队，不会启动后台演示执行。
 
 尚未完成：
 
-- 尚未配置真实 Dify 应用并完成 Dify 沙箱兼容、连接检测和端到端验证；知识库和 `search_incident_knowledge` 工具尚未实现；
+- Dify 尚未完成首次管理员初始化、模型供应商配置、固定 Workflow 发布、应用 API Key 配置和端到端诊断验证；知识库和 `search_incident_knowledge` 工具尚未实现；
 - 演示执行器不读取 Dify、Prometheus、Elasticsearch、SkyWalking、飞书、Kubernetes 或故障注入平台，监控事实仅来自既有证据快照。
 
 ## 2026-08-31 Alert 生命周期与手动 Incident 规则

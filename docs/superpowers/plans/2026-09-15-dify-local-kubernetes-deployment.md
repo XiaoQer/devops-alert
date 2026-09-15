@@ -32,7 +32,7 @@
 - Consumes: chart `dify/dify` version `0.39.0-rc1`, ingress class `nginx`, default StorageClass `hostpath`.
 - Produces: release `incident-dify` and namespace-local Kubernetes objects only.
 
-- [ ] **Step 1: Add the pinned Helm repository and inspect exact chart metadata**
+- [x] **Step 1: Add the pinned Helm repository and inspect exact chart metadata**
 
 ```bash
 helm repo add incident-dify https://borispolonsky.github.io/dify-helm
@@ -42,7 +42,7 @@ helm show chart incident-dify/dify --version 0.39.0-rc1
 
 Expected: chart metadata reports `version: 0.39.0-rc1` and `appVersion: 1.17.0`.
 
-- [ ] **Step 2: Generate runtime-only secrets without printing them**
+- [x] **Step 2: Generate runtime-only secrets without printing them**
 
 ```bash
 kubectl create namespace dify-system --dry-run=client -o yaml | kubectl apply -f -
@@ -54,7 +54,7 @@ kubectl -n dify-system create secret generic incident-dify-runtime \
 
 Expected: one namespace and one Secret exist; commands never echo secret values.
 
-- [ ] **Step 3: Create an untracked local values file with RWO persistence and ingress**
+- [x] **Step 3: Create an untracked local values file with RWO persistence and ingress**
 
 ```yaml
 global:
@@ -74,7 +74,7 @@ api:
   persistence:
     persistentVolumeClaim:
       storageClass: hostpath
-      accessModes: [ReadWriteOnce]
+      accessModes: ReadWriteOnce
       size: 5Gi
 worker:
   replicas: 1
@@ -83,7 +83,7 @@ pluginDaemon:
   persistence:
     persistentVolumeClaim:
       storageClass: hostpath
-      accessModes: [ReadWriteOnce]
+      accessModes: ReadWriteOnce
       size: 5Gi
 postgresql:
   architecture: standalone
@@ -94,6 +94,14 @@ postgresql:
       size: 8Gi
 redis:
   architecture: standalone
+  master:
+    persistence:
+      storageClass: hostpath
+      size: 2Gi
+weaviate:
+  storage:
+    storageClassName: hostpath
+    size: 5Gi
 ingress:
   enabled: true
   className: nginx
@@ -106,7 +114,7 @@ ingress:
 
 Inject `global.appSecretKey` and `global.internalApiKey` from the namespace Secret without printing them. The temporary values file must be mode `600` and removed after a successful installation.
 
-- [ ] **Step 4: Render and run server-side dry validation**
+- [x] **Step 4: Render and run server-side dry validation**
 
 ```bash
 helm template incident-dify incident-dify/dify \
@@ -117,7 +125,7 @@ kubectl apply --dry-run=server -f /tmp/incident-dify-rendered.yaml
 
 Expected: only `dify-system` objects validate, no unknown API kinds, and all PVC access modes are `ReadWriteOnce`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Do not commit files from `/tmp`, generated Secret values, Helm cache files or rendered manifests. Record validation evidence in the active deployment spec only after installation succeeds.
 
@@ -132,7 +140,7 @@ Do not commit files from `/tmp`, generated Secret values, Helm cache files or re
 - Consumes: Task 1 values, release and namespace.
 - Produces: Ready Dify console at `http://dify.localhost/install`.
 
-- [ ] **Step 1: Install using Helm atomic rollback**
+- [x] **Step 1: Install using Helm atomic rollback**
 
 ```bash
 helm upgrade --install incident-dify incident-dify/dify \
@@ -143,7 +151,7 @@ helm upgrade --install incident-dify incident-dify/dify \
 
 Expected: Helm succeeds, or atomically removes newly created release resources on failure without modifying other namespaces.
 
-- [ ] **Step 2: Verify workloads, persistent volumes and ingress**
+- [x] **Step 2: Verify workloads, persistent volumes and ingress**
 
 ```bash
 kubectl -n dify-system get deploy,sts,pods,pvc,svc,ingress
@@ -153,7 +161,7 @@ curl --fail --max-time 15 -H 'Host: dify.localhost' http://127.0.0.1/install
 
 Expected: all enabled Pods Ready, all requested PVCs Bound, and the console returns an HTTP response through ingress.
 
-- [ ] **Step 3: Check namespace isolation and cleanup temporary values**
+- [x] **Step 3: Check namespace isolation and cleanup temporary values**
 
 ```bash
 kubectl get ingress -A -o wide
@@ -163,7 +171,7 @@ rm -f /tmp/incident-dify-values.yaml /tmp/incident-dify-rendered.yaml
 
 Expected: only `dify-system` gained Dify resources; source control remains free of generated configuration and Secret values.
 
-- [ ] **Step 4: Update runtime-state documentation**
+- [x] **Step 4: Update runtime-state documentation**
 
 Update `docs/current-state.md` and the active Dify specification with the installed chart/app version, namespace, ingress address, the fact that the Dify console is initialized separately, and the remaining requirement to configure a model provider and Workflow API Key.
 
