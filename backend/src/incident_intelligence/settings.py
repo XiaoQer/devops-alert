@@ -21,6 +21,17 @@ class FeishuCapabilityView(BaseModel):
     missing_environment_keys: tuple[str, ...]
 
 
+class DifyCapabilityView(BaseModel):
+    """Reports configuration readiness without exposing credentials."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    enabled: bool
+    configured: bool
+    workflow_label: str | None
+    missing_environment_keys: tuple[str, ...]
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="II_", frozen=True, extra="ignore")
 
@@ -30,6 +41,10 @@ class Settings(BaseSettings):
     cloudevents_token: SecretStr
     diagnosis_capability_secret: SecretStr | None = None
     diagnosis_demo_enabled: bool = False
+    dify_enabled: bool = False
+    dify_base_url: str | None = None
+    dify_api_key: SecretStr | None = None
+    dify_workflow_label: str | None = Field(default=None, max_length=120)
     diagnosis_worker_poll_seconds: int = Field(default=2, ge=1, le=60)
     feishu_app_id: SecretStr | None = None
     feishu_app_secret: SecretStr | None = None
@@ -64,6 +79,35 @@ class Settings(BaseSettings):
             missing_environment_keys=missing,
         )
 
+    def dify_capability(self) -> DifyCapabilityView:
+        required = (
+            ("II_DIFY_BASE_URL", self.dify_base_url),
+            ("II_DIFY_API_KEY", self.dify_api_key),
+            ("II_DIAGNOSIS_CAPABILITY_SECRET", self.diagnosis_capability_secret),
+        )
+        missing = _missing_dify_keys(required)
+        return DifyCapabilityView(
+            enabled=self.dify_enabled,
+            configured=self.dify_enabled and not missing,
+            workflow_label=(self.dify_workflow_label or None),
+            missing_environment_keys=missing,
+        )
+
 
 def _has_secret(value: SecretStr | None) -> bool:
     return value is not None and bool(value.get_secret_value().strip())
+
+
+def _has_text(value: str | None) -> bool:
+    return value is not None and bool(value.strip())
+
+
+def _missing_dify_keys(
+    required: tuple[tuple[str, str | SecretStr | None], ...],
+) -> tuple[str, ...]:
+    missing: list[str] = []
+    for name, value in required:
+        configured = _has_secret(value) if isinstance(value, SecretStr) else _has_text(value)
+        if not configured:
+            missing.append(name)
+    return tuple(missing)

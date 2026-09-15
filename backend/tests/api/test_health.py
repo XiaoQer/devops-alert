@@ -98,6 +98,16 @@ def test_health_exposes_bounded_worker_status_without_secrets(
         "SKYWALKING": {"configured": False, "last_connection_state": None},
     }
     assert body["feishu"] == {"configured": True}
+    assert body["dify"] == {
+        "enabled": False,
+        "configured": False,
+        "workflow_label": None,
+        "missing_environment_keys": [
+            "II_DIFY_BASE_URL",
+            "II_DIFY_API_KEY",
+            "II_DIAGNOSIS_CAPABILITY_SECRET",
+        ],
+    }
     rendered = json.dumps(body)
     assert settings.api_token.get_secret_value() not in rendered
     assert settings.feishu_app_secret.get_secret_value() not in rendered

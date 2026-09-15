@@ -2,7 +2,7 @@
 
 ## 状态
 
-实施中：已完成 DiagnosisRun 的领域契约、MySQL 运行/快照/任务/幂等持久化，以及基于既有 EvidenceRun 的人工输入快照；已提供诊断 API、受限快照/证据工具、能力令牌、本地演示 Worker 和 Incident 前端入口。架构以平台主程序为唯一控制面，Dify 仅为受控、无状态的 Workflow 执行器；尚未创建真实 Dify 应用、知识库或真实 Dify 适配器。
+实施中：已完成 DiagnosisRun 的领域契约、MySQL 运行/快照/任务/幂等持久化，以及基于既有 EvidenceRun 的人工输入快照；已提供诊断 API、受限快照/证据工具、能力令牌、本地演示 Worker 和 Incident 前端入口。真实 Dify 调用适配器已实现，但尚未配置真实 Dify 应用并完成沙箱联调；架构以平台主程序为唯一控制面，Dify 仅为受控、无状态的 Workflow 执行器。
 
 ## 背景与目标
 
@@ -64,7 +64,7 @@ QUEUED → RUNNING → REPORT_READY
 
 ### Dify 集成契约
 
-平台配置只保存 Dify 基地址、Workflow 标识、启停状态、模型显示名与环境变量凭据引用；Dify API Key 只从运行环境读取。连接检测调用固定无副作用接口，不发送 Incident 内容。
+平台配置只保存 Dify 基地址、启停状态与 Workflow 显示标识；Dify API Key 和平台能力密钥只从运行环境读取。Dify 的应用 API Key 已绑定目标 Workflow，因此不接受由请求方指定的任意 Workflow ID。连接检测调用固定无副作用接口，不发送 Incident 内容。
 
 Diagnosis Worker 通过阻塞模式调用指定 Workflow，并传入：
 
@@ -72,7 +72,7 @@ Diagnosis Worker 通过阻塞模式调用指定 Workflow，并传入：
 - 一次性、短有效期、仅适用于该运行的能力令牌；
 - 固定 JSON 输出契约版本。
 
-每次调用最大 90 秒、最大一次 Dify 请求、最多三次平台工具调用；临时连接或限流错误使用持久化租约和有界重试。调用协议由 `DifyDiagnosisClient` 隔离，具体 HTTP 路径和事件格式必须按部署的 Dify 版本完成真实兼容测试后锁定。
+每次调用最大 90 秒、最大一次 Dify 请求；临时连接、超时、5xx 或限流错误使用持久化租约按 5 秒、30 秒有界重试，最多三次尝试。调用协议由 `DifyDiagnosisClient` 隔离：固定调用 `/v1/workflows/run` 的阻塞模式，只接收版本化 `diagnosis_report` 输出；具体 Dify 版本仍必须完成真实兼容测试后锁定。
 
 ### Dify 只读工具
 
@@ -146,7 +146,7 @@ Dify 只能返回版本化 JSON：
 ## 验证证据
 
 - 待实施：领域状态机、快照边界、能力令牌、工具权限、报告校验、知识范围、Worker 租约和 API 的失败测试；
-- 待实施：Dify 阻塞调用协议、认证/超时/限流/协议错误的适配器测试；
+- 已完成：Dify 阻塞调用协议、认证/超时/限流/协议错误的适配器测试；
 - 待实施：MySQL 迁移升降级、并发收敛、幂等重放和安全扫描；
 - 待实施：前端运行状态、报告引用、失败降级和真实浏览器流程；
 - 待实施：自托管 Dify 的固定 Workflow 与三项工具的真实沙箱验证。

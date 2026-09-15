@@ -4,6 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol
 
+from incident_intelligence.adapters.dify import DifyRetryableError
 from incident_intelligence.domain.diagnosis import (
     transition_diagnosis_run,
     validate_candidate_report,
@@ -20,6 +21,7 @@ DiagnosisExecutionOutcome = Literal[
     "REPORT_READY",
     "REVIEW_REQUIRED",
     "FAILED",
+    "RETRY_SCHEDULED",
     "NOT_CLAIMED",
 ]
 
@@ -70,9 +72,21 @@ class DiagnosisExecutionService:
                 )
                 uow.commit()
                 return "FAILED"
-            running = transition_diagnosis_run(run, state="RUNNING", now=now)
-            if not _runs(uow).update(running, expected_version=run.version):
-                return "NOT_CLAIMED"
+            if run.state == "QUEUED":
+                running = transition_diagnosis_run(run, state="RUNNING", now=now)
+                if not _runs(uow).update(running, expected_version=run.version):
+                    return "NOT_CLAIMED"
+            elif run.state == "RUNNING":
+                running = run
+            else:
+                _tasks(uow).fail(
+                    task_id,
+                    owner=self._owner,
+                    error_code="diagnosis_run_not_runnable",
+                    now=now,
+                )
+                uow.commit()
+                return "FAILED"
             uow.commit()
 
         capability_token = self._capability_issuer.issue(
@@ -84,6 +98,10 @@ class DiagnosisExecutionService:
                 running.id,
                 capability_token=capability_token,
             )
+        except DifyRetryableError as error:
+            if task.attempt_count < 2:
+                return self._reschedule(task_id, str(error), now, task.attempt_count)
+            return self._fail(task_id, running.id, now, error_code=str(error))
         except Exception:
             return self._fail(task_id, running.id, now)
 
@@ -110,6 +128,7 @@ class DiagnosisExecutionService:
         task_id: str,
         diagnosis_run_id: str,
         now: datetime,
+        error_code: str = "diagnosis_workflow_failed",
     ) -> DiagnosisExecutionOutcome:
         with self._uow_factory() as uow:
             run = _runs(uow).get(diagnosis_run_id)
@@ -119,11 +138,30 @@ class DiagnosisExecutionService:
             _tasks(uow).fail(
                 task_id,
                 owner=self._owner,
-                error_code="diagnosis_workflow_failed",
+                error_code=error_code,
                 now=now,
             )
             uow.commit()
         return "FAILED"
+
+    def _reschedule(
+        self,
+        task_id: str,
+        error_code: str,
+        now: datetime,
+        prior_attempts: int,
+    ) -> DiagnosisExecutionOutcome:
+        delay_seconds = (5, 30)[prior_attempts]
+        with self._uow_factory() as uow:
+            _tasks(uow).reschedule(
+                task_id,
+                owner=self._owner,
+                error_code=error_code,
+                next_attempt_at=now + timedelta(seconds=delay_seconds),
+                now=now,
+            )
+            uow.commit()
+        return "RETRY_SCHEDULED"
 
 
 def _runs(uow: SqlAlchemyUnitOfWork) -> DiagnosisRunRepository:

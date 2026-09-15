@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from incident_intelligence.adapters.dify import DifyRetryableError
 from incident_intelligence.domain.diagnosis import (
     DiagnosisReference,
     DiagnosisRun,
@@ -39,6 +40,27 @@ def test_execution_publishes_a_valid_demo_draft_only_after_platform_validation()
     assert uow.task_completed is True
 
 
+def test_temporary_dify_failure_is_rescheduled_without_failing_diagnosis_run() -> None:
+    uow = _FakeUnitOfWork()
+    service = DiagnosisExecutionService(
+        uow_factory=lambda: uow,
+        workflow=_RetryableWorkflow(),
+        capability_issuer=DiagnosisCapabilityIssuer(
+            hmac_secret="test-only-hmac-secret",
+            clock=lambda: NOW,
+            nonce_factory=lambda: "nonce-for-test",
+        ),
+        owner="dify-worker",
+        clock=lambda: NOW,
+    )
+
+    outcome = service.process(TASK_ID)
+
+    assert outcome == "RETRY_SCHEDULED"
+    assert uow.run.state == "RUNNING"
+    assert uow.task_rescheduled == ("dify_rate_limited", NOW.replace(second=5))
+
+
 class _FakeUnitOfWork:
     def __init__(self) -> None:
         self.run = DiagnosisRun(
@@ -69,6 +91,7 @@ class _FakeUnitOfWork:
         self.diagnosis_runs = self
         self.diagnosis_reports = self
         self.task_completed = False
+        self.task_rescheduled: tuple[str, datetime] | None = None
         self.report: object | None = None
 
     def __enter__(self) -> _FakeUnitOfWork:
@@ -117,6 +140,19 @@ class _FakeUnitOfWork:
         self.task_completed = True
         return True
 
+    def reschedule(
+        self,
+        task_id: str,
+        *,
+        owner: str,
+        error_code: str,
+        next_attempt_at: datetime,
+        now: datetime,
+    ) -> bool:
+        del task_id, owner, now
+        self.task_rescheduled = (error_code, next_attempt_at)
+        return True
+
 
 class _ValidWorkflow:
     def run_workflow(self, diagnosis_run_id: str, *, capability_token: str) -> dict[str, object]:
@@ -131,3 +167,9 @@ class _ValidWorkflow:
             "unknowns": [],
             "suggested_human_actions": ["请人工核对数据库长事务。"],
         }
+
+
+class _RetryableWorkflow:
+    def run_workflow(self, diagnosis_run_id: str, *, capability_token: str) -> dict[str, object]:
+        del diagnosis_run_id, capability_token
+        raise DifyRetryableError("dify_rate_limited")

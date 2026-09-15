@@ -6,7 +6,7 @@
 - 一个 Vue 3 前端；
 - 一个 MySQL 8.4 数据库。
 
-当前包含 Incident 评估 Worker、监控取证 Worker、飞书通知 Worker 和可选的本地诊断演示 Worker。诊断演示 Worker 只调用平台受控的快照与证据读取服务，不连接真实 Dify 或模型；取证 Worker 只执行版本化预定义只读查询，飞书通知采用持久化 Outbox、租约和有界重试。
+当前包含 Incident 评估 Worker、监控取证 Worker、飞书通知 Worker，以及可选的本地诊断演示或真实 Dify 诊断 Worker。真实 Dify Worker 固定调用由 API Key 绑定的一个 Workflow，只传递诊断运行 ID、短期能力令牌和输出契约；取证 Worker 只执行版本化预定义只读查询，飞书通知采用持久化 Outbox、租约和有界重试。
 
 ## 数据流
 
@@ -43,7 +43,7 @@ Incident 查询、确认、解决与飞书群路由配置
           ↓
 固定快照、短期能力凭证与受控只读工具
           ↓
-可选本地诊断演示 Worker 生成结构化草案
+本地演示或受控 Dify Workflow 生成结构化草案
           ↓
 平台校验引用后发布可信报告或要求人工复核
           ↓
@@ -98,9 +98,9 @@ EvidenceRun 描述一次自动或人工取证运行，保存固定锚点、最�
 
 监控数据源连接检测使用固定只读协议：Prometheus 构建信息、Elasticsearch 集群信息和 SkyWalking GraphQL 版本查询。检测必须验证产品响应结构，最近状态、耗时、兼容版本、稳定错误码和时间写入数据源记录；Secret 仍只从运行环境解析。
 
-### DiagnosisRun 与本地演示执行器
+### DiagnosisRun 与受控诊断执行器
 
-DiagnosisRun 独立于 Incident 和 EvidenceRun，状态为 `QUEUED`、`RUNNING`、`REPORT_READY`、`REVIEW_REQUIRED` 或 `FAILED`。创建时平台冻结 Incident、关联 Alert 与既有 EvidenceItem 的安全投影及引用指纹。可选演示 Worker 只使用短期、单运行能力令牌访问冻结快照和其内证据，工具调用写入受限回执。当前演示适配器不是 Dify、不是模型，也不调用任何外部 AI 服务；其作用是验证平台主控的任务、凭证、工具和报告校验闭环。
+DiagnosisRun 独立于 Incident 和 EvidenceRun，状态为 `QUEUED`、`RUNNING`、`REPORT_READY`、`REVIEW_REQUIRED` 或 `FAILED`。创建时平台冻结 Incident、关联 Alert 与既有 EvidenceItem 的安全投影及引用指纹。本地演示执行器只使用短期、单运行能力令牌访问冻结快照和其内证据；真实 Dify 执行器固定通过 `/v1/workflows/run` 阻塞调用目标 Workflow，最大 90 秒、64 KB 响应，临时故障按 5 秒、30 秒有限重试。两者均必须经平台的 JSON/引用校验后才发布报告。
 
 ## 事务与并发
 

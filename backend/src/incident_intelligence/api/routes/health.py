@@ -44,6 +44,15 @@ class FeishuHealthSummary(BaseModel):
     configured: bool
 
 
+class DifyHealthSummary(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    enabled: bool
+    configured: bool
+    workflow_label: str | None
+    missing_environment_keys: tuple[str, ...]
+
+
 class MonitoringSourceHealthSummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -61,6 +70,7 @@ class PlatformHealthResponse(BaseModel):
     evidence_collection: WorkerHealthSummary | None
     monitoring_sources: dict[str, MonitoringSourceHealthSummary] | None
     feishu: FeishuHealthSummary
+    dify: DifyHealthSummary
 
 
 def create_health_router(engine: Engine) -> APIRouter:
@@ -83,6 +93,8 @@ def create_health_router(engine: Engine) -> APIRouter:
     @router.get("/health", response_model=PlatformHealthResponse)
     def platform_health(request: Request, response: Response) -> PlatformHealthResponse:
         configured = bool(request.app.state.settings.feishu_capability().configured)
+        dify_capability = request.app.state.settings.dify_capability()
+        dify = DifyHealthSummary(**dify_capability.model_dump())
         try:
             evaluation = _worker_summary(engine, IncidentEvaluationJobRow)
             notification = _worker_summary(engine, IncidentNotificationOutboxRow)
@@ -98,6 +110,7 @@ def create_health_router(engine: Engine) -> APIRouter:
                 evidence_collection=None,
                 monitoring_sources=None,
                 feishu=FeishuHealthSummary(configured=configured),
+                dify=dify,
             )
         return PlatformHealthResponse(
             status="ready",
@@ -107,6 +120,7 @@ def create_health_router(engine: Engine) -> APIRouter:
             evidence_collection=evidence,
             monitoring_sources=monitoring_sources,
             feishu=FeishuHealthSummary(configured=configured),
+            dify=dify,
         )
 
     return router

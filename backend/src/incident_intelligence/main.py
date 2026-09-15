@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from sqlalchemy.engine import Engine
 
 from incident_intelligence.adapters.demo_dify import DemoDifyWorkflow
+from incident_intelligence.adapters.dify import DifyDiagnosisClient, UrllibDifyTransport
 from incident_intelligence.adapters.feishu import FeishuClient, FeishuConfig
 from incident_intelligence.adapters.monitoring_connection import HttpMonitoringConnectionTester
 from incident_intelligence.adapters.monitoring_http import UrllibMonitoringTransport
@@ -18,7 +19,10 @@ from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.alert_center import AlertCenterService
 from incident_intelligence.services.alert_sources import AlertSourceService
 from incident_intelligence.services.diagnosis_capabilities import DiagnosisCapabilityIssuer
-from incident_intelligence.services.diagnosis_execution import DiagnosisExecutionService
+from incident_intelligence.services.diagnosis_execution import (
+    DiagnosisExecutionService,
+    DiagnosisWorkflow,
+)
 from incident_intelligence.services.diagnosis_runner import DiagnosisRunner
 from incident_intelligence.services.diagnosis_tools import DiagnosisToolService
 from incident_intelligence.services.evidence_adapter_factory import (
@@ -280,7 +284,7 @@ async def _run_diagnosis_worker(
         try:
             await asyncio.to_thread(runner.run_once)
         except Exception:
-            LOGGER.exception("本地诊断演示批次执行失败")
+            LOGGER.exception("诊断执行批次失败")
         with suppress(TimeoutError):
             await asyncio.wait_for(
                 stop.wait(),
@@ -318,20 +322,40 @@ def _diagnosis_runner(
     uow_factory: Callable[[], SqlAlchemyUnitOfWork],
     tools: DiagnosisToolService | None,
 ) -> DiagnosisRunner | None:
-    if not settings.diagnosis_demo_enabled or tools is None:
+    if tools is None:
         return None
     if settings.diagnosis_capability_secret is None:
         return None
     secret = settings.diagnosis_capability_secret.get_secret_value().strip()
     if not secret:
         return None
+    capability = settings.dify_capability()
+    if settings.dify_enabled:
+        if (
+            not capability.configured
+            or settings.dify_base_url is None
+            or settings.dify_api_key is None
+        ):
+            return None
+        api_key = settings.dify_api_key.get_secret_value().strip()
+        workflow: DiagnosisWorkflow = DifyDiagnosisClient(
+            base_url=settings.dify_base_url,
+            api_key=api_key,
+            transport=UrllibDifyTransport(),
+        )
+        owner = "dify-diagnosis"
+    elif settings.diagnosis_demo_enabled:
+        workflow = DemoDifyWorkflow(tools)
+        owner = "local-diagnosis-demo"
+    else:
+        return None
     return DiagnosisRunner(
         uow_factory=uow_factory,
         processor=DiagnosisExecutionService(
             uow_factory=uow_factory,
-            workflow=DemoDifyWorkflow(tools),
+            workflow=workflow,
             capability_issuer=DiagnosisCapabilityIssuer(hmac_secret=secret),
-            owner="local-diagnosis-demo",
+            owner=owner,
         ),
     )
 
