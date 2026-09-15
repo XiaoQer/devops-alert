@@ -253,6 +253,10 @@ class EvidenceRunRepository:
         self._session.add(_item_row(item))
         self._session.flush()
 
+    def get_item(self, item_id: str) -> EvidenceItem | None:
+        row = self._session.get(EvidenceItemRow, item_id)
+        return None if row is None else _item_domain(row)
+
     def list_items(self, run_id: str, *, limit: int = 101) -> tuple[EvidenceItem, ...]:
         rows = self._session.scalars(
             select(EvidenceItemRow)

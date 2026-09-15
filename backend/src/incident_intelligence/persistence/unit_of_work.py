@@ -13,6 +13,7 @@ from incident_intelligence.persistence.diagnosis_repository import (
     DiagnosisOperationRepository,
     DiagnosisRunRepository,
     DiagnosisTaskRepository,
+    DiagnosisToolReceiptRepository,
 )
 from incident_intelligence.persistence.evidence_repository import (
     EvidenceOperationRepository,
@@ -60,6 +61,7 @@ class SqlAlchemyUnitOfWork:
         self.diagnosis_runs: DiagnosisRunRepository | None = None
         self.diagnosis_tasks: DiagnosisTaskRepository | None = None
         self.diagnosis_operations: DiagnosisOperationRepository | None = None
+        self.diagnosis_tool_receipts: DiagnosisToolReceiptRepository | None = None
 
     def __enter__(self) -> SqlAlchemyUnitOfWork:
         self.session = self._session_factory()
@@ -85,6 +87,7 @@ class SqlAlchemyUnitOfWork:
         self.diagnosis_runs = DiagnosisRunRepository(self.session)
         self.diagnosis_tasks = DiagnosisTaskRepository(self.session)
         self.diagnosis_operations = DiagnosisOperationRepository(self.session)
+        self.diagnosis_tool_receipts = DiagnosisToolReceiptRepository(self.session)
         return self
 
     def commit(self) -> None:
