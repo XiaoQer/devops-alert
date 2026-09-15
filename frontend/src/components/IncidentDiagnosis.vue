@@ -32,6 +32,7 @@ watch(eligibleRuns, (nextRuns) => {
 const report = computed(() => diagnosis.value.detail?.report ?? null);
 const activeRun = computed(() => diagnosis.value.detail?.run ?? diagnosis.value.runs?.[0] ?? null);
 const stateLabel = computed(() => ({ QUEUED: "等待执行", RUNNING: "正在分析", REPORT_READY: "已生成可信报告", REVIEW_REQUIRED: "需要人工复核", FAILED: "分析未完成" }[activeRun.value?.state] ?? "尚未开始"));
+const executionStage = computed(() => activeRun.value?.state === "REPORT_READY" ? "已完成" : activeRun.value?.state === "RUNNING" ? "执行中" : "等待启动");
 
 function start() {
   const evidenceRunId = selectedEvidenceRunId.value;
@@ -44,9 +45,20 @@ function start() {
 <template>
   <section class="incident-diagnosis">
     <header class="incident-diagnosis-header">
-      <div><PhBrain :size="18" /><div><h3>智能分析</h3><p>本地演示执行器：只读取已固定的取证结果，不会直接访问监控或变更系统。</p></div></div>
+      <div><PhBrain :size="18" /><div><h3>智能分析</h3><p>平台控制诊断任务；本地演示会仿真 Dify 的固定工作流与受控工具调用。</p></div></div>
       <span :class="['diagnosis-state', activeRun?.state?.toLowerCase()]">{{ stateLabel }}</span>
     </header>
+
+    <section class="diagnosis-executor" aria-label="Dify 执行过程">
+      <header><div><strong>Dify Workflow</strong><span>本地 Dify 仿真</span></div><small>固定工作流 · incident-diagnosis.v1</small></header>
+      <ol>
+        <li><b>1</b><div><strong>平台控制器</strong><span>冻结 Incident、告警和取证引用</span></div><em>{{ executionStage }}</em></li>
+        <li><b>2</b><div><strong>Dify Workflow</strong><span>收到运行编号、短期能力凭证与输出契约</span></div><em>{{ executionStage }}</em></li>
+        <li><b>3</b><div><strong>平台受控工具</strong><span>诊断快照 → 证据明细 → 知识检索（暂未接入）</span></div><em>{{ activeRun ? executionStage : '等待启动' }}</em></li>
+        <li><b>4</b><div><strong>平台校验器</strong><span>校验证据引用、事实边界和人工建议</span></div><em>{{ activeRun?.state === 'REPORT_READY' ? '可信报告已发布' : '等待输出' }}</em></li>
+      </ol>
+      <p>当前未连接真实 Dify：不会发送 API Key、能力凭证或监控数据到外部服务。</p>
+    </section>
 
     <div class="diagnosis-start">
       <div><strong>选择一次已完成取证</strong><small>诊断启动后会冻结本次 Incident、告警与证据引用。</small></div>

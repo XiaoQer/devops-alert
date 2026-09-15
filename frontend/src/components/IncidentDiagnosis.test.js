@@ -18,7 +18,10 @@ it("仅允许基于完成的取证手动启动本地诊断演示", async () => {
     },
   });
 
-  expect(wrapper.text()).toContain("本地演示执行器");
+  expect(wrapper.text()).toContain("本地 Dify 仿真");
+  expect(wrapper.text()).toContain("incident-diagnosis.v1");
+  expect(wrapper.text()).toContain("Dify Workflow");
+  expect(wrapper.text()).toContain("平台校验器");
   expect(wrapper.findAll("option")).toHaveLength(2);
   await wrapper.get('select[aria-label="诊断取证运行"]').setValue("evr_done_2");
   await wrapper.get('[data-testid="start-diagnosis"]').trigger("click");
