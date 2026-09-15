@@ -10,6 +10,7 @@ from pydantic import SecretStr
 from incident_intelligence.api.errors import ApiError
 from incident_intelligence.services.alert_center import AlertCenterService
 from incident_intelligence.services.alert_sources import AlertSourceService
+from incident_intelligence.services.diagnosis_tools import DiagnosisToolService
 from incident_intelligence.services.feishu_events import FeishuEventService
 from incident_intelligence.services.incident_evidence import IncidentEvidenceService
 from incident_intelligence.services.incident_notification_routes import (
@@ -62,6 +63,14 @@ def require_cloudevents_actor(
 ) -> str:
     settings = cast(Settings, request.app.state.settings)
     return _require_token(credentials, settings.cloudevents_token, "cloudevents-adapter")
+
+
+def require_diagnosis_capability(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+) -> str:
+    if credentials is None or credentials.scheme.casefold() != "bearer":
+        raise ApiError(401, "diagnosis_capability_required", "需要诊断能力凭证")
+    return credentials.credentials
 
 
 def require_idempotency_key(
@@ -126,3 +135,10 @@ def get_source_receipt_service(request: Request) -> SourceReceiptService:
 
 def get_signal_intake_service(request: Request) -> SignalIntakeService:
     return cast(SignalIntakeService, request.app.state.signal_intake_service)
+
+
+def get_diagnosis_tool_service(request: Request) -> DiagnosisToolService:
+    service = cast(DiagnosisToolService | None, request.app.state.diagnosis_tool_service)
+    if service is None:
+        raise ApiError(503, "diagnosis_tools_not_configured", "诊断工具能力尚未配置")
+    return service

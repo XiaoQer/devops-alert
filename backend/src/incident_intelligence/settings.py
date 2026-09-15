@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     api_token: SecretStr
     alertmanager_token: SecretStr
     cloudevents_token: SecretStr
+    diagnosis_capability_secret: SecretStr | None = None
     feishu_app_id: SecretStr | None = None
     feishu_app_secret: SecretStr | None = None
     feishu_verification_token: SecretStr | None = None

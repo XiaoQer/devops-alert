@@ -16,6 +16,8 @@ from incident_intelligence.persistence.session import get_engine, make_session_f
 from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.alert_center import AlertCenterService
 from incident_intelligence.services.alert_sources import AlertSourceService
+from incident_intelligence.services.diagnosis_capabilities import DiagnosisCapabilityIssuer
+from incident_intelligence.services.diagnosis_tools import DiagnosisToolService
 from incident_intelligence.services.evidence_adapter_factory import (
     MonitoringEvidenceAdapterFactory,
 )
@@ -146,6 +148,7 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
     app.state.signal_intake_service = SignalIntakeService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
+    app.state.diagnosis_tool_service = _diagnosis_tool_service(resolved_settings, uow_factory)
     app.add_middleware(
         RequestBodyLimitMiddleware,
         default_max_bytes=resolved_settings.request_body_limit_bytes,
@@ -258,6 +261,21 @@ def _feishu_client(settings: Settings) -> FeishuClient | None:
     if not app_id or not app_secret:
         return None
     return FeishuClient(FeishuConfig(app_id=app_id, app_secret=app_secret))
+
+
+def _diagnosis_tool_service(
+    settings: Settings,
+    uow_factory: Callable[[], SqlAlchemyUnitOfWork],
+) -> DiagnosisToolService | None:
+    if settings.diagnosis_capability_secret is None:
+        return None
+    secret = settings.diagnosis_capability_secret.get_secret_value().strip()
+    if not secret:
+        return None
+    return DiagnosisToolService(
+        uow_factory=uow_factory,
+        capability_issuer=DiagnosisCapabilityIssuer(hmac_secret=secret),
+    )
 
 
 def _feishu_event_service(
