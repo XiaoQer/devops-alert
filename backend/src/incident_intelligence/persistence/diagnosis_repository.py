@@ -74,6 +74,26 @@ class DiagnosisRunRepository:
         )
         return None if row is None else _snapshot_domain(row)
 
+    def update(self, run: DiagnosisRun, *, expected_version: int) -> bool:
+        row = _run_row(run)
+        values = {
+            column.name: getattr(row, column.name)
+            for column in IncidentDiagnosisRunRow.__table__.columns
+            if column.name
+            not in {"id", "incident_id", "evidence_run_id", "requested_by", "created_at"}
+        }
+        result = cast(
+            CursorResult[Any],
+            self._session.execute(
+                update(IncidentDiagnosisRunRow)
+                .where(IncidentDiagnosisRunRow.id == run.id)
+                .where(IncidentDiagnosisRunRow.version == expected_version)
+                .values(**values)
+            ),
+        )
+        self._session.flush()
+        return result.rowcount == 1
+
     def get_task(self, task_id: str) -> DiagnosisTaskRecord | None:
         row = self._session.get(IncidentDiagnosisTaskRow, task_id)
         return None if row is None else _task_record(row)

@@ -10,6 +10,7 @@ from incident_intelligence.domain.diagnosis import (
     DiagnosisReference,
     DiagnosisRun,
     DiagnosisSnapshot,
+    transition_diagnosis_run,
 )
 from incident_intelligence.domain.evidence import (
     EvidenceContext,
@@ -83,6 +84,74 @@ def test_repository_persists_run_snapshot_and_pending_task_together(
         assert persisted_task is not None
         assert persisted_task.state == "PENDING"
         assert persisted_task.diagnosis_run_id == DIAGNOSIS_RUN_ID
+
+
+def test_repository_rejects_a_stale_diagnosis_state_transition(
+    migrated_engine: Engine,
+) -> None:
+    _seed_parent_rows(migrated_engine)
+    run = _insert_queued_run(migrated_engine)
+    running = transition_diagnosis_run(run, state="RUNNING", now=NOW)
+
+    with Session(migrated_engine) as session:
+        repository = DiagnosisRunRepository(session)
+        assert repository.update(running, expected_version=run.version) is True
+        session.commit()
+
+    completed = transition_diagnosis_run(running, state="REPORT_READY", now=NOW)
+    with Session(migrated_engine) as session:
+        repository = DiagnosisRunRepository(session)
+        assert repository.update(completed, expected_version=run.version) is False
+        assert repository.update(completed, expected_version=running.version) is True
+        session.commit()
+
+    with Session(migrated_engine) as session:
+        repository = DiagnosisRunRepository(session)
+        assert repository.get(DIAGNOSIS_RUN_ID) == completed
+        assert repository.find_active(INCIDENT_ID) is None
+
+
+def _insert_queued_run(engine: Engine) -> DiagnosisRun:
+    run = DiagnosisRun(
+        id=DIAGNOSIS_RUN_ID,
+        incident_id=INCIDENT_ID,
+        evidence_run_id=EVIDENCE_RUN_ID,
+        state="QUEUED",
+        requested_by="operator",
+        created_at=NOW,
+    )
+    snapshot = DiagnosisSnapshot(
+        diagnosis_run_id=DIAGNOSIS_RUN_ID,
+        incident_id=INCIDENT_ID,
+        evidence_run_id=EVIDENCE_RUN_ID,
+        environment="testing",
+        service_name="checkout",
+        alert_names=("HighErrorRate",),
+        evidence_references=(
+            DiagnosisReference(
+                kind="EVIDENCE",
+                target_id="evitem_55555555555555555555555555555555",
+                content_hash="a" * 64,
+            ),
+        ),
+        created_at=NOW,
+    )
+    task = DiagnosisTaskRecord(
+        id=DIAGNOSIS_TASK_ID,
+        diagnosis_run_id=DIAGNOSIS_RUN_ID,
+        state="PENDING",
+        attempt_count=0,
+        next_attempt_at=NOW,
+        lease_owner=None,
+        lease_until=None,
+        last_error_code=None,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    with Session(engine) as session:
+        DiagnosisRunRepository(session).insert_run_with_snapshot_and_task(run, snapshot, task)
+        session.commit()
+    return run
 
 
 def _seed_parent_rows(engine: Engine) -> None:
