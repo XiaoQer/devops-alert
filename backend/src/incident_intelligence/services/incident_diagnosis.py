@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from incident_intelligence.domain.diagnosis import (
     DiagnosisAlertFact,
     DiagnosisReference,
+    DiagnosisReport,
     DiagnosisRun,
     DiagnosisSnapshot,
 )
@@ -20,6 +21,7 @@ from incident_intelligence.persistence.alert_center_repository import AlertRepos
 from incident_intelligence.persistence.diagnosis_repository import (
     DiagnosisOperationRecord,
     DiagnosisOperationRepository,
+    DiagnosisReportRepository,
     DiagnosisRunRepository,
     DiagnosisTaskRecord,
 )
@@ -42,6 +44,7 @@ class DiagnosisRunDetail(BaseModel):
 
     run: DiagnosisRun
     snapshot: DiagnosisSnapshot
+    report: DiagnosisReport | None
 
 
 class DiagnosisRunMutationResult(BaseModel):
@@ -207,7 +210,7 @@ class IncidentDiagnosisService:
             snapshot = _runs(uow).get_snapshot(run_id)
             if run is None or snapshot is None or run.incident_id != incident_id:
                 raise DiagnosisRunNotFound()
-            return DiagnosisRunDetail(run=run, snapshot=snapshot)
+            return DiagnosisRunDetail(run=run, snapshot=snapshot, report=_reports(uow).get(run_id))
 
     def _replay(
         self,
@@ -257,6 +260,12 @@ def _alerts(uow: SqlAlchemyUnitOfWork) -> AlertRepository:
     if uow.alerts is None:
         raise RuntimeError("告警仓储尚未初始化")
     return uow.alerts
+
+
+def _reports(uow: SqlAlchemyUnitOfWork) -> DiagnosisReportRepository:
+    if uow.diagnosis_reports is None:
+        raise RuntimeError("诊断报告仓储尚未初始化")
+    return uow.diagnosis_reports
 
 
 def _runs(uow: SqlAlchemyUnitOfWork) -> DiagnosisRunRepository:

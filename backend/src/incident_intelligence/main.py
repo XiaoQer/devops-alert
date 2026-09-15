@@ -6,6 +6,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppres
 from fastapi import FastAPI
 from sqlalchemy.engine import Engine
 
+from incident_intelligence.adapters.demo_dify import DemoDifyWorkflow
 from incident_intelligence.adapters.feishu import FeishuClient, FeishuConfig
 from incident_intelligence.adapters.monitoring_connection import HttpMonitoringConnectionTester
 from incident_intelligence.adapters.monitoring_http import UrllibMonitoringTransport
@@ -17,6 +18,8 @@ from incident_intelligence.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from incident_intelligence.services.alert_center import AlertCenterService
 from incident_intelligence.services.alert_sources import AlertSourceService
 from incident_intelligence.services.diagnosis_capabilities import DiagnosisCapabilityIssuer
+from incident_intelligence.services.diagnosis_execution import DiagnosisExecutionService
+from incident_intelligence.services.diagnosis_runner import DiagnosisRunner
 from incident_intelligence.services.diagnosis_tools import DiagnosisToolService
 from incident_intelligence.services.evidence_adapter_factory import (
     MonitoringEvidenceAdapterFactory,
@@ -26,6 +29,7 @@ from incident_intelligence.services.evidence_collection_runner import (
     EvidenceCollectionRunner,
 )
 from incident_intelligence.services.feishu_events import FeishuEventService
+from incident_intelligence.services.incident_diagnosis import IncidentDiagnosisService
 from incident_intelligence.services.incident_evaluation import IncidentEvaluationService
 from incident_intelligence.services.incident_evaluation_runner import (
     IncidentEvaluationRunner,
@@ -99,6 +103,12 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
         uow_factory,
         incident_service,
     )
+    diagnosis_tool_service = _diagnosis_tool_service(resolved_settings, uow_factory)
+    diagnosis_runner = _diagnosis_runner(
+        resolved_settings,
+        uow_factory,
+        diagnosis_tool_service,
+    )
 
     app = FastAPI(
         title="Alert Intake API",
@@ -108,6 +118,7 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
             incident_evaluation_runner,
             incident_notification_runner,
             evidence_collection_runner,
+            diagnosis_runner,
         ),
     )
     app.state.settings = resolved_settings
@@ -133,6 +144,7 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
     )
     app.state.incident_service = incident_service
     app.state.incident_evidence_service = IncidentEvidenceService(uow_factory=uow_factory)
+    app.state.incident_diagnosis_service = IncidentDiagnosisService(uow_factory=uow_factory)
     app.state.monitoring_data_source_service = MonitoringDataSourceService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory),
         connection_tester=HttpMonitoringConnectionTester(
@@ -148,7 +160,8 @@ def create_app(settings: Settings | None = None, *, engine: Engine | None = None
     app.state.signal_intake_service = SignalIntakeService(
         uow_factory=lambda: SqlAlchemyUnitOfWork(session_factory)
     )
-    app.state.diagnosis_tool_service = _diagnosis_tool_service(resolved_settings, uow_factory)
+    app.state.diagnosis_tool_service = diagnosis_tool_service
+    app.state.diagnosis_runner = diagnosis_runner
     app.add_middleware(
         RequestBodyLimitMiddleware,
         default_max_bytes=resolved_settings.request_body_limit_bytes,
@@ -169,6 +182,7 @@ def _lifespan(
     evaluation_runner: IncidentEvaluationRunner,
     notification_runner: IncidentNotificationRunner,
     evidence_runner: EvidenceCollectionRunner,
+    diagnosis_runner: DiagnosisRunner | None,
 ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -183,6 +197,10 @@ def _lifespan(
                 asyncio.create_task(_run_notification_worker(settings, notification_runner, stop))
             )
             tasks.append(asyncio.create_task(_run_evidence_worker(settings, evidence_runner, stop)))
+            if diagnosis_runner is not None:
+                tasks.append(
+                    asyncio.create_task(_run_diagnosis_worker(settings, diagnosis_runner, stop))
+                )
         try:
             yield
         finally:
@@ -253,6 +271,23 @@ async def _run_evidence_worker(
             )
 
 
+async def _run_diagnosis_worker(
+    settings: Settings,
+    runner: DiagnosisRunner,
+    stop: asyncio.Event,
+) -> None:
+    while not stop.is_set():
+        try:
+            await asyncio.to_thread(runner.run_once)
+        except Exception:
+            LOGGER.exception("本地诊断演示批次执行失败")
+        with suppress(TimeoutError):
+            await asyncio.wait_for(
+                stop.wait(),
+                timeout=settings.diagnosis_worker_poll_seconds,
+            )
+
+
 def _feishu_client(settings: Settings) -> FeishuClient | None:
     if settings.feishu_app_id is None or settings.feishu_app_secret is None:
         return None
@@ -275,6 +310,29 @@ def _diagnosis_tool_service(
     return DiagnosisToolService(
         uow_factory=uow_factory,
         capability_issuer=DiagnosisCapabilityIssuer(hmac_secret=secret),
+    )
+
+
+def _diagnosis_runner(
+    settings: Settings,
+    uow_factory: Callable[[], SqlAlchemyUnitOfWork],
+    tools: DiagnosisToolService | None,
+) -> DiagnosisRunner | None:
+    if not settings.diagnosis_demo_enabled or tools is None:
+        return None
+    if settings.diagnosis_capability_secret is None:
+        return None
+    secret = settings.diagnosis_capability_secret.get_secret_value().strip()
+    if not secret:
+        return None
+    return DiagnosisRunner(
+        uow_factory=uow_factory,
+        processor=DiagnosisExecutionService(
+            uow_factory=uow_factory,
+            workflow=DemoDifyWorkflow(tools),
+            capability_issuer=DiagnosisCapabilityIssuer(hmac_secret=secret),
+            owner="local-diagnosis-demo",
+        ),
     )
 
 

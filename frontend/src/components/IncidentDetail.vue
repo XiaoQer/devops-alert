@@ -2,6 +2,7 @@
 import { ref, watch } from "vue";
 import { PhBellRinging, PhCheckCircle, PhClockCounterClockwise, PhX } from "@phosphor-icons/vue";
 import IncidentEvidence from "./IncidentEvidence.vue";
+import IncidentDiagnosis from "./IncidentDiagnosis.vue";
 
 const props = defineProps({
   detail: { type: Object, required: true },
@@ -36,7 +37,7 @@ watch(() => props.detail.incident.state, (state) => {
     </form>
 
     <nav class="incident-detail-tabs" aria-label="Incident 详情分区">
-      <button v-for="tab in [{ id: 'current', label: '当前情况' }, { id: 'alerts', label: `关联告警 ${detail.alerts.length}` }, { id: 'evidence', label: '监控取证' }, { id: 'activity', label: '处置与飞书' }]" :key="tab.id" type="button" :class="{ active: activeTab === tab.id }" @click="activeTab = tab.id">{{ tab.label }}</button>
+      <button v-for="tab in [{ id: 'current', label: '当前情况' }, { id: 'alerts', label: `关联告警 ${detail.alerts.length}` }, { id: 'evidence', label: '监控取证' }, { id: 'diagnosis', label: '智能分析' }, { id: 'activity', label: '处置与飞书' }]" :key="tab.id" type="button" :class="{ active: activeTab === tab.id }" @click="activeTab = tab.id">{{ tab.label }}</button>
     </nav>
 
     <div class="incident-detail-tab-content">
@@ -67,6 +68,10 @@ watch(() => props.detail.incident.state, (state) => {
 
       <section v-if="activeTab === 'evidence'" class="incident-detail-column evidence-panel">
         <IncidentEvidence :incident-id="detail.incident.id" />
+      </section>
+
+      <section v-if="activeTab === 'diagnosis'" class="incident-detail-column diagnosis-panel">
+        <IncidentDiagnosis :incident-id="detail.incident.id" />
       </section>
 
       <section v-show="activeTab === 'activity'" class="incident-detail-column activity">

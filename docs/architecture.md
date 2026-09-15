@@ -6,7 +6,7 @@
 - 一个 Vue 3 前端；
 - 一个 MySQL 8.4 数据库。
 
-当前包含 Incident 评估 Worker、监控取证 Worker 和飞书通知 Worker；没有诊断 Worker 或 AI Worker。取证 Worker 只执行版本化预定义只读查询，飞书通知采用持久化 Outbox、租约和有界重试。
+当前包含 Incident 评估 Worker、监控取证 Worker、飞书通知 Worker 和可选的本地诊断演示 Worker。诊断演示 Worker 只调用平台受控的快照与证据读取服务，不连接真实 Dify 或模型；取证 Worker 只执行版本化预定义只读查询，飞书通知采用持久化 Outbox、租约和有界重试。
 
 ## 数据流
 
@@ -38,6 +38,14 @@ Incident 评估 Worker 创建或更新正式 Incident
 监控取证 Worker 按环境采集 Prometheus、ELK、SkyWalking 标准证据
           ↓
 Incident 查询、确认、解决与飞书群路由配置
+          ↓
+操作员基于已完成 EvidenceRun 手动创建 DiagnosisRun
+          ↓
+固定快照、短期能力凭证与受控只读工具
+          ↓
+可选本地诊断演示 Worker 生成结构化草案
+          ↓
+平台校验引用后发布可信报告或要求人工复核
           ↓
 飞书通知 Worker 发送或更新根卡片并绑定 Incident 线程
           ↕
@@ -90,6 +98,10 @@ EvidenceRun 描述一次自动或人工取证运行，保存固定锚点、最�
 
 监控数据源连接检测使用固定只读协议：Prometheus 构建信息、Elasticsearch 集群信息和 SkyWalking GraphQL 版本查询。检测必须验证产品响应结构，最近状态、耗时、兼容版本、稳定错误码和时间写入数据源记录；Secret 仍只从运行环境解析。
 
+### DiagnosisRun 与本地演示执行器
+
+DiagnosisRun 独立于 Incident 和 EvidenceRun，状态为 `QUEUED`、`RUNNING`、`REPORT_READY`、`REVIEW_REQUIRED` 或 `FAILED`。创建时平台冻结 Incident、关联 Alert 与既有 EvidenceItem 的安全投影及引用指纹。可选演示 Worker 只使用短期、单运行能力令牌访问冻结快照和其内证据，工具调用写入受限回执。当前演示适配器不是 Dify、不是模型，也不调用任何外部 AI 服务；其作用是验证平台主控的任务、凭证、工具和报告校验闭环。
+
 ## 事务与并发
 
 - SignalEvent、Alert 投影、接入结果和审计在同一事务提交或回滚；
@@ -114,12 +126,13 @@ EvidenceRun 描述一次自动或人工取证运行，保存固定锚点、最�
 - `/api/v1/incident-rules`
 - `/api/v1/incidents`
 - `/api/v1/incidents/{incident_id}/evidence-runs`
+- `/api/v1/incidents/{incident_id}/diagnosis-runs`
 - `/api/v1/monitoring-data-sources`
 - `/api/v1/incident-notification-routes`
 - `/health/live`
 - `/health/ready`
 
-`/api/v1/alerts` 与详情按 Alert ID 读取生命周期；趋势按 `first_received_at` 统计新建 Alert。`/api/v1/incident-rules` 提供规则管理与试运行；后台根据发布规则异步生成 Incident。`/api/v1/incidents` 提供查询和人工状态操作，通知路由 API 按环境维护飞书群。旧告警汇总、告警组、目录、旧事故、人工事故报告和诊断 API 不注册。
+`/api/v1/alerts` 与详情按 Alert ID 读取生命周期；趋势按 `first_received_at` 统计新建 Alert。`/api/v1/incident-rules` 提供规则管理与试运行；后台根据发布规则异步生成 Incident。`/api/v1/incidents` 提供查询和人工状态操作，通知路由 API 按环境维护飞书群；其下的 `diagnosis-runs` 只支持基于已完成取证手动创建、查询运行与报告。旧告警汇总、告警组、目录、旧事故和人工事故报告 API 不注册。
 
 ## 历史兼容
 

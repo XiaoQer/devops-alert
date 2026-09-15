@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     alertmanager_token: SecretStr
     cloudevents_token: SecretStr
     diagnosis_capability_secret: SecretStr | None = None
+    diagnosis_demo_enabled: bool = False
+    diagnosis_worker_poll_seconds: int = Field(default=2, ge=1, le=60)
     feishu_app_id: SecretStr | None = None
     feishu_app_secret: SecretStr | None = None
     feishu_verification_token: SecretStr | None = None
