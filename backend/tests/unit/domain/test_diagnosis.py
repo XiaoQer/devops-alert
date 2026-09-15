@@ -7,7 +7,9 @@ from datetime import UTC, datetime
 from incident_intelligence.domain.diagnosis import (
     DiagnosisAlertFact,
     DiagnosisReference,
+    DiagnosisRun,
     DiagnosisSnapshot,
+    transition_diagnosis_run,
     validate_candidate_report,
 )
 
@@ -124,6 +126,26 @@ def test_snapshot_keeps_a_bounded_safe_projection_of_linked_alerts() -> None:
     )
 
     assert snapshot.alert_facts[0].alert_name == "MySQLRowLockWaitActive"
+
+
+def test_running_diagnosis_run_cannot_return_to_queued() -> None:
+    run = DiagnosisRun(
+        id=f"drun_{'7' * 32}",
+        incident_id=f"inc_{'8' * 32}",
+        evidence_run_id=f"evr_{'9' * 32}",
+        state="RUNNING",
+        requested_by="operator",
+        created_at=NOW,
+        started_at=NOW,
+        version=2,
+    )
+
+    try:
+        transition_diagnosis_run(run, state="QUEUED", now=NOW)
+    except ValueError as error:
+        assert str(error) == "diagnosis_transition_invalid"
+    else:
+        raise AssertionError("运行中的诊断不得回到排队状态")
 
 
 def _snapshot() -> DiagnosisSnapshot:

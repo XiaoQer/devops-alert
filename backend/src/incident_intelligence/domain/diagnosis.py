@@ -105,6 +105,30 @@ class ReportValidationResult(_FrozenDiagnosisModel):
     report: DiagnosisReport | None = None
 
 
+def transition_diagnosis_run(
+    run: DiagnosisRun,
+    *,
+    state: DiagnosisRunState,
+    now: UtcAwareDatetime,
+) -> DiagnosisRun:
+    allowed = {
+        ("QUEUED", "RUNNING"),
+        ("RUNNING", "REPORT_READY"),
+        ("RUNNING", "REVIEW_REQUIRED"),
+        ("RUNNING", "FAILED"),
+    }
+    if (run.state, state) not in allowed:
+        raise ValueError("diagnosis_transition_invalid")
+    return run.model_copy(
+        update={
+            "state": state,
+            "started_at": now if state == "RUNNING" else run.started_at,
+            "completed_at": now if state in {"REPORT_READY", "REVIEW_REQUIRED", "FAILED"} else None,
+            "version": run.version + 1,
+        }
+    )
+
+
 def validate_candidate_report(
     snapshot: DiagnosisSnapshot,
     candidate: object,
