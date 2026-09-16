@@ -225,7 +225,7 @@ class IncidentDiagnosisService:
 
 def _evidence_references(items: tuple[EvidenceItem, ...]) -> tuple[DiagnosisReference, ...]:
     references: list[DiagnosisReference] = []
-    for item in items[:100]:
+    for index, item in enumerate(items[:100], start=1):
         payload = item.model_dump(mode="json")
         references.append(
             DiagnosisReference(
@@ -239,6 +239,7 @@ def _evidence_references(items: tuple[EvidenceItem, ...]) -> tuple[DiagnosisRefe
                         sort_keys=True,
                     ).encode()
                 ).hexdigest(),
+                alias=f"E{index}",
             )
         )
     return tuple(references)

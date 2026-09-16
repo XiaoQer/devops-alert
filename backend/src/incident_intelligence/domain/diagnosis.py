@@ -39,6 +39,7 @@ class DiagnosisReference(_FrozenDiagnosisModel):
     kind: DiagnosisReferenceKind
     target_id: ReferenceId
     content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    alias: Annotated[str, StringConstraints(pattern=r"^[EK][1-9][0-9]{0,2}$")] | None = None
 
 
 class DiagnosisAlertFact(_FrozenDiagnosisModel):
@@ -134,7 +135,7 @@ def validate_candidate_report(
     candidate: object,
 ) -> ReportValidationResult:
     try:
-        report = DiagnosisReport.model_validate(candidate)
+        report = DiagnosisReport.model_validate(_expand_reference_aliases(snapshot, candidate))
     except ValueError:
         return ReportValidationResult(accepted=False, reason_code="diagnosis_report_invalid")
 
@@ -143,7 +144,8 @@ def validate_candidate_report(
     if any(reference.target_id not in allowed for reference in report.references):
         return ReportValidationResult(accepted=False, reason_code="diagnosis_reference_not_allowed")
     if any(
-        declared.get(target_id) != allowed.get(target_id) for target_id in _referenced_ids(report)
+        not _same_reference(declared.get(target_id), allowed.get(target_id))
+        for target_id in _referenced_ids(report)
     ):
         return ReportValidationResult(accepted=False, reason_code="diagnosis_reference_not_allowed")
     if any(not fact.reference_ids for fact in report.confirmed_facts):
@@ -165,6 +167,37 @@ def validate_candidate_report(
     return ReportValidationResult(accepted=True, report=report)
 
 
+def _expand_reference_aliases(snapshot: DiagnosisSnapshot, candidate: object) -> object:
+    """Resolve model-facing aliases into immutable snapshot identities before validation."""
+    if not isinstance(candidate, dict):
+        return candidate
+    aliases = {
+        reference.alias: reference
+        for reference in (*snapshot.evidence_references, *snapshot.knowledge_references)
+        if reference.alias is not None
+    }
+    def resolve(value: object) -> object:
+        reference = aliases.get(value) if isinstance(value, str) else None
+        return reference.target_id if reference is not None else value
+    expanded = dict(candidate)
+    for key in ("confirmed_facts", "hypotheses"):
+        entries = expanded.get(key)
+        if isinstance(entries, list):
+            expanded[key] = [
+                {**entry, "reference_ids": [resolve(item) for item in entry.get("reference_ids", [])]}
+                if isinstance(entry, dict) else entry
+                for entry in entries
+            ]
+    references = expanded.get("references")
+    if isinstance(references, list):
+        expanded["references"] = [
+            {"kind": reference.kind, "target_id": reference.target_id, "content_hash": reference.content_hash}
+            if isinstance(item, str) and (reference := aliases.get(item)) is not None else item
+            for item in references
+        ]
+    return expanded
+
+
 def _referenced_ids(report: DiagnosisReport) -> tuple[str, ...]:
     confirmed_ids = tuple(
         reference_id for fact in report.confirmed_facts for reference_id in fact.reference_ids
@@ -175,6 +208,17 @@ def _referenced_ids(report: DiagnosisReport) -> tuple[str, ...]:
         for reference_id in hypothesis.reference_ids
     )
     return confirmed_ids + hypothesis_ids
+
+
+def _same_reference(
+    declared: DiagnosisReference | None,
+    allowed: DiagnosisReference | None,
+) -> bool:
+    return declared is not None and allowed is not None and (
+        declared.kind,
+        declared.target_id,
+        declared.content_hash,
+    ) == (allowed.kind, allowed.target_id, allowed.content_hash)
 
 
 def _contains_executable_action(action: str) -> bool:

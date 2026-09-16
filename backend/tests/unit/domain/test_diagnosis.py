@@ -58,6 +58,36 @@ def test_report_rejects_reference_that_is_not_part_of_snapshot_or_tool_receipt()
     assert result.reason_code == "diagnosis_reference_not_allowed"
 
 
+def test_report_expands_short_snapshot_reference_aliases_before_validation() -> None:
+    snapshot = _snapshot().model_copy(
+        update={
+            "evidence_references": (
+                DiagnosisReference(
+                    kind="EVIDENCE",
+                    target_id=f"evitem_{'1' * 32}",
+                    content_hash="a" * 64,
+                    alias="E1",
+                ),
+            )
+        }
+    )
+
+    result = validate_candidate_report(
+        snapshot,
+        {
+            "confirmed_facts": [{"text": "指标出现行锁等待。", "reference_ids": ["E1"]}],
+            "hypotheses": [],
+            "references": ["E1"],
+            "unknowns": [],
+            "suggested_human_actions": [],
+        },
+    )
+
+    assert result.accepted is True
+    assert result.report is not None
+    assert result.report.confirmed_facts[0].reference_ids == (f"evitem_{'1' * 32}",)
+
+
 def test_report_accepts_hypothesis_only_when_marked_for_verification_and_cited() -> None:
     result = validate_candidate_report(
         _snapshot(),
