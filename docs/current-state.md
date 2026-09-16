@@ -12,13 +12,15 @@
 - 可选本地演示 Worker 通过平台签发的短期能力凭证，顺序读取冻结快照和其内一项证据，生成受平台 JSON/引用校验约束的结构化草案；工具调用只保存有界回执摘要。
 - 可选真实 Dify Worker 固定调用一个由 API Key 绑定的 Workflow，且只传入 `diagnosis_run_id`、短期能力令牌和输出契约版本；调用限时 90 秒、响应限 64 KB，429、超时、网络和 5xx 错误最多重试两次。
 - 平台健康接口会显示 Dify 是否启用、配置是否完整、Workflow 显示标识和缺失的环境变量名称；不会返回 API Key、能力令牌或 Dify 响应正文。
-- 本机 Docker Desktop Kubernetes 已部署独立 Dify Community Edition：Helm release 为 `incident-dify`，命名空间为 `dify-system`，Chart `0.39.0-rc1`、Dify `1.17.0`，入口为 `http://dify.localhost/install`。API、Worker、PostgreSQL、Redis、Weaviate、Sandbox 与 Plugin Daemon 均为单副本，所有 PVC 使用 `hostpath` 的 RWO 持久卷。
+- 本机 Docker Desktop Kubernetes 已部署独立 Dify Community Edition：Helm release 为 `incident-dify`，命名空间为 `dify-system`，Chart `0.39.0-rc1`、Dify `1.17.0`，入口为 `http://dify.localhost/`。API、Worker、PostgreSQL、Redis、Weaviate、Sandbox 与 Plugin Daemon 均为单副本，所有 PVC 使用 `hostpath` 的 RWO 持久卷；公网基地址均使用带协议的 `http://dify.localhost`，初始化与控制台接口可正常访问。
+- Dify 管理员已初始化，官方 DeepSeek 模型供应商插件 `langgenius/deepseek` 已安装并配置；当前可选择四个 DeepSeek LLM。
+- 已创建未发布的“Incident 受控诊断”Workflow 草稿：开始节点只接收 `diagnosis_run_id`、`capability_token` 与 `output_contract_version`，经受控 DeepSeek LLM 节点输出 `diagnosis_report`；提示词禁止直接访问外部系统、臆测事实、展示思维过程或给出自动修复命令。
 - Incident 详情已有“智能分析”页签；操作员选择一次已完成或部分成功的取证后手动启动，页面仅展示运行状态、可信报告、人工复核或失败状态，不展示模型思维过程。
 - 本地演示需显式开启 `II_DIAGNOSIS_DEMO_ENABLED` 并配置运行环境中的能力签名 Secret；未配置时创建仍安全入队，不会启动后台演示执行。
 
 尚未完成：
 
-- Dify 尚未完成首次管理员初始化、模型供应商配置、固定 Workflow 发布、应用 API Key 配置和端到端诊断验证；知识库和 `search_incident_knowledge` 工具尚未实现；
+- 固定 Workflow 尚未接入平台受限只读工具、发布或生成应用 API Key，也尚未配置平台运行环境并完成端到端诊断验证；知识库和 `search_incident_knowledge` 工具尚未实现；
 - 演示执行器不读取 Dify、Prometheus、Elasticsearch、SkyWalking、飞书、Kubernetes 或故障注入平台，监控事实仅来自既有证据快照。
 
 ## 2026-08-31 Alert 生命周期与手动 Incident 规则

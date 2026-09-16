@@ -2,7 +2,7 @@
 
 ## 状态
 
-实施中：已完成 DiagnosisRun 的领域契约、MySQL 运行/快照/任务/幂等持久化，以及基于既有 EvidenceRun 的人工输入快照；已提供诊断 API、受限快照/证据工具、能力令牌、本地演示 Worker 和 Incident 前端入口。真实 Dify 调用适配器和本地 Kubernetes Dify 实例已就绪，但尚未初始化管理员、模型与固定 Workflow 并完成沙箱联调；架构以平台主程序为唯一控制面，Dify 仅为受控、无状态的 Workflow 执行器。
+实施中：已完成 DiagnosisRun 的领域契约、MySQL 运行/快照/任务/幂等持久化，以及基于既有 EvidenceRun 的人工输入快照；已提供诊断 API、受限快照/证据工具、能力令牌、本地演示 Worker 和 Incident 前端入口。真实 Dify 调用适配器、本地 Kubernetes Dify 实例、管理员、DeepSeek 模型供应商和未发布的固定 Workflow 草稿已就绪；平台受限工具接入、Workflow 发布、应用 API Key 配置和沙箱联调尚未完成。架构以平台主程序为唯一控制面，Dify 仅为受控、无状态的 Workflow 执行器。
 
 ## 背景与目标
 
@@ -149,5 +149,5 @@ Dify 只能返回版本化 JSON：
 - 已完成：Dify 阻塞调用协议、认证/超时/限流/协议错误的适配器测试；
 - 待实施：MySQL 迁移升降级、并发收敛、幂等重放和安全扫描；
 - 待实施：前端运行状态、报告引用、失败降级和真实浏览器流程；
-- 已完成：自托管 Dify 基础实例已部署于本机 `dify-system` 命名空间，Chart `0.39.0-rc1` / Dify `1.17.0`，Ingress 为 `http://dify.localhost/install`；
-- 待实施：Dify 初始管理员、模型供应商、固定 Workflow 与受限工具的真实沙箱验证。
+- 已完成：自托管 Dify 基础实例已部署于本机 `dify-system` 命名空间，Chart `0.39.0-rc1` / Dify `1.17.0`，入口为 `http://dify.localhost/`；管理员、DeepSeek 模型供应商和“Incident 受控诊断”Workflow 草稿已创建。
+- 待实施：固定 Workflow 的平台受限工具接入、发布、应用 API Key 和真实沙箱验证。
