@@ -58,6 +58,73 @@ def test_fixed_workflow_sends_only_capability_contract_and_returns_structured_re
     }
 
 
+def test_workflow_accepts_a_json_code_fence_around_the_structured_report() -> None:
+    expected_report = {
+        "confirmed_facts": [],
+        "hypotheses": [],
+        "references": [],
+        "unknowns": ["暂无可确认事实。"],
+        "suggested_human_actions": ["请人工继续核对。"],
+    }
+    client = DifyDiagnosisClient(
+        base_url="https://dify.example.test",
+        api_key="test-api-key",
+        transport=_Transport(
+            DifyHttpResponse(
+                status_code=200,
+                body=json.dumps(
+                    {
+                        "data": {
+                            "outputs": {
+                                "diagnosis_report": "```json\n"
+                                + json.dumps(expected_report, ensure_ascii=False)
+                                + "\n```"
+                            }
+                        }
+                    }
+                ).encode(),
+            )
+        ),
+    )
+
+    assert client.run_workflow(
+        f"drun_{'2' * 32}", capability_token="short-lived-capability"
+    ) == expected_report
+
+
+def test_workflow_discards_a_closed_leading_think_block_before_json_report() -> None:
+    expected_report = {
+        "confirmed_facts": [],
+        "hypotheses": [],
+        "references": [],
+        "unknowns": ["暂无可确认事实。"],
+        "suggested_human_actions": ["请人工继续核对。"],
+    }
+    client = DifyDiagnosisClient(
+        base_url="https://dify.example.test",
+        api_key="test-api-key",
+        transport=_Transport(
+            DifyHttpResponse(
+                status_code=200,
+                body=json.dumps(
+                    {
+                        "data": {
+                            "outputs": {
+                                "diagnosis_report": "<think>internal reasoning</think>\n"
+                                + json.dumps(expected_report, ensure_ascii=False)
+                            }
+                        }
+                    }
+                ).encode(),
+            )
+        ),
+    )
+
+    assert client.run_workflow(
+        f"drun_{'3' * 32}", capability_token="short-lived-capability"
+    ) == expected_report
+
+
 def test_rate_limited_workflow_is_retryable_without_exposing_provider_body() -> None:
     client = DifyDiagnosisClient(
         base_url="https://dify.example.test",

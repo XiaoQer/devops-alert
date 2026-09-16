@@ -1,5 +1,19 @@
 # 当前状态
 
+## 2026-09-16 真实 Dify 沙箱联调
+
+已验证：
+
+- 正式 `operational_incidents` 已能自动创建 EvidenceRun；测试 Incident 的 Prometheus 取证取得 6 项成功结果，未配置的 Elasticsearch、SkyWalking 安全跳过；
+- Docker Desktop 主机通过本地只读端口转发访问集群内 Prometheus，未修改监控、告警或 Incident 数据；
+- 平台已真实调用已发布的 Dify Workflow，Dify 通过短期能力令牌只读取冻结快照；Dify API Key 仅保留在本地后端进程环境；
+- Dify 返回的前置 `<think>` 内容会在适配器内存边界丢弃，只有剩余 JSON 才进入平台校验；该行为有定向测试覆盖。
+
+当前缺口：
+
+- Dify Workflow 已发布第 3 版，包含与平台一致的字段、引用类型和单项最多 5 个引用要求；DeepSeek 仍可能忽略该有界要求，因此平台将报告置为 `REVIEW_REQUIRED`，不会发布为可信报告；
+- Dify 的结构化输出 Schema 配置尚未完成，未保存的无效 Schema 草稿已撤销。后续应以有效 JSON Schema 强制 `reference_ids.maxItems = 5`，再完成 `REPORT_READY` 端到端验收。
+
 ## 2026-09-15 平台主控的 Dify 诊断执行器
 
 当前可用：

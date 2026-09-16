@@ -168,9 +168,32 @@ def _report_from_response(body: bytes) -> dict[str, object]:
     candidate = outputs.get("diagnosis_report") if isinstance(outputs, dict) else None
     if isinstance(candidate, str):
         try:
-            candidate = json.loads(candidate)
+            candidate = json.loads(_unwrap_json_code_fence(_discard_leading_think_block(candidate)))
         except json.JSONDecodeError:
             raise DifyPermanentError("dify_protocol_error") from None
     if not isinstance(candidate, dict):
         raise DifyPermanentError("dify_protocol_error")
     return cast(dict[str, object], candidate)
+
+
+def _unwrap_json_code_fence(value: str) -> str:
+    normalized = value.strip()
+    if not normalized.startswith("```"):
+        return normalized
+    first_line, separator, remaining = normalized.partition("\n")
+    if separator != "\n" or first_line.casefold() not in {"```json", "```"}:
+        return normalized
+    content, closing_separator, trailing = remaining.rpartition("\n```")
+    if closing_separator != "\n```" or trailing:
+        return normalized
+    return content.strip()
+
+
+def _discard_leading_think_block(value: str) -> str:
+    normalized = value.strip()
+    if not normalized.casefold().startswith("<think>"):
+        return normalized
+    closing_index = normalized.casefold().find("</think>")
+    if closing_index < 0:
+        return normalized
+    return normalized[closing_index + len("</think>") :].strip()

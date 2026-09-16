@@ -2,13 +2,16 @@
 
 ## 状态
 
-已确认
+已废止：2026-09-16 经代码、迁移与真实运行复核，`incident_evidence_runs`、
+`incident_diagnosis_runs` 已通过既有迁移引用 `operational_incidents`。本规格误把
+数据读取时使用的历史 `incidents` 空表当成了运行时模型断链；不应据此新增平行表或
+迁移链路。
 
 ## 背景与目标
 
-告警生命周期和规则评估已经以 `alert_lifecycles`、`operational_incidents` 为当前正式模型运行。现有取证和 DiagnosisRun 仍引用历史 `incidents`、`incident_evidence_runs`，使新产生的正式 Incident 无法自动取证或启动 Dify 诊断。
+告警生命周期和规则评估已经以 `alert_lifecycles`、`operational_incidents` 为当前正式模型运行。真实 `INC-20260916-001` 已自动创建 EvidenceRun，证明取证与 DiagnosisRun 现有外键已正确关联正式 Incident。
 
-本规格将取证、诊断快照、诊断任务和可信报告完整迁移到正式 Incident 模型。`operational_incidents` 是新运行的唯一事故事实来源；Dify 保持为平台主控下的无状态受控执行器。
+因此本规格不实施迁移。后续工作只应围绕真实取证连通性、受控 Dify 输出契约与报告校验开展；`operational_incidents` 仍是新运行的唯一事故事实来源。
 
 ## 范围
 
