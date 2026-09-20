@@ -176,23 +176,34 @@ def _expand_reference_aliases(snapshot: DiagnosisSnapshot, candidate: object) ->
         for reference in (*snapshot.evidence_references, *snapshot.knowledge_references)
         if reference.alias is not None
     }
+
     def resolve(value: object) -> object:
         reference = aliases.get(value) if isinstance(value, str) else None
         return reference.target_id if reference is not None else value
+
     expanded = dict(candidate)
     for key in ("confirmed_facts", "hypotheses"):
         entries = expanded.get(key)
         if isinstance(entries, list):
             expanded[key] = [
-                {**entry, "reference_ids": [resolve(item) for item in entry.get("reference_ids", [])]}
-                if isinstance(entry, dict) else entry
+                {
+                    **entry,
+                    "reference_ids": [resolve(item) for item in entry.get("reference_ids", [])],
+                }
+                if isinstance(entry, dict)
+                else entry
                 for entry in entries
             ]
     references = expanded.get("references")
     if isinstance(references, list):
         expanded["references"] = [
-            {"kind": reference.kind, "target_id": reference.target_id, "content_hash": reference.content_hash}
-            if isinstance(item, str) and (reference := aliases.get(item)) is not None else item
+            {
+                "kind": reference.kind,
+                "target_id": reference.target_id,
+                "content_hash": reference.content_hash,
+            }
+            if isinstance(item, str) and (reference := aliases.get(item)) is not None
+            else item
             for item in references
         ]
     return expanded
@@ -214,17 +225,23 @@ def _same_reference(
     declared: DiagnosisReference | None,
     allowed: DiagnosisReference | None,
 ) -> bool:
-    return declared is not None and allowed is not None and (
-        declared.kind,
-        declared.target_id,
-        declared.content_hash,
-    ) == (allowed.kind, allowed.target_id, allowed.content_hash)
+    return (
+        declared is not None
+        and allowed is not None
+        and (
+            declared.kind,
+            declared.target_id,
+            declared.content_hash,
+        )
+        == (allowed.kind, allowed.target_id, allowed.content_hash)
+    )
 
 
 def _contains_executable_action(action: str) -> bool:
     return bool(
         re.search(
-            r"\b(kubectl|curl|wget|ssh|mysql|psql|terraform|ansible|rm|chmod)\b|```|\$\s",
+            r"```|\$\s|(?:^|[;\n]|\b(?:执行|运行|run)\s+)\s*"
+            r"(?:kubectl|curl|wget|ssh|mysql|psql|terraform|ansible|rm|chmod)\b",
             action,
             re.IGNORECASE,
         )

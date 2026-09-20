@@ -140,6 +140,23 @@ def test_report_rejects_suggested_action_that_contains_an_executable_command() -
     assert result.reason_code == "diagnosis_action_not_human_only"
 
 
+def test_report_allows_human_review_action_that_names_mysql_without_a_command() -> None:
+    result = validate_candidate_report(
+        _snapshot(),
+        {
+            "confirmed_facts": [],
+            "hypotheses": [],
+            "references": [],
+            "unknowns": [],
+            "suggested_human_actions": [
+                "人工检查 MySQL 慢查询日志和错误日志，定位可能造成行锁等待的 SQL。"
+            ],
+        },
+    )
+
+    assert result.accepted is True
+
+
 def test_snapshot_keeps_a_bounded_safe_projection_of_linked_alerts() -> None:
     snapshot = _snapshot().model_copy(
         update={
