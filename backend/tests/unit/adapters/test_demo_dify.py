@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from incident_intelligence.adapters.demo_dify import DemoDifyWorkflow
-from incident_intelligence.domain.diagnosis import DiagnosisReference
 from incident_intelligence.services.diagnosis_tools import (
     DiagnosisEvidenceDetailToolResult,
+    DiagnosisSnapshotEvidenceSummary,
     DiagnosisSnapshotToolResult,
 )
 
@@ -16,11 +16,9 @@ def test_demo_workflow_reads_snapshot_then_evidence_before_returning_draft() -> 
 
     draft = DemoDifyWorkflow(tools).run_workflow(RUN_ID, capability_token="not-persisted")
 
-    assert tools.calls == [("snapshot", RUN_ID), ("evidence", EVIDENCE_ID)]
-    assert draft["confirmed_facts"][0]["reference_ids"] == [EVIDENCE_ID]
-    assert draft["references"] == [
-        {"kind": "EVIDENCE", "target_id": EVIDENCE_ID, "content_hash": "a" * 64}
-    ]
+    assert tools.calls == [("snapshot", RUN_ID)]
+    assert draft["confirmed_facts"][0]["reference_ids"] == ["E1"]
+    assert draft["references"] == ["E1"]
 
 
 class _FakeDiagnosisTools:
@@ -42,14 +40,18 @@ class _FakeDiagnosisTools:
             service_name="checkout",
             alert_names=("HighErrorRate",),
             alert_facts=(),
-            evidence_references=(
-                DiagnosisReference(
-                    kind="EVIDENCE",
-                    target_id=EVIDENCE_ID,
-                    content_hash="a" * 64,
+            evidence_summaries=(
+                DiagnosisSnapshotEvidenceSummary(
+                    alias="E1",
+                    display_name="数据库行锁等待",
+                    source_type="PROMETHEUS",
+                    state="SUCCEEDED",
+                    evidence_type="METRIC_COMPARISON",
+                    baseline_summary={"current": 0},
+                    fault_summary={"current": 1},
+                    interpretation="数据库行锁等待升高。",
                 ),
             ),
-            knowledge_references=(),
             truncated=False,
         )
 

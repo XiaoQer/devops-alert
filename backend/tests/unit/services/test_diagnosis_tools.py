@@ -63,7 +63,13 @@ def test_snapshot_tool_returns_only_a_bounded_snapshot_projection() -> None:
     result = service.get_diagnosis_snapshot(RUN_ID, capability_token=token)
 
     assert result.incident_id == f"inc_{'4' * 32}"
-    assert result.evidence_references[0].target_id == f"evitem_{'6' * 32}"
+    assert result.evidence_summaries[0].alias == "E1"
+    assert result.evidence_summaries[0].display_name == "数据库行锁等待"
+    assert result.evidence_summaries[0].fault_summary == {"current": 1}
+    assert result.evidence_summaries[0].interpretation == "数据库行锁等待升高。"
+    serialized = result.model_dump_json()
+    assert f"evitem_{'6' * 32}" not in serialized
+    assert "content_hash" not in serialized
     assert receipts[0].tool_key == "get_diagnosis_snapshot"
     assert receipts[0].result_hash is not None
 
@@ -146,6 +152,10 @@ class _FakeToolReceipts:
 
 
 class _FakeEvidenceRuns:
+    def list_items(self, evidence_run_id: str, *, limit: int) -> tuple[EvidenceItem, ...]:
+        item = self.get_item(f"evitem_{'6' * 32}")
+        return (item,) if evidence_run_id == f"evr_{'5' * 32}" and item is not None else ()
+
     def get_item(self, evidence_item_id: str) -> EvidenceItem | None:
         if evidence_item_id != f"evitem_{'6' * 32}":
             return None

@@ -37,9 +37,23 @@ class DiagnosisSnapshotToolResult(BaseModel):
     service_name: str | None
     alert_names: tuple[str, ...]
     alert_facts: tuple[DiagnosisAlertFact, ...]
-    evidence_references: tuple[DiagnosisReference, ...]
-    knowledge_references: tuple[DiagnosisReference, ...]
+    evidence_summaries: tuple[DiagnosisSnapshotEvidenceSummary, ...]
     truncated: bool
+
+
+class DiagnosisSnapshotEvidenceSummary(BaseModel):
+    """Safe, model-facing projection of one immutable evidence item."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    alias: str
+    display_name: str
+    source_type: str
+    state: str
+    evidence_type: str
+    baseline_summary: dict[str, str | int | float | bool | None]
+    fault_summary: dict[str, str | int | float | bool | None]
+    interpretation: str | None
 
 
 class DiagnosisEvidenceDetailToolResult(BaseModel):
@@ -97,7 +111,8 @@ class DiagnosisToolService:
             snapshot = _runs(uow).get_snapshot(diagnosis_run_id)
             if snapshot is None:
                 raise DiagnosisToolRunNotFound()
-            result = _bounded_snapshot_projection(snapshot)
+            evidence_items = _evidence_runs(uow).list_items(snapshot.evidence_run_id, limit=101)
+            result = _bounded_snapshot_projection(snapshot, evidence_items)
             self._audit(
                 uow,
                 diagnosis_run_id=diagnosis_run_id,
@@ -216,16 +231,23 @@ def _payload_size(value: object) -> int:
     return len(json.dumps(value, ensure_ascii=False).encode())
 
 
-def _bounded_snapshot_projection(snapshot: DiagnosisSnapshot) -> DiagnosisSnapshotToolResult:
+def _bounded_snapshot_projection(
+    snapshot: DiagnosisSnapshot,
+    evidence_items: tuple[EvidenceItem, ...],
+) -> DiagnosisSnapshotToolResult:
     alert_names = list(snapshot.alert_names[:100])
     alert_facts = list(snapshot.alert_facts[:100])
     evidence_references = list(snapshot.evidence_references[:50])
-    knowledge_references = list(snapshot.knowledge_references[:50])
+    evidence_by_id = {item.id: item for item in evidence_items}
+    evidence_summaries = [
+        _snapshot_evidence_summary(reference, evidence_by_id[reference.target_id], index)
+        for index, reference in enumerate(evidence_references, start=1)
+        if reference.kind == "EVIDENCE" and reference.target_id in evidence_by_id
+    ]
     truncated = (
         len(alert_names) < len(snapshot.alert_names)
         or len(alert_facts) < len(snapshot.alert_facts)
         or len(evidence_references) < len(snapshot.evidence_references)
-        or len(knowledge_references) < len(snapshot.knowledge_references)
     )
     while True:
         result = DiagnosisSnapshotToolResult(
@@ -235,8 +257,7 @@ def _bounded_snapshot_projection(snapshot: DiagnosisSnapshot) -> DiagnosisSnapsh
             service_name=snapshot.service_name,
             alert_names=tuple(alert_names),
             alert_facts=tuple(alert_facts),
-            evidence_references=tuple(evidence_references),
-            knowledge_references=tuple(knowledge_references),
+            evidence_summaries=tuple(evidence_summaries),
             truncated=truncated,
         )
         if _payload_size(result.model_dump(mode="json")) <= MAX_SNAPSHOT_BYTES:
@@ -246,12 +267,30 @@ def _bounded_snapshot_projection(snapshot: DiagnosisSnapshot) -> DiagnosisSnapsh
             alert_facts.pop()
         elif evidence_references:
             evidence_references.pop()
-        elif knowledge_references:
-            knowledge_references.pop()
+            evidence_summaries = evidence_summaries[: len(evidence_references)]
         elif alert_names:
             alert_names.pop()
         else:
             return result
+
+
+def _snapshot_evidence_summary(
+    reference: DiagnosisReference,
+    item: EvidenceItem,
+    index: int,
+) -> DiagnosisSnapshotEvidenceSummary:
+    """Expose only standardized evidence summaries, never raw query or payload data."""
+    detail = _bounded_evidence_projection(item)
+    return DiagnosisSnapshotEvidenceSummary(
+        alias=reference.alias or f"E{index}",
+        display_name=detail.display_name,
+        source_type=detail.source_type,
+        state=detail.state,
+        evidence_type=detail.evidence_type,
+        baseline_summary=detail.baseline_summary,
+        fault_summary=detail.fault_summary,
+        interpretation=detail.interpretation,
+    )
 
 
 def _bounded_evidence_projection(item: EvidenceItem) -> DiagnosisEvidenceDetailToolResult:

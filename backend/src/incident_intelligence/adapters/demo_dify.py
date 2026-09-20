@@ -36,10 +36,7 @@ class DemoDifyWorkflow:
             diagnosis_run_id,
             capability_token=capability_token,
         )
-        evidence_references = tuple(
-            reference for reference in snapshot.evidence_references if reference.kind == "EVIDENCE"
-        )
-        if not evidence_references:
+        if not snapshot.evidence_summaries:
             return {
                 "confirmed_facts": [],
                 "hypotheses": [],
@@ -48,17 +45,12 @@ class DemoDifyWorkflow:
                 "suggested_human_actions": ["请人工补充取证后重新发起分析。"],
             }
 
-        reference = evidence_references[0]
-        evidence = self._tools.get_evidence_detail(
-            diagnosis_run_id,
-            capability_token=capability_token,
-            evidence_item_id=reference.target_id,
-        )
+        evidence = snapshot.evidence_summaries[0]
         fact = evidence.interpretation or f"{evidence.display_name} 的状态为 {evidence.state}。"
         return {
-            "confirmed_facts": [{"text": fact, "reference_ids": [reference.target_id]}],
+            "confirmed_facts": [{"text": fact, "reference_ids": [evidence.alias]}],
             "hypotheses": [],
-            "references": [reference.model_dump(mode="json")],
+            "references": [evidence.alias],
             "unknowns": ["本地演示执行器不会生成根因结论。"],
             "suggested_human_actions": ["请人工结合应用日志和变更记录继续核对。"],
         }
